@@ -108,12 +108,182 @@ async def _read_resource(resource: str, url: str, limit: int) -> list[dict[str, 
         raise HTTPException(status_code=502, detail={"code": "INVALID_BRIDGE_RESPONSE", "message": "ActivePieces read webhook did not return JSON."})
 
     if isinstance(body, list):
-        return body
-    if isinstance(body, dict):
+        records = body
+    elif isinstance(body, dict):
         records = body.get("data", body.get("items", body.get("records")))
-        if isinstance(records, list):
-            return records
-    raise HTTPException(status_code=502, detail={"code": "INVALID_BRIDGE_SCHEMA", "message": "Expected a JSON array or a data/items/records array."})
+        if not isinstance(records, list):
+            raise HTTPException(status_code=502, detail={"code": "INVALID_BRIDGE_SCHEMA", "message": "Expected a JSON array or a data/items/records array."})
+    else:
+        raise HTTPException(status_code=502, detail={"code": "INVALID_BRIDGE_SCHEMA", "message": "Expected a JSON array or a data/items/records array."})
+    return [_normalize_record(resource, record) for record in records]
+
+
+def _cell_values(record: dict[str, Any]) -> dict[str, Any]:
+    cells = record.get("cells", {})
+    values: dict[str, Any] = {}
+    if isinstance(cells, dict):
+        for key, cell in cells.items():
+            if isinstance(cell, dict):
+                name = cell.get("fieldName") or cell.get("name") or key
+                values[str(name)] = cell.get("value")
+            else:
+                values[str(key)] = cell
+    # Some webhook versions may already return a plain object keyed by column names.
+    for key, value in record.items():
+        if key not in {"cells", "id", "created", "updated"} and key not in values:
+            values[key] = value
+    values["_record_id"] = record.get("id")
+    values["_record_created"] = record.get("created")
+    values["_record_updated"] = record.get("updated")
+    return values
+
+
+def _as_list(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        try:
+            parsed = __import__("json").loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+        except (ValueError, TypeError):
+            pass
+        return [part.strip() for part in value.replace("\\n", ",").split(",") if part.strip()]
+    return [str(value)]
+
+
+def _severity(value: Any) -> str:
+    text = str(value or "low").strip().lower()
+    if text in {"critical", "high", "medium", "low"}:
+        return text
+    if text in {"informational", "info", "unclassified"}:
+        return "low"
+    return "low"
+
+
+def _normalize_record(resource: str, record: dict[str, Any]) -> dict[str, Any]:
+    row = _cell_values(record)
+    if resource == "alerts":
+        evidence = _as_list(row.get("evidence_event_ids"))
+        raw_status = str(row.get("detection_status") or "new").lower()
+        status = "resolved" if raw_status in {"resolved", "closed", "suppressed"} else ("investigating" if raw_status in {"investigating", "triaged", "in progress"} else "open")
+        return {
+            "id": str(row.get("finding_id") or row.get("finding_key") or row.get("_record_id") or "unknown-finding"),
+            "eventId": str(evidence[0] if evidence else (row.get("finding_key") or row.get("finding_id") or "")),
+            "ruleName": str(row.get("rule_name") or row.get("rule_id") or "Detection finding"),
+            "severity": _severity(row.get("severity")),
+            "source": "ActivePieces detection finding",
+            "asset": str(row.get("host") or "Unknown asset"),
+            "sourceIp": str(row.get("source_ips") or ""),
+            "timestamp": str(row.get("detected_at") or row.get("_record_created") or ""),
+            "status": status,
+            "summary": str(row.get("rationale") or "Finding record received; additional investigation context may be pending."),
+            "rawEvent": {k: v for k, v in row.items() if not k.startswith("_") and isinstance(v, (str, int, float, bool))},
+            "evidence": evidence,
+            "relatedAlertIds": _as_list(row.get("related_case_ids")),
+            "mitre": [],
+            "nextSteps": [],
+            **({"caseId": str(row["case_id"])} if row.get("case_id") else {}),
+        }
+    if resource == "cases":
+        raw_status = str(row.get("Status") or row.get("status") or "New").strip().lower()
+        status = {"new": "open", "triaged": "investigating", "escalated": "contained", "closed": "closed", "resolved": "resolved", "investigating": "investigating", "open": "open"}.get(raw_status, "open")
+        assets = _as_list(row.get("Asset ID") or row.get("Asset Name") or row.get("host"))
+        evidence = _as_list(row.get("Raw Evidence") or row.get("Evidence Timeline"))
+        recommended = _as_list(row.get("Recommended Actions"))
+        created_at = str(row.get("Created At") or row.get("created_at") or row.get("_record_created") or "")
+        return {
+            "id": str(row.get("Case ID") or row.get("case_id") or row.get("_record_id") or "unknown-case"),
+            "title": str(row.get("Case Title") or row.get("case_title") or "Untitled case"),
+            "severity": _severity(row.get("Severity") or row.get("severity")),
+            "status": status,
+            "assignee": str(row.get("Assignee") or row.get("assignee") or "Unassigned"),
+            "assets": assets,
+            "createdAt": created_at,
+            "updatedAt": str(row.get("Updated At") or row.get("updated_at") or row.get("_record_updated") or created_at),
+            "overview": str(row.get("AI Analysis") or row.get("Raw Evidence") or row.get("overview") or "No case summary is recorded."),
+            "notes": [],
+            "evidence": evidence,
+            "alertIds": _as_list(row.get("Source Event ID") or row.get("event_id")),
+            "timeline": [],
+            "recommended": recommended,
+        }
+    if resource == "assets":
+        raw_type = str(row.get("Asset Type") or "").lower()
+        asset_type = "Server" if "server" in raw_type else ("Workstation" if "endpoint" in raw_type or "workstation" in raw_type else ("Domain" if "domain" in raw_type else ("Network device" if "network" in raw_type else "Cloud service")))
+        raw_monitoring = str(row.get("Monitoring Status") or "").lower()
+        monitoring = "verified" if raw_monitoring == "connected" and row.get("Last Verified") else ("stale" if raw_monitoring == "degraded" else ("unmonitored" if raw_monitoring in {"not connected", "retired"} else "registered"))
+        return {
+            "id": str(row.get("Asset ID") or row.get("_record_id") or "unknown-asset"),
+            "name": str(row.get("Asset Name") or "Unnamed asset"),
+            "host": str(row.get("Hostname / Domain / IP") or row.get("Asset Name") or ""),
+            "ip": str(row.get("IP") or ""),
+            "os": str(row.get("Operating System") or ""),
+            "type": asset_type,
+            "criticality": _severity(row.get("Criticality")),
+            "monitoring": monitoring,
+            "method": str(row.get("Telemetry Source") or "None"),
+            **({"lastEvent": str(row["Last Verified"])} if row.get("Last Verified") else {}),
+            "addedBy": "user",
+        }
+    if resource == "rules":
+        raw_status = str(row.get("Status") or "").lower()
+        status = "enabled" if raw_status == "enabled" else ("disabled" if raw_status == "disabled" else "draft")
+        raw_maturity = str(row.get("Rule Maturity") or "")
+        maturity = "validated" if raw_maturity.startswith("4") or raw_maturity.lower() == "validated" else ("in_testing" if raw_maturity.startswith(("2", "3")) else "unvalidated")
+        return {
+            "id": str(row.get("Rule ID") or row.get("_record_id") or "unknown-rule"),
+            "name": str(row.get("Rule Name") or "Unnamed rule"),
+            "description": str(row.get("Description") or ""),
+            "category": str(row.get("Category") or "Other"),
+            "severity": _severity(row.get("Severity")),
+            "source": str(row.get("Required Data Source") or ""),
+            "mitre": _as_list(row.get("MITRE Technique")),
+            "status": status,
+            **({"lastTested": str(row["Last Tested"])} if row.get("Last Tested") else {}),
+            "maturity": maturity,
+            "requiredEvidence": _as_list(row.get("Required Evidence")),
+            "logic": str(row.get("Detection Logic") or ""),
+            "response": [],
+        }
+    if resource == "integrations":
+        raw_status = str(row.get("Connection Status") or "").upper()
+        verified = raw_status == "CONNECTED" and bool(row.get("Last Health Check"))
+        state = "connected" if verified else ("error" if raw_status in {"FAILED", "DEGRADED"} else ("not_configured" if raw_status == "NOT CONFIGURED" else "disconnected"))
+        category_raw = str(row.get("Category") or "").lower()
+        category = "Endpoint" if "endpoint" in category_raw else ("Network" if "network" in category_raw else ("Orchestration" if "orchestration" in category_raw else ("Malware" if "malware" in category_raw else "SIEM")))
+        return {
+            "id": str(row.get("Integration ID") or row.get("_record_id") or "unknown-integration"),
+            "name": str(row.get("Integration Name") or "Unnamed integration"),
+            "purpose": str(row.get("Supported Tool Names") or row.get("Category") or ""),
+            "category": category,
+            "state": state,
+            "configured": raw_status not in {"", "NOT CONFIGURED", "SIMULATED ONLY"},
+            "verified": verified,
+            **({"lastHealthCheck": str(row["Last Health Check"])} if row.get("Last Health Check") else {}),
+            "fields": [],
+        }
+    if resource == "audit":
+        outcome = str(row.get("Outcome") or "").lower()
+        result = "failure" if outcome == "failure" else ("denied" if outcome == "blocked" else "success")
+        action = str(row.get("Event Type") or "Audit event")
+        action_lower = action.lower()
+        action_type = "create" if "created" in action_lower or "received" in action_lower else ("update" if "updated" in action_lower or "decision" in action_lower else ("response" if "action" in action_lower else ("auth" if "auth" in action_lower else "view")))
+        actor_type = "user" if "human" in str(row.get("Actor Type") or "").lower() or "analyst" in str(row.get("Actor Type") or "").lower() else "service"
+        return {
+            "id": str(row.get("Audit ID") or row.get("_record_id") or "unknown-audit"),
+            "time": str(row.get("Timestamp") or row.get("_record_created") or ""),
+            "actor": str(row.get("Actor") or "Unknown actor"),
+            "actorType": actor_type,
+            "action": action,
+            "actionType": action_type,
+            "target": str(row.get("Case ID") or row.get("Evidence Reference") or ""),
+            "result": result,
+            "source": "SentinelX Audit Logs",
+        }
+    return {**{k: v for k, v in row.items() if not k.startswith("_")}, "recordId": row.get("_record_id")}
 
 
 @app.get("/")
