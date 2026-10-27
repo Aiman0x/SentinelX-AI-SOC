@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useAlerts } from '../../hooks/useAlerts';
-import { isDemoMode } from '../../services/apiClient';
+import { getBackendStatusView, type BackendStatusView } from '../../services/backendStatusService';
 import { resetAllDemoData } from '../../services/miscService';
 import { timeAgo } from '../../utils/formatDate';
 import { SeverityBadge } from '../common/SeverityBadge';
@@ -26,10 +26,19 @@ export function Topbar() {
   const [now, setNow] = useState(new Date());
   const [menu, setMenu] = useState<'none' | 'bell' | 'user'>('none');
   const [spin, setSpin] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendStatusView>({ state: 'demo', label: 'DEMO MODE', detail: 'No backend URL is configured.' });
   const wrap = useRef<HTMLDivElement>(null);
   const { alerts } = useAlerts();
 
   useClickAway(wrap, () => setMenu('none'));
+
+  const loadBackendStatus = () => {
+    void getBackendStatusView().then(setBackendStatus);
+  };
+
+  useEffect(() => {
+    loadBackendStatus();
+  }, []);
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 30000);
     return () => window.clearInterval(t);
@@ -48,7 +57,8 @@ export function Topbar() {
   const doRefresh = () => {
     setSpin(true);
     refresh();
-    toast(isDemoMode ? 'Demo data reloaded (no live data source is connected).' : 'Data refreshed.', 'info');
+    loadBackendStatus();
+    toast(backendStatus.state === 'demo' ? 'Demo data reloaded (no backend URL is configured).' : 'Refresh requested. Backend status is being checked; individual screens may still be pending.', 'info');
     window.setTimeout(() => setSpin(false), 600);
   };
 
@@ -69,11 +79,22 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2" ref={wrap}>
-        {isDemoMode && (
-          <span className="hidden items-center gap-1.5 rounded-md border border-sx-gold/50 bg-sx-gold/10 px-2 py-1 text-[10px] font-bold tracking-wider text-sx-gold sm:inline-flex" title="No backend is connected. All data shown is sample data.">
-            <span className="h-1.5 w-1.5 rounded-full bg-sx-gold" aria-hidden /> DEMO MODE
-          </span>
-        )}
+        <span
+          className={`hidden items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold tracking-wider sm:inline-flex ${
+            backendStatus.state === 'connected'
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+              : backendStatus.state === 'unavailable'
+                ? 'border-sx-red/50 bg-sx-red/10 text-sx-red'
+                : 'border-sx-gold/50 bg-sx-gold/10 text-sx-gold'
+          }`}
+          title={backendStatus.detail}
+          aria-live="polite"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${
+            backendStatus.state === 'connected' ? 'bg-emerald-400' : backendStatus.state === 'unavailable' ? 'bg-sx-red' : 'bg-sx-gold'
+          }`} aria-hidden />
+          {backendStatus.label}
+        </span>
         <time className="mono hidden text-[11px] text-sx-mute xl:block" dateTime={now.toISOString()}>
           {now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
         </time>

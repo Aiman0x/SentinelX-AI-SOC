@@ -1,6 +1,6 @@
 import { demoIntegrations } from '../data/demoIntegrations';
 import type { Integration, TestResult } from '../types/integration';
-import { apiPost, delay, isBackendConfigured } from './apiClient';
+import { apiGet, apiPost, delay, isBackendConfigured } from './apiClient';
 import { createLocalStore } from './localStore';
 
 /**
@@ -20,6 +20,7 @@ export function getIntegrations(): Integration[] {
 }
 
 export async function loadIntegrations(): Promise<Integration[]> {
+  if (isBackendConfigured) return apiGet<Integration[]>('/api/integrations');
   await delay(250);
   return getIntegrations();
 }
