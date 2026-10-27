@@ -55,3 +55,23 @@ Store webhook URLs and shared secrets only in the backend environment. Do not st
 - User/session authentication has not been implemented; do not expose the API publicly with real security data until authentication, authorization and tenant isolation are added.
 - Case mutations, notes, status changes, rule changes, playbook execution and integration tests remain pending.
 - Existing ActivePieces telemetry receiver is enabled, but its real webhook URL and secret must be configured privately on the backend host before the telemetry proxy can work.
+
+
+## ActivePieces read bridge flows created
+
+The following dedicated read-only flows were created in the existing ActivePieces project, placed in the `SentinelX GUI API Bridge` folder, and published/enabled. Their flow structure validation passed. They have **not** been called end-to-end yet.
+
+| Resource | Flow ID | Existing table |
+|---|---|---|
+| Findings / alerts | `UhsSqbikoPuehW6jNxxCB` | `SX Detection Findings v1` |
+| Cases / incidents | `N6GjE4o09li8aYi5Y5HXa` | `SentinelX Cases` |
+| Assets | `TdJBojFRNAi6vLZ37OEzI` | `SentinelX Asset Inventory` |
+| Detection rules | `VwL24wox3eS5HsmyFRQU4` | `SentinelX Detection Rules` |
+| Integrations | `9NnORdUWUwdWPlV8cm3C9` | `SentinelX Security Integrations` |
+| Audit | `p6DWQhGI5tmql8x78oIxL` | `SentinelX Audit Logs` |
+| Investigations | `JgR36M68bNJYty2ec7RFV` | `SX Correlation Investigations v1` |
+| Evidence | `HIBX4e0YsgCdXdQEIxINk` | `SentinelX Evidence References` |
+
+Each flow requires the shared header `X-SentinelX-Bridge-Key` and returns a `data` array from the Tables Find Records step. Before deployment, copy each flow's actual webhook URL from the ActivePieces trigger panel and place it in the matching backend environment variable. Do not guess webhook URLs from flow IDs.
+
+A shared bridge secret has been set on these new read flows. It is not stored in this repository. Configure the same value in the backend secret store/environment; rotate it before production deployment. The existing telemetry receiver uses its own separate header secret and must not reuse the bridge secret.
