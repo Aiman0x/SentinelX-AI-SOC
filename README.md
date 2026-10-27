@@ -39,13 +39,15 @@ Future development will focus on investigation summaries, explanations of suspic
 - [ ] Defensive tool integrations.
 - [x] Frontend GUI prototype with demo data (React + TypeScript).
 - [ ] Investigation and recommendation interface connected to real data and an AI backend.
+- [x] Initial FastAPI backend bridge scaffold and truthful global backend-status indicator.
+- [ ] ActivePieces read-only table webhooks, remote backend hosting, authentication and end-to-end verification.
 - [ ] Desktop GUI packaging.
 
 **Note:** Features listed as planned or incomplete are not yet claimed as implemented or production-ready.
 
 ## GUI Prototype (React + TypeScript)
 
-SentinelX now includes a dark **black / red / gold** SOC-style frontend prototype. It runs entirely on **sample (demo) data** — no backend, no live telemetry and no external integration is connected.
+SentinelX now includes a dark **black / red / gold** SOC-style frontend prototype. The frontend initially uses sample (demo) data. A FastAPI backend bridge is now scaffolded under `backend/`; real ActivePieces reads remain pending until dedicated read-only webhook flows and a backend host are configured.
 
 | Screen | What it does today |
 |---|---|
@@ -69,7 +71,7 @@ npm run build      # production build -> dist/
 npm run preview    # serve the production build
 ```
 
-Copy `.env.example` to `.env.local` only if you later connect a backend (`VITE_API_BASE_URL`). **Never put secrets in `VITE_*` variables.**
+Copy `.env.example` to `.env.local` and set `VITE_API_BASE_URL` to the separately running FastAPI backend. The frontend currently supports a backend status check; individual resources remain pending until their read bridges are configured. **Never put secrets in `VITE_*` variables.**
 
 ### Honesty rules built into the UI
 
@@ -79,7 +81,7 @@ Copy `.env.example` to `.env.local` only if you later connect a backend (`VITE_A
 - Disruptive actions (isolate, disable, block, delete) are simulations and need typed confirmation.
 - The AI assistant is a **placeholder**: it clearly separates observed facts, unconfirmed hypotheses and recommendations, and states that no AI model is connected.
 
-See [`docs/gui-design.md`](docs/gui-design.md) for the full design notes and a working / needs-backend feature matrix.
+See [`docs/gui-design.md`](docs/gui-design.md) for the design notes and [`docs/backend-integration-contract.md`](docs/backend-integration-contract.md) for the backend/API connection plan.
 
 ## Technology
 
