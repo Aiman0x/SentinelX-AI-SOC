@@ -5,7 +5,7 @@ import { demoPlaybooks } from '../data/demoPlaybooks';
 import { buildTrend, type TrendRange } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
 import type { DetectionRule } from '../types/extra';
-import { delay } from './apiClient';
+import { apiGet, delay, isBackendConfigured } from './apiClient';
 import { createLocalStore } from './localStore';
 
 /** Assets and rules are stored locally in the prototype. Adding an asset does NOT scan or contact it. */
@@ -31,6 +31,7 @@ export async function loadPlaybooks() {
   return demoPlaybooks;
 }
 export async function loadAudit() {
+  if (isBackendConfigured) return apiGet<import('../types/extra').AuditRecord[]>('/api/audit');
   await delay(250);
   return demoAudit;
 }
