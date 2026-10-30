@@ -1,7 +1,7 @@
 import type { Alert, Severity } from '../types/alert';
 import type { SecurityCase, CaseStatus } from '../types/case';
 import type { Asset, AssetType, Criticality } from '../types/asset';
-import type { DetectionRule, AuditRecord, InvestigationRecord } from '../types/extra';
+import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
 import type { Integration } from '../types/integration';
 import { demoIntegrations } from '../data/demoIntegrations';
 
@@ -156,5 +156,24 @@ export function mapInvestigation(row: Row): InvestigationRecord {
     sourceIps: arr(c['Source IP Summary']),
     eventIds: arr(c['Related Event IDs']),
     signals: arr(c['Correlation Signals']),
+  };
+}
+
+
+export function mapEvidence(row: Row): EvidenceRecord {
+  const c = cells(row);
+  return {
+    id: str(c['Evidence ID'], str(row.id, 'evidence-unknown')),
+    caseId: str(c['Case ID'], '—'),
+    stepName: str(c['Step Name'], '—'),
+    sourceIntegration: str(c['Source Integration'], '—'),
+    toolName: str(c['Tool Name'], '—'),
+    excerpt: str(c['Evidence Excerpt'], 'No evidence excerpt recorded.'),
+    collectedAt: date(c['Collected At']),
+    dataOrigin: str(c['Data Origin'], 'UNKNOWN'),
+    executionStatus: str(c['Execution Status'], 'Unknown'),
+    evidenceHash: str(c['Evidence Hash'], '—'),
+    relevance: str(c.Relevance, 'Unrated'),
+    classification: str(c['Evidence Classification'], 'Unclassified'),
   };
 }
