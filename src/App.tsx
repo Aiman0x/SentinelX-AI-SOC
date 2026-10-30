@@ -13,6 +13,7 @@ import NotFound from './pages/NotFound';
 import Overview from './pages/Overview';
 import Playbooks from './pages/Playbooks';
 import Settings from './pages/Settings';
+import Users from './pages/Users';
 import { isDemoMode } from './services/apiClient';
 
 function LoginScreen() {
@@ -90,6 +91,7 @@ function AuthenticatedApp() {
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="audit" element={<AuditLogs />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<Users />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
