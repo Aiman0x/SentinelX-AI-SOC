@@ -225,10 +225,11 @@ async function handleLogin(request: Request, env: Env, cors: HeadersInit): Promi
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
     return reply({ error: "JSON required" }, 415, cors);
   }
-  const length = Number(request.headers.get("Content-Length") ?? "0");
-  if (length > 4096) return reply({ error: "Request too large" }, 413, cors);
+  let raw: string;
+  try { raw = await request.text(); } catch { return reply({ error: "Invalid request body" }, 400, cors); }
+  if (new TextEncoder().encode(raw).byteLength > 4096) return reply({ error: "Request too large" }, 413, cors);
   let body: { password?: unknown };
-  try { body = await request.json() as { password?: unknown }; }
+  try { body = JSON.parse(raw) as { password?: unknown }; }
   catch { return reply({ error: "Invalid JSON" }, 400, cors); }
   if (typeof body.password !== "string" || body.password.length < 1 || body.password.length > 256) {
     return reply({ error: "Invalid credentials" }, 401, cors);
