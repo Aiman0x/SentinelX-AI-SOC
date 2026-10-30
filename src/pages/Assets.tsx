@@ -62,7 +62,7 @@ export default function Assets() {
           <Select label="Criticality" className="w-36" value={f.crit} onChange={(v) => setF({ ...f, crit: v })} options={[{ value: 'all', label: 'All criticality' }, ...['critical', 'high', 'medium', 'low'].map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))]} />
           <Select label="Monitoring status" className="w-40" value={f.mon} onChange={(v) => setF({ ...f, mon: v })} options={[{ value: 'all', label: 'All monitoring' }, { value: 'verified', label: 'Verified' }, { value: 'registered', label: 'Registered' }, { value: 'stale', label: 'Stale' }, { value: 'unmonitored', label: 'Unmonitored' }]} />
         </div>
-        {list.length === 0 ? <EmptyState title="No assets match" description="Adjust filters or add an asset." /> : (
+        {list.length === 0 ? <EmptyState title="No assets match" description={isBackendConfigured ? "No backend asset records match the current filters." : "Adjust filters or add an asset."} /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-xs">
               <thead className="border-b border-sx-line bg-sx-bg/40"><tr>{['Asset', 'Hostname / domain', 'IP', 'Operating system', 'Type', 'Criticality', 'Monitoring', 'Method', 'Last event / verified'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
