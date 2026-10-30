@@ -72,3 +72,19 @@ export interface InvestigationRecord {
   eventIds: string[];
   signals: string[];
 }
+
+
+export interface EvidenceRecord {
+  id: string;
+  caseId: string;
+  stepName: string;
+  sourceIntegration: string;
+  toolName: string;
+  excerpt: string;
+  collectedAt: string;
+  dataOrigin: string;
+  executionStatus: string;
+  evidenceHash: string;
+  relevance: string;
+  classification: string;
+}
