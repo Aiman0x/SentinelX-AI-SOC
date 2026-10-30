@@ -3,6 +3,8 @@ export interface Env {
   LOGIN_PASSWORD_HASH: string;
   SESSION_HMAC_SECRET: string;
   AP_BRIDGE_KEY: string;
+  CONFIG_ENCRYPTION_KEY: string;
+  INTEGRATION_CONFIGS: KVNamespace;
   LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
   AP_READ_INCIDENT_RECORDS_URL: string;
@@ -29,6 +31,80 @@ const ROUTES: Record<string, keyof Env> = {
   "/api/rules": "AP_READ_DETECTION_RULES_URL",
   "/api/integrations": "AP_READ_SECURITY_INTEGRATIONS_URL",
 };
+
+
+const INTEGRATION_FIELDS: Record<string, string[]> = {
+  activepieces: ["baseUrl", "webhookPath", "webhookSecret"],
+  wazuh: ["apiUrl", "apiUser", "apiPassword"],
+  sysmon: ["collector", "configVersion"],
+  clamav: ["host", "port"],
+  yara: ["rulesPath"],
+  suricata: ["eveLog", "sensor"],
+  zeek: ["logPath", "sensor"],
+};
+function hexToBytes(value: string): Uint8Array {
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error("Invalid encryption key");
+  return Uint8Array.from(value.match(/.{2}/g)!, (byte) => parseInt(byte, 16));
+}
+async function configCryptoKey(secret: string, usage: KeyUsage[]): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", hexToBytes(secret), { name: "AES-GCM" }, false, usage);
+}
+async function encryptConfig(value: unknown, secret: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await configCryptoKey(secret, ["encrypt"]);
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(value)));
+  return JSON.stringify({ iv: bytesToBase64Url(iv), data: bytesToBase64Url(new Uint8Array(cipher)) });
+}
+async function decryptConfig(value: string, secret: string): Promise<Record<string, string>> {
+  const envelope = JSON.parse(value) as { iv: string; data: string };
+  const key = await configCryptoKey(secret, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64UrlToBytes(envelope.iv) }, key, base64UrlToBytes(envelope.data));
+  return JSON.parse(new TextDecoder().decode(plain)) as Record<string, string>;
+}
+async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
+  if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
+  if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) return reply({ error: "Authentication required" }, 401, cors);
+  const allowed = INTEGRATION_FIELDS[integrationId];
+  if (!allowed) return reply({ error: "Unknown integration" }, 404, cors);
+  if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ error: "Secure configuration storage is not configured" }, 503, cors);
+  if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return reply({ error: "JSON required" }, 415, cors);
+  let raw: string;
+  try { raw = await request.text(); } catch { return reply({ error: "Invalid request body" }, 400, cors); }
+  if (new TextEncoder().encode(raw).byteLength > 8192) return reply({ error: "Request too large" }, 413, cors);
+  let body: Record<string, unknown>;
+  try { body = JSON.parse(raw) as Record<string, unknown>; } catch { return reply({ error: "Invalid JSON" }, 400, cors); }
+  const values = body.values;
+  if (!values || typeof values !== "object" || Array.isArray(values)) return reply({ error: "Configuration values are required" }, 400, cors);
+  const safe: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
+    if (!allowed.includes(key)) return reply({ error: "Unsupported configuration field" }, 400, cors);
+    if (typeof value !== "string" || value.length > 2048) return reply({ error: "Invalid configuration value" }, 400, cors);
+    if (value.trim()) safe[key] = value.trim();
+  }
+  if (!Object.keys(safe).length) return reply({ error: "Enter at least one configuration value" }, 400, cors);
+  try {
+    const existingRaw = await env.INTEGRATION_CONFIGS.get(integrationId);
+    const existing = existingRaw ? await decryptConfig(existingRaw, env.CONFIG_ENCRYPTION_KEY) : {};
+    const merged = { ...existing, ...safe };
+    await env.INTEGRATION_CONFIGS.put(integrationId, await encryptConfig(merged, env.CONFIG_ENCRYPTION_KEY));
+    return reply({ saved: true, integrationId, configuredKeys: Object.keys(merged), savedAt: new Date().toISOString(), secretValuesHidden: true }, 200, cors);
+  } catch {
+    return reply({ error: "Could not securely save integration configuration" }, 500, cors);
+  }
+}
+async function integrationConfigSummary(env: Env): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }>> {
+  const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }> = {};
+  for (const id of Object.keys(INTEGRATION_FIELDS)) {
+    try {
+      const encrypted = await env.INTEGRATION_CONFIGS.get(id);
+      if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
+      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY);
+      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !["webhookSecret", "apiPassword"].includes(key)));
+      result[id] = { configured: true, values: publicValues, keys: Object.keys(values) };
+    } catch { result[id] = { configured: false, values: {}, keys: [] }; }
+  }
+  return result;
+}
 
 const reply = (body: unknown, status: number, cors: HeadersInit = {}, extra: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -195,6 +271,15 @@ export default {
       return reply({ authenticated }, authenticated ? 200 : 401, cors);
     }
 
+    const configMatch = url.pathname.match(/^\/api\/integrations\/([a-z0-9_-]+)\/config$/);
+    if (configMatch && request.method === "POST") {
+      return handleIntegrationConfig(request, env, cors, configMatch[1]);
+    }
+    if (url.pathname.startsWith("/api/integrations/") && url.pathname.endsWith("/test") && request.method === "POST") {
+      if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) return reply({ error: "Authentication required" }, 401, cors);
+      return reply({ ok: false, unavailable: true, message: "Connection testing will be enabled after the tool-specific Activepieces adapters are configured." }, 501, cors);
+    }
+
     if (request.method !== "GET") return reply({ error: "Method not allowed" }, 405, cors);
     const envKey = ROUTES[url.pathname];
     if (!envKey) return reply({ error: "Not found" }, 404, cors);
@@ -219,6 +304,9 @@ export default {
       catch { return reply({ error: "Upstream returned invalid JSON" }, 502, cors); }
       if (payload && typeof payload === "object" && "data" in payload) {
         payload = (payload as { data: unknown }).data;
+      }
+      if (url.pathname === "/api/integrations") {
+        return reply({ data: payload, configs: await integrationConfigSummary(env) }, 200, cors);
       }
       return reply(payload, 200, cors);
     } catch {
