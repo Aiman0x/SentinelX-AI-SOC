@@ -1,9 +1,15 @@
 # SentinelX — GUI Design & Status
 
 ## 1. Goal
-A professional, dark, cinematic SOC interface (black / red / gold) that lets an analyst monitor alerts, investigate incidents, review assets, manage rules and playbooks, and (later) receive AI-assisted guidance. The GUI is a **frontend prototype** running on demo data.
+
+A professional dark SOC interface (black / red / gold) for monitoring security findings, investigating incidents, reviewing evidence, managing assets and rules, configuring defensive tools, and eventually receiving verified AI-assisted guidance.
+
+The GUI supports two modes:
+- **Demo mode:** local sample data, clearly labelled.
+- **Backend mode:** authenticated read data through the Cloudflare Worker and ActivePieces workflows. This mode becomes available only after the Worker is deployed and `VITE_API_BASE_URL` is configured.
 
 ## 2. Palette
+
 | Token | Hex | Use |
 |---|---|---|
 | Background | `#090909` | App background |
@@ -18,40 +24,61 @@ A professional, dark, cinematic SOC interface (black / red / gold) that lets an 
 No blue theme, no white backgrounds. Colours live in `tailwind.config.js` under `sx.*`.
 
 ## 3. Structure
-```
+
+```text
 src/
   components/{layout,dashboard,alerts,cases,investigation,common}
-  pages/            one file per screen (+ NotFound)
-  data/             demo data ONLY (never imported by components directly except via services)
-  services/         apiClient + alerts/cases/integrations/misc services (data-access layer)
+  pages/            one file per screen
+  data/             sample data used only through services
+  services/         API client, data mappers and data-access services
   hooks/            useData, useAlerts, useCases, useLocalStore
-  context/          AppContext (sidebar, toasts, alert drawer, refresh)
+  context/          app state and analyst authentication
   types/ utils/
+cloudflare-worker/
+  src/index.ts      authenticated API gateway and encrypted integration config
+  wrangler.toml     rate-limit and Workers KV bindings
 ```
-UI components never read demo files directly; they go through `services/`. When `VITE_API_BASE_URL` is set, services call the backend instead of using demo data.
+
+When `VITE_API_BASE_URL` is set, backend-aware services use the Worker API. The browser never receives ActivePieces webhook URLs, bridge credentials, or tool passwords.
 
 ## 4. Feature matrix
-| Feature | Works in prototype | Needs backend |
+
+| Feature | Demo mode | Backend foundation |
 |---|---|---|
-| Navigation, collapsible sidebar, responsive layout | ✅ | |
-| Alert search / filter / sort / pagination / drawer | ✅ (demo data) | Real alert feed |
-| Create case, notes, status, assignee | ✅ (browser storage) | Secure database + auth |
-| Investigation timeline & evidence view | ✅ (demo data) | Real correlation |
-| *Generate Summary* | ✅ template-based, no AI | AI analysis service |
-| *Export Report* | ✅ markdown from on-screen data | Signed/stored reports |
-| Add asset | ✅ registers locally only | Verified telemetry |
-| Integration config | ✅ non-secret fields only | Secrets store, health checks |
-| *Test Connection* | ❌ reports "cannot verify" | Server-side health check |
-| Rule validate / deploy | ❌ | Wazuh / ActivePieces deployment |
-| Playbook execution / disruptive actions | ❌ simulation only | Authorised integration + approval flow |
-| Audit logs | Sample records | Server-generated audit trail |
-| Authentication / RBAC | ❌ | Identity provider |
+| Navigation, responsive layout | Working | Working |
+| Alerts and alert details | Sample data, local demo actions | ActivePieces findings, read-only |
+| Cases | Local demo create/notes/status | ActivePieces case records, read-only |
+| Investigation | Template/demo analyst assistant | Correlation records and evidence references; not an AI verdict |
+| Assets | Local demo registration | Backend inventory, read-only |
+| Integrations | Sample status; secret inputs disabled | Encrypted configuration save for Wazuh, Sysmon, ClamAV, YARA, Suricata and Zeek |
+| ActivePieces status | Sample | Successful gateway read request can verify API reachability |
+| Integration health checks | Cannot verify | Tool-specific adapters still pending |
+| Detection rules | Local draft editor | Backend rule registry, read-only |
+| Playbooks | Workflow designs and approval simulation | Execution not exposed |
+| Audit logs | Sample records | ActivePieces audit records, read-only |
+| Security trend chart | Sample chart | Live aggregation API pending |
+| Authentication | Demo mode | Shared analyst password + signed HttpOnly session in Worker source; not deployed |
+| RBAC / multiple analysts | Not implemented | Future work |
 
-## 5. Connecting a backend later (Phase 4–5)
-1. Build an API (suggested endpoints: `GET /api/alerts`, `GET /api/cases`, `POST /api/integrations/:id/test`).
-2. Set `VITE_API_BASE_URL` in `.env.local`.
-3. Authenticate with HttpOnly session cookies; keep ActivePieces webhook secrets and Wazuh credentials on the server.
-4. Replace the remaining demo services (`casesService`, `miscService`) with API calls — components do not need to change.
+## 5. Backend integration foundation
 
-## 6. Accessibility
-Skip link, labelled controls, `aria-sort`, `aria-pressed`, `aria-current`, focus-visible outlines, Escape closes dialogs, reduced-motion support.
+- `GET /api/alerts`, `/cases`, `/investigations`, `/evidence`, `/audit`, `/assets`, `/rules`, and `/integrations` proxy to authenticated ActivePieces read workflows.
+- `POST /api/integrations/{id}/config` saves allowlisted configuration encrypted with AES-256-GCM in a dedicated Workers KV namespace.
+- Case, asset, and rule write endpoints are not implemented.
+- Tool-specific health checks are not implemented; a saved configuration is not a connected tool.
+- The Worker and GUI connection are not deployed yet.
+
+## 6. Remaining work
+
+1. Complete validation of the GUI build and Worker bundle.
+2. Rotate the exposed development bridge key and configure the eight actual ActivePieces webhook URLs as Worker Secrets.
+3. Generate and configure the analyst password hash, session signing secret, and AES encryption key.
+4. Deploy the Worker and verify browser session behavior before setting `VITE_API_BASE_URL`.
+5. Add tool adapters and health-check workflows.
+6. Add secure write APIs for cases, assets, rules, and analyst notes.
+7. Connect and verify the AI investigation service and real authorized telemetry.
+8. Add approval-gated, audited response workflows.
+
+## 7. Accessibility
+
+Skip link, labelled controls, `aria-sort`, `aria-pressed`, `aria-current`, focus-visible outlines, Escape closes dialogs, and reduced-motion support.
