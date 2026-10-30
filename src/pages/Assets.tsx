@@ -53,6 +53,7 @@ export default function Assets() {
         <span><strong>Registered</strong> means the asset exists in the SentinelX inventory only. <strong>Verified</strong> means telemetry was actually received through an authorised, configured integration. SentinelX never scans or accesses a target you add.</span>
       </div>
 
+      {isBackendConfigured && (remoteAssets.loading ? <div className="mb-3 text-xs text-sx-mute">Loading assets from SentinelX backend…</div> : remoteAssets.error ? <div className="mb-3 text-xs text-sx-red">Backend assets unavailable: {remoteAssets.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only inventory from the SentinelX backend. Asset registration will be enabled after the configuration-write API is complete.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-64" value={q} onChange={setQ} placeholder="Search name, host, IP" label="Search assets" />
