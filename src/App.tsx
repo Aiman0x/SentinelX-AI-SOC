@@ -72,7 +72,7 @@ function LoginScreen() {
   };
 
   return (
-    <main className="flex min-h-full items-center justify-center px-4 py-10">
+    <main className="flex min-h-full flex-col items-center justify-center gap-4 px-4 py-10">
       <form onSubmit={submit} className="panel w-full max-w-sm p-7">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-sx-red/50 bg-sx-reddark/40 text-lg font-black text-sx-red">SX</div>
