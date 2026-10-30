@@ -7,6 +7,8 @@ export interface AuthEnv {
 type User = { id:string; email:string; display_name:string; role:string; is_active:number; organization_id:string };
 const COOKIE = "sx_session";
 const TTL = 4 * 60 * 60;
+const originAllowed = (origin: string, env: AuthEnv) =>
+  Boolean(origin) && env.ALLOWED_ORIGIN.split(",").map((value) => value.trim()).includes(origin);
 const enc = new TextEncoder();
 const b64 = (b:Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 const unb64 = (s:string) => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
@@ -56,7 +58,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     return response({bootstrapAvailable:(count?.n||0)===0 && Boolean(env.BOOTSTRAP_SECRET)});
   }
   if(path==="/api/auth/bootstrap" && req.method==="POST") {
-    if(req.headers.get("Origin") && req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    if(req.headers.get("Origin") && !originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
     const ip=req.headers.get("CF-Connecting-IP")||"unknown";
     if(!(await env.LOGIN_RATE_LIMITER.limit({key:"bootstrap:"+ip})).success) return response({error:"Too many setup attempts"},429);
     if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
