@@ -43,7 +43,7 @@ export function mapFinding(row: Row): Alert {
     status: str(c.detection_status).toLowerCase().includes('false') ? 'false_positive' : str(c.detection_status).toLowerCase().includes('confirmed') ? 'investigating' : 'open',
     summary: str(c.rationale, 'Detection candidate requires analyst review.'),
     rawEvent: { finding_id: findingId, rule_id: str(c.rule_id), event_count: Number(c.event_count ?? 0), threshold: Number(c.threshold ?? 0), window_minutes: Number(c.window_minutes ?? 0), data_origin: str(c.data_origin), test_status: str(c.test_status) },
-    evidence: ids, relatedAlertIds: arr(c.related_case_ids), mitre: [], nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
+    evidence: ids, relatedAlertIds: [], mitre: [], nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
     caseId: str(c.case_id) || undefined,
   };
 }
