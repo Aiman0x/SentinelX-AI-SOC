@@ -45,7 +45,7 @@ Add these as **Secret** values, not plaintext variables:
 
 Do not reuse the telemetry ingestion key. Do not put any secret or Activepieces webhook URL in GitHub source, Vite variables, or browser code. The INTEGRATION_CONFIGS KV namespace stores tool configuration encrypted with AES-256-GCM; the encryption key stays in Worker Secrets. Secret fields are never returned to the browser.
 
-Copy each webhook URL from its corresponding published Activepieces workflow trigger. Confirm the trigger is GET and that its auth check expects the bridge key header before enabling live data. Do not guess URLs.
+Copy each webhook URL from its corresponding published Activepieces workflow trigger, then append `/sync` to the URL path so the Worker waits for the flow's Return Response step. The Catch Webhook trigger accepts GET, and each flow's Return Response step returns the table data as JSON. Confirm its auth check expects the bridge key header before enabling live data. Do not guess URLs.
 
 ## Integration configuration
 
