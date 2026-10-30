@@ -65,7 +65,7 @@ export default function Assets() {
         {list.length === 0 ? <EmptyState title="No assets match" description="Adjust filters or add an asset." /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-xs">
-              <thead className="border-b border-sx-line bg-sx-bg/40"><tr>{['Asset', 'Hostname / domain', 'IP', 'Operating system', 'Type', 'Criticality', 'Monitoring', 'Method', 'Last event'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
+              <thead className="border-b border-sx-line bg-sx-bg/40"><tr>{['Asset', 'Hostname / domain', 'IP', 'Operating system', 'Type', 'Criticality', 'Monitoring', 'Method', 'Last event / verified'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-sx-line">
                 {list.map((a) => (
                   <tr key={a.id} className="transition-colors hover:bg-sx-elev/50">
@@ -77,7 +77,7 @@ export default function Assets() {
                     <td className="td"><SeverityBadge severity={a.criticality} /></td>
                     <td className="td"><StatusBadge value={a.monitoring} /></td>
                     <td className="td text-sx-mute">{a.method}</td>
-                    <td className="td whitespace-nowrap text-sx-mute">{a.lastEvent ? timeAgo(a.lastEvent) : 'never'}</td>
+                    <td className="td whitespace-nowrap text-sx-mute">{a.lastEvent ? timeAgo(a.lastEvent) : a.lastVerified ? `Verified ${timeAgo(a.lastVerified)}` : 'never'}</td>
                   </tr>
                 ))}
               </tbody>
