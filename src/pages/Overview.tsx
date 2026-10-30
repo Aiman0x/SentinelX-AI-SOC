@@ -3,7 +3,8 @@ import { useAlerts } from '../hooks/useAlerts';
 import { useCases } from '../hooks/useCases';
 import { useLocalStore } from '../hooks/useLocalStore';
 import { assetsStore } from '../services/miscService';
-import { getIntegrations } from '../services/integrationsService';
+import { getIntegrations, loadIntegrations } from '../services/integrationsService';
+import { useData } from '../hooks/useData';
 import { isDemoMode } from '../services/apiClient';
 import { IntegrationHealth } from '../components/dashboard/IntegrationHealth';
 import { RecentAlerts } from '../components/dashboard/RecentAlerts';
@@ -16,7 +17,8 @@ export default function Overview() {
   const { alerts } = useAlerts();
   const cases = useCases();
   const assets = useLocalStore(assetsStore);
-  const integrations = getIntegrations();
+  const { data: integrationData } = useData(loadIntegrations);
+  const integrations = integrationData ?? getIntegrations();
 
   const openCases = cases.filter((c) => c.status !== 'closed' && c.status !== 'resolved').length;
   const critical = alerts.filter((a) => a.severity === 'critical' && a.status !== 'resolved' && a.status !== 'false_positive').length;
