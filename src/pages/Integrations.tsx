@@ -11,6 +11,7 @@ import { useLocalStore } from '../hooks/useLocalStore';
 import { integrationConfigStore, loadIntegrations, saveIntegrationConfig, testConnection } from '../services/integrationsService';
 import type { Integration } from '../types/integration';
 import { formatDateTime } from '../utils/formatDate';
+import { isBackendConfigured } from '../services/apiClient';
 
 const icons: Record<string, LucideIcon> = { activepieces: Workflow, wazuh: Shield, sysmon: Radar, clamav: Bug, yara: ScanSearch, suricata: Network, zeek: Network };
 
@@ -22,12 +23,16 @@ export default function Integrations() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
 
-  const configure = (i: Integration) => { setEditing(i); setValues(saved[i.id]?.values ?? {}); };
-  const save = () => {
+  const configure = (i: Integration) => { setEditing(i); setValues(i.savedConfig ?? saved[i.id]?.values ?? {}); };
+  const save = async () => {
     if (!editing) return;
-    saveIntegrationConfig(editing, values);
-    toast(`${editing.name}: configuration saved locally. It is NOT verified until a health check succeeds.`, 'info');
-    setEditing(null);
+    try {
+      await saveIntegrationConfig(editing, values);
+      toast(`${editing.name}: configuration saved securely. Connection is NOT verified.`, 'info');
+      setEditing(null);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Configuration could not be saved.', 'warn');
+    }
   };
   const test = async (i: Integration) => {
     setTesting(i.id);
@@ -68,7 +73,7 @@ export default function Integrations() {
                 </dl>
                 <div className="mt-3 flex gap-2">
                   <button className="btn flex-1" onClick={() => configure(i)}><Settings2 className="h-3.5 w-3.5" /> Configure</button>
-                  <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button>
+                  {!isBackendConfigured ? <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Adapter test pending</div>}
                 </div>
               </Panel>
             );
@@ -81,18 +86,12 @@ export default function Integrations() {
           <div className="space-y-3">
             {editing.fields.map((f) => (
               <Field key={f.key} label={f.label} htmlFor={`f-${f.key}`}>
-                {f.secret ? (
-                  <div className="flex items-start gap-2 rounded-lg border border-dashed border-sx-line bg-sx-bg p-2.5 text-[11px] text-sx-mute">
-                    <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sx-warn" />
-                    <span><strong className="text-sx-ink">Secret — not accepted in the browser.</strong> Set this value in the backend / secrets store (see <span className="mono">.env.example</span> and docs). It is never saved or logged here.</span>
-                  </div>
-                ) : (
-                  <input id={`f-${f.key}`} className="input mono" value={values[f.key] ?? ''} placeholder={f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} autoComplete="off" />
-                )}
+                <input id={`f-${f.key}`} type={f.secret ? 'password' : 'text'} className="input mono" value={values[f.key] ?? ''} placeholder={f.secret ? 'Enter secret (stored encrypted on backend)' : f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} autoComplete="off" />
+                {f.secret && <p className="mt-1 text-[10px] text-sx-mute">Sent only over HTTPS to SentinelX and encrypted before storage. Secret values are never returned to the browser.</p>}
                 {f.help && <p className="mt-1 text-[10px] text-sx-mute">{f.help}</p>}
               </Field>
             ))}
-            <p className="text-[11px] text-sx-mute">Saving stores non-secret values in this browser only and marks the integration “saved · not verified”.</p>
+            <p className="text-[11px] text-sx-mute">{isBackendConfigured ? 'Saving sends configuration to the authenticated backend, where it is encrypted at rest. It does not connect to or test the tool.' : 'Demo mode stores only non-secret values in this browser. Configure secrets only after the backend is connected.'}</p>
             <div className="flex justify-end gap-2"><button className="btn" onClick={() => setEditing(null)}>Cancel</button><button className="btn btn-primary" onClick={save}>Save configuration</button></div>
           </div>
         )}
