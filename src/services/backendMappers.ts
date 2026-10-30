@@ -78,7 +78,7 @@ export function mapAsset(row: Row): Asset {
   const critText = str(c.Criticality, 'medium').toLowerCase();
   const criticality: Criticality = critText === 'critical' || critText === 'high' || critText === 'low' ? critText : 'medium';
   const host = str(c['Hostname / Domain / IP'], '—');
-  return { id: str(c['Asset ID'], str(row.id, 'asset-unknown')), name: str(c['Asset Name'], host), host, ip: '—', os: str(c['Operating System'], '—'), type, criticality, monitoring, method: str(c['Telemetry Source'], 'None'), lastEvent: undefined };
+  return { id: str(c['Asset ID'], str(row.id, 'asset-unknown')), name: str(c['Asset Name'], host), host, ip: '—', os: str(c['Operating System'], '—'), type, criticality, monitoring, method: str(c['Telemetry Source'], 'None'), lastVerified: c['Last Verified'] ? date(c['Last Verified']) : undefined };
 }
 
 export function mapRule(row: Row): DetectionRule {
