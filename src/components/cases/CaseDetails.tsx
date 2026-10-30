@@ -17,7 +17,8 @@ export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: Secur
   const { toast, analyst, openAlert } = useApp();
   const navigate = useNavigate();
   const [note, setNote] = useState('');
-  const linked = c.alertIds.map((id) => alerts.find((a) => a.id === id)).filter(Boolean) as Alert[];
+  const linked = c.alertIds.map((id) => alerts.find((a) => a.id === id || a.eventId === id || a.evidence.includes(id))).filter(Boolean) as Alert[];
+  const primaryAlertId = linked[0]?.id ?? c.alertIds.find((id) => alerts.some((a) => a.id === id));
 
   const submit = () => {
     if (!note.trim()) return;
@@ -54,7 +55,7 @@ export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: Secur
         </div>}
         {readOnly && <p className="mt-3 text-[11px] text-sx-mute">Read-only backend record. Case updates and assignment controls will be enabled when the write API is ready.</p>}
         <div className="mt-4 flex gap-2">
-          <button className="btn btn-primary" onClick={() => navigate(`/investigation?alert=${c.alertIds[0] ?? ''}`)} disabled={c.alertIds.length === 0}><Microscope className="h-3.5 w-3.5" /> Open in Investigation</button>
+          <button className="btn btn-primary" onClick={() => primaryAlertId && navigate(`/investigation?alert=${encodeURIComponent(primaryAlertId)}`)} disabled={!primaryAlertId}><Microscope className="h-3.5 w-3.5" /> Open in Investigation</button>
         </div>
       </Panel>
 
