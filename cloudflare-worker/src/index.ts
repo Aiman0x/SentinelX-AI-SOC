@@ -94,7 +94,7 @@ async function readBodyLimited(request: Request, maxBytes: number): Promise<{ ra
 }
 
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
-  if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
+  if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) return reply({ error: "Origin not allowed" }, 403, cors);
   const actor = await currentUser(request, env);
   if (!actor) return reply({ error: "Authentication required" }, 401, cors);
   if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
@@ -152,8 +152,12 @@ const reply = (body: unknown, status: number, cors: HeadersInit = {}, extra: Hea
     },
   });
 
+function isAllowedOrigin(origin: string, env: Env): boolean {
+  return Boolean(origin) && env.ALLOWED_ORIGIN.split(",").map((value) => value.trim()).includes(origin);
+}
+
 function corsHeaders(origin: string, env: Env): HeadersInit {
-  if (!origin || origin !== env.ALLOWED_ORIGIN) return {};
+  if (!isAllowedOrigin(origin, env)) return {};
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
@@ -227,7 +231,7 @@ async function verifySession(request: Request, env: Env): Promise<boolean> {
 }
 
 async function handleLogin(request: Request, env: Env, cors: HeadersInit): Promise<Response> {
-  if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) {
+  if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) {
     return reply({ error: "Origin not allowed" }, 403, cors);
   }
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -269,11 +273,11 @@ export default {
     const cors = corsHeaders(origin, env);
 
     if (request.method === "OPTIONS") {
-      return origin === env.ALLOWED_ORIGIN
+      return isAllowedOrigin(origin, env)
         ? new Response(null, { status: 204, headers: cors })
         : reply({ error: "Origin not allowed" }, 403);
     }
-    if (origin && origin !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403);
+    if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
 
     const authResponse = await handleAuthRoute(request, env, url.pathname);
     if (authResponse) return new Response(authResponse.body, { status: authResponse.status, headers: { ...Object.fromEntries(authResponse.headers), ...cors } });
@@ -282,7 +286,7 @@ export default {
       return handleLogin(request, env, cors);
     }
     if (url.pathname === "/api/auth/logout" && request.method === "POST") {
-      if (origin !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
+      if (!isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403, cors);
       return reply({ authenticated: false }, 200, cors, { "Set-Cookie": cookieHeader("", 0) });
     }
     if (url.pathname === "/api/auth/me" && request.method === "GET") {
