@@ -14,6 +14,7 @@ import Overview from './pages/Overview';
 import Playbooks from './pages/Playbooks';
 import Settings from './pages/Settings';
 import Users from './pages/Users';
+import WindowsTelemetry from './pages/WindowsTelemetry';
 import { API_BASE_URL, apiGet, isDemoMode } from './services/apiClient';
 
 function LoginScreen() {
@@ -146,6 +147,7 @@ function AuthenticatedApp() {
         <Route element={<AppLayout />}>
           <Route index element={<Overview />} />
           <Route path="alerts" element={<Alerts />} />
+          <Route path="telemetry" element={<WindowsTelemetry />} />
           <Route path="cases" element={<Cases />} />
           <Route path="investigation" element={<Investigation />} />
           <Route path="assets" element={<Assets />} />
@@ -167,6 +169,7 @@ function AuthenticatedApp() {
       <Route element={<AppLayout />}>
         <Route index element={<Overview />} />
         <Route path="alerts" element={<Alerts />} />
+        <Route path="telemetry" element={<WindowsTelemetry />} />
         <Route path="cases" element={<Cases />} />
         <Route path="investigation" element={<Investigation />} />
         <Route path="assets" element={<Assets />} />

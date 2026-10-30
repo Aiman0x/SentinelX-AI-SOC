@@ -28,7 +28,7 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-          {navItems.filter(({ to }) => to !== '/users' || !isDemoMode).map(({ to, label, icon: Icon, end }) => (
+          {navItems.filter(({ to }) => (to !== '/users' || !isDemoMode) && (to !== '/telemetry' || !isDemoMode)).map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
