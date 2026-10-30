@@ -18,14 +18,14 @@ import { API_BASE_URL, apiGet, isDemoMode } from './services/apiClient';
 
 function LoginScreen() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('aiman132046@gmail.com');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [bootstrapAvailable, setBootstrapAvailable] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
   const [setupSecret, setSetupSecret] = useState('');
-  const [setupName, setSetupName] = useState('');
+  const [setupName, setSetupName] = useState('Aiman Salman');
   const [setupPassword, setSetupPassword] = useState('');
   const [setupConfirm, setSetupConfirm] = useState('');
   const [setupBusy, setSetupBusy] = useState(false);
