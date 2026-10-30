@@ -14,6 +14,10 @@ const b64 = (b:Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g,"-")
 const unb64 = (s:string) => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
 const id = () => crypto.randomUUID();
 async function sha(value:string) { return b64(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(value)))); }
+async function rateLimitKey(scope:string, ip:string) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(scope + ":" + ip)));
+  return Array.from(digest.slice(0,16), byte => byte.toString(16).padStart(2,"0")).join("");
+}
 async function passwordHash(password:string) {
   const salt=crypto.getRandomValues(new Uint8Array(16)), iterations=310000;
   const key=await crypto.subtle.importKey("raw",enc.encode(password),"PBKDF2",false,["deriveBits"]);
@@ -60,7 +64,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
   if(path==="/api/auth/bootstrap" && req.method==="POST") {
     if(req.headers.get("Origin") && !originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
     const ip=req.headers.get("CF-Connecting-IP")||"unknown";
-    if(!(await env.LOGIN_RATE_LIMITER.limit({key:"bootstrap:"+ip})).success) return response({error:"Too many setup attempts"},429);
+    if(!(await env.LOGIN_RATE_LIMITER.limit({key:await rateLimitKey("bootstrap",ip)})).success) return response({error:"Too many setup attempts"},429);
     if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
     if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
     const length=Number(req.headers.get("Content-Length"));
@@ -83,7 +87,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
   if(path==="/api/auth/login" && req.method==="POST") {
     if(!originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
     const ip=req.headers.get("CF-Connecting-IP")||"unknown";
-    if(!(await env.LOGIN_RATE_LIMITER.limit({key:"login:"+ip})).success) return response({error:"Too many login attempts. Try again in one minute."},429);
+    if(!(await env.LOGIN_RATE_LIMITER.limit({key:await rateLimitKey("login",ip)})).success) return response({error:"Too many login attempts. Try again in one minute."},429);
     if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
     const length=Number(req.headers.get("Content-Length"));
     if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
