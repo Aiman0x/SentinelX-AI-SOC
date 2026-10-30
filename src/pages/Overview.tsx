@@ -2,10 +2,11 @@ import { BellRing, FolderKanban, Monitor, Plug } from 'lucide-react';
 import { useAlerts } from '../hooks/useAlerts';
 import { useCases } from '../hooks/useCases';
 import { useLocalStore } from '../hooks/useLocalStore';
-import { assetsStore } from '../services/miscService';
+import { assetsStore, loadAssets } from '../services/miscService';
 import { getIntegrations, loadIntegrations } from '../services/integrationsService';
 import { useData } from '../hooks/useData';
-import { isDemoMode } from '../services/apiClient';
+import { isDemoMode, isBackendConfigured } from '../services/apiClient';
+import { useData } from '../hooks/useData';
 import { IntegrationHealth } from '../components/dashboard/IntegrationHealth';
 import { RecentAlerts } from '../components/dashboard/RecentAlerts';
 import { SecurityTrendChart } from '../components/dashboard/SecurityTrendChart';
@@ -16,7 +17,9 @@ import { PageHeader } from '../components/layout/PageHeader';
 export default function Overview() {
   const { alerts } = useAlerts();
   const cases = useCases();
-  const assets = useLocalStore(assetsStore);
+  const localAssets = useLocalStore(assetsStore);
+  const { data: backendAssets } = useData(loadAssets);
+  const assets = isBackendConfigured ? backendAssets ?? [] : localAssets;
   const { data: integrationData } = useData(loadIntegrations);
   const integrations = integrationData ?? getIntegrations();
 
