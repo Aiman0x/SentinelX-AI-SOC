@@ -22,6 +22,7 @@ export function SecurityTrendChart() {
       bodyClass="p-4"
     >
       {loading && !data ? <LoadingState /> : error ? <ErrorState message={error} onRetry={reload} /> : (
+        <>
         <p className="mb-2 text-[10px] text-sx-mute">Illustrative sample trend only. Live event aggregation is not connected yet.</p>
         <div className="h-72" role="img" aria-label={`Stacked area chart of alerts by severity over the last ${range}. Sample data.`}>
           <ResponsiveContainer width="100%" height="100%">
@@ -45,6 +46,7 @@ export function SecurityTrendChart() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        </>
       )}
     </Panel>
   );
