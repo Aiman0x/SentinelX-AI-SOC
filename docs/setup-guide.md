@@ -2,109 +2,66 @@
 
 ## 1. Purpose
 
-This guide documents the initial preparation required to work on SentinelX.
+This guide covers the current GUI/backend foundation. SentinelX is still under development; completing these setup steps does not by itself prove real telemetry or AI functionality.
 
-SentinelX is currently under development. The instructions below describe the development setup and security precautions; they do not imply that a complete standalone application is available.
-
-## 2. Prerequisites
-
-Before contributing to the project, prepare the following:
-
-- A GitHub account and access to the SentinelX repository
-- Access to the SentinelX ActivePieces project
-- A modern web browser
-- A development environment appropriate for the components being implemented
-- Sample security events for authorized testing
-
-Additional software requirements will be documented when specific integrations are implemented and verified.
-
-## 3. ActivePieces Workflow
-
-The initial event-ingestion workflow is maintained in ActivePieces.
-
-Current workflow:
-
-`SX Core v1 - Ingest Windows Failed Login`
-
-The workflow is designed to validate supported Windows failed-login events, check for duplicates, create a case, and return an appropriate HTTP response.
-
-Its current live authentication status must be verified before the workflow is considered operational.
-
-## 4. Development and Testing
-
-Use sample or synthetic security events during initial development.
-
-Before testing a workflow:
-
-1. Review its current configuration.
-2. Verify that required fields and validation rules are correct.
-3. Confirm that authentication is configured appropriately.
-4. Check whether publishing will expose an endpoint to the internet.
-5. Obtain the necessary authorization before publishing or sending live requests.
-6. Verify actual responses and resulting records.
-7. Disable temporary test endpoints when testing is complete, if they are no longer needed.
-
-Record actual test results instead of assuming that a successful configuration check proves runtime behavior.
-
-## 5. Credential Management
-
-Never store authentication secrets directly in source files or documentation.
-
-Do not commit:
-
-- API keys
-- Webhook authentication secrets
-- Passwords
-- Private tokens
-- `.env` files containing real credentials
-- Sensitive customer logs or investigation data
-
-Use an appropriate secure credential store for secrets. Share only sanitized configuration examples.
-
-## 6. GitHub Contribution Workflow
-
-When making changes:
-
-1. Review the existing files before editing.
-2. Create a separate branch for substantial changes.
-3. Make a small, focused change.
-4. Review the changes for credentials and sensitive data.
-5. Commit the change with a descriptive message.
-6. Test the change before merging it into the main branch.
-
-Do not upload backups, database exports, or unrelated local files.
-
-## 7. Troubleshooting
-
-### Workflow validation fails
-Review the indicated step and its required fields before changing the workflow.
-
-### Authentication fails
-Verify the configured header name and the securely stored credential. Never paste the secret into a public issue or GitHub commit.
-
-### Duplicate event is rejected
-Check whether the event identifier was already processed.
-
-### A case is not created
-Review the workflow run and its routing conditions, then verify whether the case record exists.
-
-### An integration is unavailable
-Check its configuration, permissions, service status, and documented requirements.
-
-## 8. Current Limitations
-
-SentinelX is in development. The final GUI, standalone packaging, complete integrations, and investigation-assistance capabilities are not yet documented as fully operational.
-
-Setup instructions will be expanded as the implementation becomes available and is verified.
-## Running the GUI Prototype
+## 2. GUI development
 
 Requirements: Node.js 18+ and npm.
 
 ```bash
 npm install
-npm run dev       # development server on http://localhost:5173
-npm run build     # type-check and create a production build in dist/
-npm run preview   # preview the production build
+npm run dev
+npm run build
+npm run preview
 ```
 
-The GUI starts in **DEMO MODE** with sample data. Copy `.env.example` to `.env.local` only when a backend exists. Never commit `.env` files or secrets.
+Without `VITE_API_BASE_URL`, the GUI runs in clearly labelled demo mode.
+
+## 3. ActivePieces
+
+ActivePieces is the primary workflow engine. The eight GUI read workflows use authenticated Catch Webhook triggers and Return Response steps. The Cloudflare Worker must call the published webhook URL with `/sync` appended so it receives the Return Response payload.
+
+Copy the actual published webhook URLs from ActivePieces; do not guess or construct them. Treat these URLs as secrets.
+
+The eight GUI read workflows and selected core telemetry/detection flows have passed structural validation. Do not treat this as a real-event test.
+
+## 4. Cloudflare Worker foundation
+
+Worker source and configuration are in `cloudflare-worker/`.
+
+The foundation uses:
+- analyst password verification and signed HttpOnly session cookies;
+- login rate limiting;
+- CORS restricted to the SentinelX GitHub Pages origin;
+- server-side ActivePieces webhook secrets;
+- a dedicated Workers KV namespace for AES-256-GCM encrypted integration configuration.
+
+Before deployment, the bridge key must be rotated across all eight ActivePieces read workflows. It is separate from the Windows telemetry intake key.
+
+Run `cloudflare-worker/scripts/generate-auth-secrets.ps1` locally to generate the analyst password hash, session signing secret, and configuration encryption key. Add each output directly to the matching Cloudflare Worker Secret. Never paste these values into chat, GitHub source, or the frontend.
+
+Configure the eight actual ActivePieces webhook URLs as Worker Secrets and append `/sync` to each published URL. Set `ALLOWED_ORIGIN` to `https://aiman0x.github.io`.
+
+The Worker is not deployed yet. Do not set `VITE_API_BASE_URL` until the Worker has been deployed and its login/session behavior is verified.
+
+## 5. Integration configuration
+
+The GUI can submit allowlisted tool configuration to the authenticated Worker endpoint. The Worker encrypts values before saving them to the dedicated KV namespace. Secret values are not returned to the browser.
+
+A saved configuration is not a connected integration. Tool-specific ActivePieces adapters and health-check workflows must be completed before connection status can be verified.
+
+## 6. Security and testing
+
+- Never store passwords, API keys, bridge credentials, webhook URLs, or encryption keys in source control.
+- Do not reuse the telemetry ingestion key as the GUI bridge key.
+- Use only authorized telemetry sources and systems.
+- Keep case/rule/asset writes and disruptive response actions disabled until their server-side APIs and approval/audit controls are ready.
+- Real Windows-event, remote telemetry, and AI-model tests are deferred until the GUI/backend foundation is configured.
+
+## 7. Current limitations
+
+- The Worker is not deployed.
+- The GUI is not connected to the deployed Worker.
+- Case, asset, and detection-rule write APIs are not available.
+- Wazuh, Sysmon, Suricata, Zeek, ClamAV, and YARA connection adapters are pending.
+- AI investigation and real-event end-to-end validation are pending.
