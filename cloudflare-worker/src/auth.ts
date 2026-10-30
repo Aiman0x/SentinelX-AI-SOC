@@ -79,7 +79,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
       try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
       const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", org=body.organization?.trim()||"SentinelX";
       stage = "validate_input";
-      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256) return response({error:"Valid email, name and password (14+ characters) are required"},400);
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256) return response({error:"Valid email, name and password (14+ characters) are required"},400);
       stage = "check_existing_users";
       const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{n:number}>();
       if((count?.n||0)>0) return response({error:"Bootstrap is already closed"},409);
