@@ -17,6 +17,7 @@ import { isDemoMode } from './services/apiClient';
 
 function LoginScreen() {
   const { login } = useAuth();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,7 @@ function LoginScreen() {
     setError('');
     setBusy(true);
     try {
-      await login(password);
+      await login(email, password);
       setPassword('');
     } catch {
       setError('Login failed. Check your password or try again later.');
@@ -49,7 +50,9 @@ function LoginScreen() {
           <p className="text-sm font-semibold">Analyst authentication</p>
           <p className="mt-1 text-xs text-sx-mute">Sign in to access the SentinelX security console.</p>
         </div>
-        <label htmlFor="analyst-password" className="label">Analyst password</label>
+        <label htmlFor="analyst-email" className="label">Work email</label>
+        <input id="analyst-email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className="input mb-4 py-2.5" placeholder="analyst@company.com" />
+        <label htmlFor="analyst-password" className="label">Password</label>
         <input
           id="analyst-password"
           type="password"
@@ -62,7 +65,7 @@ function LoginScreen() {
           placeholder="Enter your analyst password"
         />
         {error && <p role="alert" className="mt-3 text-xs text-sx-red">{error}</p>}
-        <button type="submit" disabled={busy || !password} className="btn btn-primary mt-5 w-full py-2.5">
+        <button type="submit" disabled={busy || !email || !password} className="btn btn-primary mt-5 w-full py-2.5">
           {busy ? 'Authenticating…' : 'Secure sign in'}
         </button>
         <p className="mt-4 text-center text-[10px] text-sx-mute">Session expires automatically after four hours.</p>
