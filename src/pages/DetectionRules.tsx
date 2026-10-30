@@ -62,6 +62,7 @@ export default function DetectionRules() {
       <PageHeader title="Detection Rules" subtitle="Manage detection logic and validation status."
         actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button> : undefined} />
 
+      {isBackendConfigured && (remoteRules.loading ? <div className="mb-3 text-xs text-sx-mute">Loading detection rules from SentinelX backend…</div> : remoteRules.error ? <div className="mb-3 text-xs text-sx-red">Backend rules unavailable: {remoteRules.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only rules from the SentinelX backend. Rule editing and deployment are disabled until write APIs are complete.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-72" value={q} onChange={setQ} placeholder="Search name, ID, category, MITRE" label="Search rules" />
