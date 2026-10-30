@@ -2,6 +2,7 @@ import { Bell, ChevronRight, Menu, RefreshCw, RotateCcw, User } from 'lucide-rea
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useAlerts } from '../../hooks/useAlerts';
 import { isDemoMode } from '../../services/apiClient';
 import { resetAllDemoData } from '../../services/miscService';
@@ -20,6 +21,7 @@ function useClickAway(ref: React.RefObject<HTMLElement>, cb: () => void) {
 
 export function Topbar() {
   const { setMobileNavOpen, refresh, toast, openAlert, analyst } = useApp();
+  const { logout } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
@@ -115,6 +117,7 @@ export function Topbar() {
               </div>
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-sx-elev" onClick={() => { setMenu('none'); navigate('/settings'); }}><User className="h-3.5 w-3.5" /> Profile & settings</button>
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs text-sx-warn hover:bg-sx-elev" onClick={() => { setMenu('none'); resetAllDemoData(); }}><RotateCcw className="h-3.5 w-3.5" /> Reset demo data</button>
+              {!isDemoMode && <button className="flex w-full items-center gap-2 px-3 py-2 text-xs text-sx-warn hover:bg-sx-elev" onClick={() => { setMenu('none'); void logout(); }}><RotateCcw className="h-3.5 w-3.5" /> Sign out</button>}
             </div>
           )}
         </div>
