@@ -48,16 +48,16 @@ function hexToBytes(value: string): Uint8Array {
 async function configCryptoKey(secret: string, usage: KeyUsage[]): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", hexToBytes(secret), { name: "AES-GCM" }, false, usage);
 }
-async function encryptConfig(value: unknown, secret: string): Promise<string> {
+async function encryptConfig(value: unknown, secret: string, integrationId: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await configCryptoKey(secret, ["encrypt"]);
-  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(value)));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(integrationId) }, key, new TextEncoder().encode(JSON.stringify(value)));
   return JSON.stringify({ iv: bytesToBase64Url(iv), data: bytesToBase64Url(new Uint8Array(cipher)) });
 }
-async function decryptConfig(value: string, secret: string): Promise<Record<string, string>> {
+async function decryptConfig(value: string, secret: string, integrationId: string): Promise<Record<string, string>> {
   const envelope = JSON.parse(value) as { iv: string; data: string };
   const key = await configCryptoKey(secret, ["decrypt"]);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64UrlToBytes(envelope.iv) }, key, base64UrlToBytes(envelope.data));
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64UrlToBytes(envelope.iv), additionalData: new TextEncoder().encode(integrationId) }, key, base64UrlToBytes(envelope.data));
   return JSON.parse(new TextDecoder().decode(plain)) as Record<string, string>;
 }
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
@@ -83,9 +83,9 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
   if (!Object.keys(safe).length) return reply({ error: "Enter at least one configuration value" }, 400, cors);
   try {
     const existingRaw = await env.INTEGRATION_CONFIGS.get(integrationId);
-    const existing = existingRaw ? await decryptConfig(existingRaw, env.CONFIG_ENCRYPTION_KEY) : {};
+    const existing = existingRaw ? await decryptConfig(existingRaw, env.CONFIG_ENCRYPTION_KEY, integrationId) : {};
     const merged = { ...existing, ...safe };
-    await env.INTEGRATION_CONFIGS.put(integrationId, await encryptConfig(merged, env.CONFIG_ENCRYPTION_KEY));
+    await env.INTEGRATION_CONFIGS.put(integrationId, await encryptConfig(merged, env.CONFIG_ENCRYPTION_KEY, integrationId));
     return reply({ saved: true, integrationId, configuredKeys: Object.keys(merged), savedAt: new Date().toISOString(), secretValuesHidden: true }, 200, cors);
   } catch {
     return reply({ error: "Could not securely save integration configuration" }, 500, cors);
@@ -97,7 +97,7 @@ async function integrationConfigSummary(env: Env): Promise<Record<string, { conf
     try {
       const encrypted = await env.INTEGRATION_CONFIGS.get(id);
       if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
-      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY);
+      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, id);
       const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !["webhookSecret", "apiPassword"].includes(key)));
       result[id] = { configured: true, values: publicValues, keys: Object.keys(values) };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
