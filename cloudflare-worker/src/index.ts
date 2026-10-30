@@ -3,7 +3,7 @@ export interface Env {
   LOGIN_PASSWORD_HASH: string;
   SESSION_HMAC_SECRET: string;
   AP_BRIDGE_KEY: string;
-  LOGIN_RATE_LIMITER: RateLimit;
+  LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
   AP_READ_INCIDENT_RECORDS_URL: string;
   AP_READ_INVESTIGATIONS_URL: string;
