@@ -7,13 +7,14 @@ import { PageHeader } from '../components/layout/PageHeader';
 import { useAlerts } from '../hooks/useAlerts';
 import { severityRank } from '../utils/severity';
 import { useData } from '../hooks/useData';
-import { loadInvestigations } from '../services/miscService';
+import { loadEvidence, loadInvestigations } from '../services/miscService';
 import { isBackendConfigured } from '../services/apiClient';
 import { formatDateTime } from '../utils/formatDate';
 
 export default function Investigation() {
   const { alerts, loading, error, reload } = useAlerts();
   const backendInvestigations = useData(loadInvestigations);
+  const backendEvidence = useData(loadEvidence);
   const [params, setParams] = useSearchParams();
   const wanted = params.get('alert');
 
@@ -63,6 +64,21 @@ export default function Investigation() {
               ))}
             </div>
           )}
+          <section className="mt-6 space-y-3">
+            <div><h2 className="text-sm font-semibold">Evidence references</h2><p className="text-[11px] text-sx-mute">Records returned by the Activepieces evidence workflow; excerpts are displayed as stored and are not independently validated here.</p></div>
+            {backendEvidence.loading ? <div className="panel"><LoadingState label="Loading evidence references…" /></div> : backendEvidence.error ? <div className="panel"><ErrorState message={backendEvidence.error} onRetry={backendEvidence.reload} /></div> : (backendEvidence.data ?? []).length === 0 ? <div className="panel"><EmptyState title="No evidence references" description="No evidence records are currently available." /></div> : (
+              <div className="space-y-2">
+                {(backendEvidence.data ?? []).map((evidence) => (
+                  <article key={evidence.id} className="panel p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="mono text-[10px] text-sx-gold">{evidence.id}</div><div className="mt-1 text-xs font-medium">{evidence.toolName} · {evidence.stepName}</div><div className="text-[10px] text-sx-mute">Case {evidence.caseId} · {evidence.sourceIntegration}</div></div><div className="flex flex-wrap gap-1.5"><span className="rounded border border-sx-line px-2 py-1 text-[10px]">{evidence.executionStatus}</span><span className="rounded border border-sx-line px-2 py-1 text-[10px]">{evidence.dataOrigin}</span></div></div>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-xs text-sx-mute">{evidence.excerpt.slice(0, 600)}{evidence.excerpt.length > 600 ? '…' : ''}</p>
+                    <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-sx-mute"><span>{evidence.classification} · relevance {evidence.relevance}</span><span>{formatDateTime(evidence.collectedAt)}</span></div>
+                    <p className="mono mt-1 break-all text-[9px] text-sx-mute">SHA-256: {evidence.evidenceHash}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       ) : loading ? <div className="panel"><LoadingState label="Loading investigation data…" /></div> : error ? <div className="panel"><ErrorState message={error} onRetry={reload} /></div> : !primary ? (
         <div className="panel"><EmptyState title="Nothing to investigate" description="No alerts are available. Connect a data source or use demo mode." /></div>
