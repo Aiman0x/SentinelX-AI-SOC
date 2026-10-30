@@ -18,11 +18,15 @@ async function rateLimitKey(scope:string, ip:string) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(scope + ":" + ip)));
   return Array.from(digest.slice(0,16), byte => byte.toString(16).padStart(2,"0")).join("");
 }
-async function passwordHash(password:string) {
+async function passwordHash(password:string, onStage?:(stage:string)=>void) {
+  onStage?.("hash_password_random");
   const salt=crypto.getRandomValues(new Uint8Array(16)), iterations=310000;
+  onStage?.("hash_password_import_key");
   const key=await crypto.subtle.importKey("raw",enc.encode(password),"PBKDF2",false,["deriveBits"]);
+  onStage?.("hash_password_derive_bits");
   const bits=new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt,iterations},key,256));
-  return `pbkdf2-sha256$${iterations}$${b64(salt)}$${b64(bits)}`;
+  onStage?.("hash_password_encode");
+  return `pbkdf2-sha256${iterations}${b64(salt)}${b64(bits)}`;
 }
 async function passwordVerify(password:string, encoded:string) {
   try {
@@ -85,7 +89,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
       if((count?.n||0)>0) return response({error:"Bootstrap is already closed"},409);
       const userId=id(), orgId=id(), slug="sentinelx-"+crypto.randomUUID().slice(0,8);
       stage = "hash_password";
-      const hashedPassword=await passwordHash(password);
+      const hashedPassword=await passwordHash(password,(nextStage)=>{stage=nextStage;});
       stage = "insert_initial_records";
       await env.DB.batch([
         env.DB.prepare("INSERT INTO organizations(id,name,slug) VALUES(?,?,?)").bind(orgId,org,slug),
