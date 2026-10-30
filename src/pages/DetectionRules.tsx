@@ -96,7 +96,7 @@ export default function DetectionRules() {
       </Panel>
 
       <Drawer open={!!sel} onClose={() => setSel(null)} title={sel?.name} subtitle={<span className="mono">{sel?.id} · {sel?.category}</span>}
-        footer={<><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
+        footer={isBackendConfigured ? <span className="text-[11px] text-sx-mute">Backend rule record · write and deployment APIs pending.</span> : <><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
         {sel && (
           <div className="space-y-4 text-xs">
             <div className="flex flex-wrap gap-2"><SeverityBadge severity={sel.severity} /><StatusBadge value={sel.status} /><StatusBadge value={sel.maturity} /></div>
