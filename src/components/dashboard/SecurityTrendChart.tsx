@@ -7,7 +7,6 @@ import { SEVERITIES, cap, severityHex } from '../../utils/severity';
 import { Segmented, Panel } from '../common/Controls';
 import { ErrorState, LoadingState } from '../common/EmptyState';
 import { DemoTag } from '../common/StatusBadge';
-import { isDemoMode } from '../../services/apiClient';
 
 export function SecurityTrendChart() {
   const [range, setRange] = useState<TrendRange>('24h');
@@ -15,7 +14,7 @@ export function SecurityTrendChart() {
 
   return (
     <Panel
-      title={<span className="flex items-center gap-2">Security Events Over Time {isDemoMode && <DemoTag />}</span>}
+      title={<span className="flex items-center gap-2">Security Events Over Time <DemoTag /></span>}
       right={
         <Segmented<TrendRange> label="Time range" value={range} onChange={setRange}
           options={[{ value: '24h', label: '24 hours' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }]} />
@@ -23,6 +22,7 @@ export function SecurityTrendChart() {
       bodyClass="p-4"
     >
       {loading && !data ? <LoadingState /> : error ? <ErrorState message={error} onRetry={reload} /> : (
+        <p className="mb-2 text-[10px] text-sx-mute">Illustrative sample trend only. Live event aggregation is not connected yet.</p>
         <div className="h-72" role="img" aria-label={`Stacked area chart of alerts by severity over the last ${range}. Sample data.`}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data ?? []} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
