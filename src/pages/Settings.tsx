@@ -1,10 +1,10 @@
 import { Bell, Database, Info, Lock, Palette, Plug, SlidersHorizontal, User, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Field, Panel, Select } from '../components/common/Controls';
 import { PageHeader } from '../components/layout/PageHeader';
 import { APP_VERSION } from '../components/layout/Sidebar';
 import { useApp } from '../context/AppContext';
-import { API_BASE_URL, ENVIRONMENT_LABEL, isBackendConfigured } from '../services/apiClient';
+import { API_BASE_URL, ENVIRONMENT_LABEL, isBackendConfigured, apiPost } from '../services/apiClient';
 import { resetAllDemoData } from '../services/miscService';
 import { createLocalStore } from '../services/localStore';
 import { useLocalStore } from '../hooks/useLocalStore';
@@ -39,7 +39,24 @@ export default function Settings() {
   const prefs = useLocalStore(prefsStore);
   const { toast, analyst } = useApp();
   const [active, setActive] = useState('app');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const set = (p: Partial<Prefs>) => prefsStore.set({ ...prefs, ...p });
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault(); setPasswordError(''); setPasswordMessage('');
+    if (newPassword !== confirmPassword) { setPasswordError('New passwords do not match.'); return; }
+    setPasswordBusy(true);
+    try {
+      await apiPost('/api/auth/password', { currentPassword, newPassword });
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setPasswordMessage('Password changed. Other active sessions have been signed out.');
+    } catch (error) { setPasswordError(error instanceof Error ? error.message : 'Could not change password.'); }
+    finally { setPasswordBusy(false); }
+  };
   const sec = sections.find((s) => s.id === active)!;
 
   return (
@@ -99,12 +116,25 @@ export default function Settings() {
             </div>
           )}
           {active === 'security' && (
-            <ul className="list-disc space-y-2 py-4 pl-4 text-xs marker:text-sx-gold">
-              <li>No authentication is implemented in this frontend prototype.</li>
-              <li>Production needs server-side login (SSO/MFA), role-based access and HttpOnly session cookies.</li>
-              <li>Secrets belong in a backend secrets store — never in <span className="mono">VITE_*</span> variables or local storage.</li>
-              <li>Disruptive response actions need explicit, logged approval.</li>
-            </ul>
+            <div className="space-y-4 py-4">
+              {isBackendConfigured ? (
+                <form onSubmit={changePassword} className="max-w-md space-y-3">
+                  <p className="text-xs text-sx-mute">Change your account password. Other active sessions will be revoked after the update.</p>
+                  <Field label="Current password"><input className="input" type="password" autoComplete="current-password" required value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} /></Field>
+                  <Field label="New password"><input className="input" type="password" autoComplete="new-password" minLength={14} maxLength={256} required value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></Field>
+                  <Field label="Confirm new password"><input className="input" type="password" autoComplete="new-password" minLength={14} maxLength={256} required value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></Field>
+                  {passwordError && <p role="alert" className="text-xs text-sx-red">{passwordError}</p>}
+                  {passwordMessage && <p role="status" className="text-xs text-sx-gold">{passwordMessage}</p>}
+                  <button className="btn btn-primary" type="submit" disabled={passwordBusy || newPassword.length<14 || !currentPassword || !confirmPassword}>{passwordBusy?'Updating…':'Update password'}</button>
+                </form>
+              ) : <p className="text-xs text-sx-mute">Password management is available after the secure backend is connected.</p>}
+              <ul className="list-disc space-y-2 border-t border-sx-line pt-4 pl-4 text-xs marker:text-sx-gold">
+                <li>Passwords are hashed on the server with PBKDF2-SHA256; raw passwords are never stored.</li>
+                <li>Sessions use Secure, HttpOnly cookies and expire after four hours.</li>
+                <li>Secrets belong in backend secrets — never in <span className="mono">VITE_*</span> variables or local storage.</li>
+                <li>Disruptive response actions need explicit, logged approval.</li>
+              </ul>
+            </div>
           )}
           {active === 'about' && (
             <dl className="space-y-2 py-4 text-xs">
