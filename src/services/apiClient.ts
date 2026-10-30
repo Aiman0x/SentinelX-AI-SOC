@@ -34,7 +34,15 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
     headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`API request failed (${res.status})`);
+  if (!res.ok) {
+    let message = `API request failed (${res.status})`;
+    try {
+      const payload = await res.json() as { error?: unknown; message?: unknown };
+      if (typeof payload.error === 'string') message = payload.error;
+      else if (typeof payload.message === 'string') message = payload.message;
+    } catch { /* keep generic HTTP error */ }
+    throw new Error(message);
+  }
   return (await res.json()) as T;
 }
 
