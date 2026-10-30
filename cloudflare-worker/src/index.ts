@@ -32,7 +32,6 @@ const ROUTES: Record<string, keyof Env> = {
   "/api/audit": "AP_READ_AUDIT_LOGS_URL",
   "/api/assets": "AP_READ_ASSETS_URL",
   "/api/rules": "AP_READ_DETECTION_RULES_URL",
-  "/api/integrations": "AP_READ_SECURITY_INTEGRATIONS_URL",
 };
 
 
@@ -319,6 +318,12 @@ export default {
     if (!actor) {
       return reply({ error: "Authentication required" }, 401, cors);
     }
+    if (url.pathname === "/api/integrations") {
+      const actor = await currentUser(request, env);
+      if (!actor) return reply({ error: "Authentication required" }, 401, cors);
+      return reply({ data: [], configs: await integrationConfigSummary(env, actor.organization_id) }, 200, cors);
+    }
+
     const webhookUrl = env[envKey];
     if (typeof webhookUrl !== "string" || !webhookUrl || !env.AP_BRIDGE_KEY) {
       return reply({ error: "Backend route is not configured" }, 503, cors);
