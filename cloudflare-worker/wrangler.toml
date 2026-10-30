@@ -6,7 +6,7 @@ compatibility_date = "2026-10-30"
 enabled = true
 
 [vars]
-ALLOWED_ORIGIN = "https://sentinelx-api-gateway.aiman132046.workers.dev"
+ALLOWED_ORIGIN = "https://sentinelx-api-gateway.aiman132046.workers.dev,https://aiman0x.github.io"
 
 [assets]
 directory = "../dist"
