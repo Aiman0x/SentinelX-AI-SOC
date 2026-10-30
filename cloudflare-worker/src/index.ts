@@ -93,6 +93,10 @@ async function readBodyLimited(request: Request, maxBytes: number): Promise<{ ra
   }
 }
 
+function integrationConfigKey(organizationId: string, integrationId: string): string {
+  return `${organizationId}:${integrationId}`;
+}
+
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) return reply({ error: "Origin not allowed" }, 403, cors);
   const actor = await currentUser(request, env);
@@ -118,22 +122,24 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
   }
   if (!Object.keys(safe).length) return reply({ error: "Enter at least one configuration value" }, 400, cors);
   try {
-    const existingRaw = await env.INTEGRATION_CONFIGS.get(integrationId);
-    const existing = existingRaw ? await decryptConfig(existingRaw, env.CONFIG_ENCRYPTION_KEY, integrationId) : {};
+    const storageKey = integrationConfigKey(actor.organization_id, integrationId);
+    const existingRaw = await env.INTEGRATION_CONFIGS.get(storageKey);
+    const existing = existingRaw ? await decryptConfig(existingRaw, env.CONFIG_ENCRYPTION_KEY, storageKey) : {};
     const merged = { ...existing, ...safe };
-    await env.INTEGRATION_CONFIGS.put(integrationId, await encryptConfig(merged, env.CONFIG_ENCRYPTION_KEY, integrationId));
+    await env.INTEGRATION_CONFIGS.put(storageKey, await encryptConfig(merged, env.CONFIG_ENCRYPTION_KEY, storageKey));
     return reply({ saved: true, integrationId, configuredKeys: Object.keys(merged), savedAt: new Date().toISOString(), secretValuesHidden: true }, 200, cors);
   } catch {
     return reply({ error: "Could not securely save integration configuration" }, 500, cors);
   }
 }
-async function integrationConfigSummary(env: Env): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }>> {
+async function integrationConfigSummary(env: Env, organizationId: string): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }>> {
   const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }> = {};
   for (const id of Object.keys(INTEGRATION_FIELDS)) {
     try {
-      const encrypted = await env.INTEGRATION_CONFIGS.get(id);
+      const storageKey = integrationConfigKey(organizationId, id);
+      const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
       if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
-      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, id);
+      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
       const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !["webhookSecret", "apiPassword"].includes(key)));
       result[id] = { configured: true, values: publicValues, keys: Object.keys(values) };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
@@ -309,7 +315,8 @@ export default {
     const envKey = ROUTES[url.pathname];
     if (!envKey) return reply({ error: "Not found" }, 404, cors);
 
-    if (!(await verifySession(request, env))) {
+    const actor = await currentUser(request, env);
+    if (!actor) {
       return reply({ error: "Authentication required" }, 401, cors);
     }
     const webhookUrl = env[envKey];
@@ -331,7 +338,7 @@ export default {
         payload = (payload as { data: unknown }).data;
       }
       if (url.pathname === "/api/integrations") {
-        return reply({ data: payload, configs: await integrationConfigSummary(env) }, 200, cors);
+        return reply({ data: payload, configs: await integrationConfigSummary(env, actor.organization_id) }, 200, cors);
       }
       return reply(payload, 200, cors);
     } catch {
