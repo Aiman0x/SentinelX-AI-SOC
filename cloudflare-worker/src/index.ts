@@ -60,6 +60,36 @@ async function decryptConfig(value: string, secret: string, integrationId: strin
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64UrlToBytes(envelope.iv), additionalData: new TextEncoder().encode(integrationId) }, key, base64UrlToBytes(envelope.data));
   return JSON.parse(new TextDecoder().decode(plain)) as Record<string, string>;
 }
+
+async function readBodyLimited(request: Request, maxBytes: number): Promise<{ raw: string | null; tooLarge: boolean }> {
+  const contentLength = Number(request.headers.get("Content-Length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) return { raw: null, tooLarge: true };
+  if (!request.body) return { raw: "", tooLarge: false };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { raw: null, tooLarge: true };
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return { raw: new TextDecoder().decode(bytes), tooLarge: false };
+  } catch {
+    return { raw: null, tooLarge: false };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
   if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) return reply({ error: "Authentication required" }, 401, cors);
@@ -67,9 +97,10 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
   if (!allowed) return reply({ error: "Unknown integration" }, 404, cors);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ error: "Secure configuration storage is not configured" }, 503, cors);
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return reply({ error: "JSON required" }, 415, cors);
-  let raw: string;
-  try { raw = await request.text(); } catch { return reply({ error: "Invalid request body" }, 400, cors); }
-  if (new TextEncoder().encode(raw).byteLength > 8192) return reply({ error: "Request too large" }, 413, cors);
+  const bodyRead = await readBodyLimited(request, 8192);
+  if (bodyRead.tooLarge) return reply({ error: "Request too large" }, 413, cors);
+  if (bodyRead.raw === null) return reply({ error: "Invalid request body" }, 400, cors);
+  const raw = bodyRead.raw;
   let body: Record<string, unknown>;
   try { body = JSON.parse(raw) as Record<string, unknown>; } catch { return reply({ error: "Invalid JSON" }, 400, cors); }
   const values = body.values;
@@ -224,9 +255,10 @@ async function handleLogin(request: Request, env: Env, cors: HeadersInit): Promi
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
     return reply({ error: "JSON required" }, 415, cors);
   }
-  let raw: string;
-  try { raw = await request.text(); } catch { return reply({ error: "Invalid request body" }, 400, cors); }
-  if (new TextEncoder().encode(raw).byteLength > 4096) return reply({ error: "Request too large" }, 413, cors);
+  const bodyRead = await readBodyLimited(request, 4096);
+  if (bodyRead.tooLarge) return reply({ error: "Request too large" }, 413, cors);
+  if (bodyRead.raw === null) return reply({ error: "Invalid request body" }, 400, cors);
+  const raw = bodyRead.raw;
   let body: { password?: unknown };
   try { body = JSON.parse(raw) as { password?: unknown }; }
   catch { return reply({ error: "Invalid JSON" }, 400, cors); }
