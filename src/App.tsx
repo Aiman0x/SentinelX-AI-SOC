@@ -54,8 +54,16 @@ function LoginScreen() {
         headers: { 'Content-Type': 'application/json', 'X-SentinelX-Bootstrap': normalizedBootstrapSecret },
         body: JSON.stringify({ email, name: setupName, password: setupPassword, organization: 'SentinelX' }),
       });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Could not initialize administrator.');
+      const contentType = response.headers.get('content-type') || '';
+      const rawResponse = await response.text();
+      let payload: { error?: string } = {};
+      if (contentType.includes('application/json')) {
+        try { payload = JSON.parse(rawResponse) as { error?: string }; }
+        catch { throw new Error(`Backend returned malformed JSON (HTTP ${response.status}).`); }
+      } else {
+        throw new Error(`Backend returned a non-JSON response (HTTP ${response.status}, ${contentType || 'unknown content type'}). The frontend may be using an outdated API route.`);
+      }
+      if (!response.ok) throw new Error(payload.error || `Admin setup failed (HTTP ${response.status}).`);
       setBootstrapAvailable(false); setSetupMode(false); setPassword('');
       setSetupSecret(''); setSetupPassword(''); setSetupConfirm('');
       setSetupNotice('Initial Admin account created. Sign in with your new password.');
