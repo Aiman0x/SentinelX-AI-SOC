@@ -69,7 +69,7 @@ export default function DetectionRules() {
           <Select label="Severity" className="w-36" value={sev} onChange={setSev} options={[{ value: 'all', label: 'All severities' }, ...['critical', 'high', 'medium', 'low'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))]} />
           <Select label="Rule status" className="w-36" value={st} onChange={setSt} options={[{ value: 'all', label: 'All statuses' }, { value: 'enabled', label: 'Enabled' }, { value: 'disabled', label: 'Disabled' }, { value: 'draft', label: 'Draft' }]} />
         </div>
-        {list.length === 0 ? <EmptyState title="No rules match" /> : (
+        {list.length === 0 ? <EmptyState title="No rules match" description={isBackendConfigured ? "No backend detection rules match the current filters." : "Adjust filters or create a new rule."} /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-xs">
               <thead className="border-b border-sx-line bg-sx-bg/40"><tr>
