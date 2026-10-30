@@ -41,6 +41,7 @@ export async function currentUser(req:Request, env:AuthEnv):Promise<User|null> {
   const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active,m.organization_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     JOIN organization_memberships m ON m.user_id=u.id
+    JOIN organizations o ON o.id=m.organization_id AND o.is_active=1
     WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?
     ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END LIMIT 1`)
     .bind(tokenHash,new Date().toISOString()).first<User>();
@@ -56,6 +57,8 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     if(!(await env.LOGIN_RATE_LIMITER.limit({key:"bootstrap:"+ip})).success) return response({error:"Too many setup attempts"},429);
     if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
     if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
+    const length=Number(req.headers.get("Content-Length"));
+    if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
     let body:{email?:string;name?:string;password?:string;organization?:string};
     try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
     const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", org=body.organization?.trim()||"SentinelX";
@@ -93,6 +96,26 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     await env.DB.prepare("UPDATE users SET last_login_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();
     await log(env,row.id,"login_success");
     return response({authenticated:true,user:{id:row.id,email:row.email,name:row.display_name}},200,{"Set-Cookie":cookie(token,TTL)});
+  }
+  if(path==="/api/auth/password" && req.method==="POST") {
+    if(req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
+    if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
+    const length=Number(req.headers.get("Content-Length"));
+    if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
+    let body:{currentPassword?:string;newPassword?:string};
+    try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
+    const current=body.currentPassword||"", next=body.newPassword||"";
+    if(next.length<14||next.length>256) return response({error:"New password must be at least 14 characters"},400);
+    const row=await env.DB.prepare("SELECT password_hash FROM users WHERE id=? AND is_active=1").bind(actor.id).first<{password_hash:string}>();
+    if(!row||!(await passwordVerify(current,row.password_hash))) return response({error:"Current password is incorrect"},401);
+    const tokenHash=await sha(tokenFrom(req));
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET password_hash=?,updated_at=? WHERE id=?").bind(await passwordHash(next),new Date().toISOString(),actor.id),
+      env.DB.prepare("UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND token_hash<>? AND revoked_at IS NULL").bind(new Date().toISOString(),actor.id,tokenHash)
+    ]);
+    await log(env,actor.id,"password_changed");
+    return response({changed:true,message:"Password updated. Other active sessions were signed out."});
   }
   if(path==="/api/auth/logout" && req.method==="POST") {
     const token=tokenFrom(req); if(token) await env.DB.prepare("UPDATE auth_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(new Date().toISOString(),await sha(token)).run();
