@@ -43,7 +43,7 @@ Copy each webhook URL from its corresponding published Activepieces workflow tri
 ## Integration configuration
 
 - POST /api/integrations/{id}/config saves allowlisted configuration fields after analyst authentication.
-- Supported IDs: activepieces, wazuh, sysmon, clamav, yara, suricata, zeek.
+- Supported IDs: wazuh, sysmon, clamav, yara, suricata, zeek. ActivePieces webhook URLs and bridge credentials are configured only as Worker Secrets.
 - Values are encrypted before being written to the dedicated INTEGRATION_CONFIGS KV namespace.
 - GET /api/integrations includes only safe non-secret configuration values and configured field names; passwords and webhook secrets are never returned.
 - Connection-test routes deliberately return an unavailable response until each tool-specific Activepieces adapter and health-check workflow is implemented. A saved configuration is not a connected integration.
