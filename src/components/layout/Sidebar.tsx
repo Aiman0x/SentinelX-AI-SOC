@@ -1,7 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { ENVIRONMENT_LABEL } from '../../services/apiClient';
+import { ENVIRONMENT_LABEL, isDemoMode } from '../../services/apiClient';
 import { navItems } from './nav';
 
 export const APP_VERSION = 'v0.1.0';
