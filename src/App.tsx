@@ -43,7 +43,7 @@ function LoginScreen() {
     if (setupPassword !== setupConfirm) { setSetupError('Passwords do not match.'); return; }
     // HTTP header values must be byte-safe ASCII. Trim copied whitespace and reject hidden/non-ASCII characters.
     const normalizedBootstrapSecret = setupSecret.trim();
-    if (!/^[\\x20-\\x7E]+$/.test(normalizedBootstrapSecret)) {
+    if (!/^[\x20-\x7E]+$/.test(normalizedBootstrapSecret)) {
       setSetupError('Bootstrap secret contains unsupported characters. Copy the original Cloudflare secret again; do not type or translate it.');
       return;
     }
