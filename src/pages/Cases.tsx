@@ -63,7 +63,7 @@ export default function Cases() {
         {list.length === 0 ? <EmptyState title="No cases found" description="Change the filter or create a new demo case." /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
       </Panel>
 
-      {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} /></div>}
+      {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} readOnly={isBackendConfigured} /></div>}
 
       <Modal open={creating} onClose={() => setCreating(false)} title="New demo case">
         <div className="space-y-3">
