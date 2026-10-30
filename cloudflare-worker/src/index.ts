@@ -1,5 +1,8 @@
+import { currentUser, handleAuthRoute } from "./auth";
 export interface Env {
   ALLOWED_ORIGIN: string;
+  DB: D1Database;
+  BOOTSTRAP_SECRET: string;
   LOGIN_PASSWORD_HASH: string;
   SESSION_HMAC_SECRET: string;
   AP_BRIDGE_KEY: string;
@@ -92,7 +95,7 @@ async function readBodyLimited(request: Request, maxBytes: number): Promise<{ ra
 
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
-  if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) return reply({ error: "Authentication required" }, 401, cors);
+  if (!(await verifySession(request, env))) return reply({ error: "Authentication required" }, 401, cors);
   const allowed = INTEGRATION_FIELDS[integrationId];
   if (!allowed) return reply({ error: "Unknown integration" }, 404, cors);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ error: "Secure configuration storage is not configured" }, 503, cors);
@@ -217,29 +220,8 @@ async function signSession(payload: string, secret: string): Promise<string> {
   return `${payload}.${bytesToBase64Url(signature)}`;
 }
 
-async function verifySession(request: Request, secret: string): Promise<boolean> {
-  if (!secret) return false;
-  const token = getCookie(request, SESSION_COOKIE);
-  if (!token) return false;
-  try {
-    const separator = token.lastIndexOf(".");
-    if (separator < 1) return false;
-    const payload = token.slice(0, separator);
-    const signature = base64UrlToBytes(token.slice(separator + 1));
-    const key = await crypto.subtle.importKey(
-      "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
-    );
-    const valid = await crypto.subtle.verify(
-      "HMAC", key, signature, new TextEncoder().encode(payload),
-    );
-    if (!valid) return false;
-    const claims = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as { exp?: number; iat?: number };
-    const now = Math.floor(Date.now() / 1000);
-    return Number.isInteger(claims.exp) && Number.isInteger(claims.iat) &&
-      (claims.exp as number) > now && (claims.exp as number) - (claims.iat as number) <= SESSION_TTL_SECONDS;
-  } catch {
-    return false;
-  }
+async function verifySession(request: Request, env: Env): Promise<boolean> {
+  return (await currentUser(request, env)) !== null;
 }
 
 async function handleLogin(request: Request, env: Env, cors: HeadersInit): Promise<Response> {
@@ -291,6 +273,9 @@ export default {
     }
     if (origin && origin !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403);
 
+    const authResponse = await handleAuthRoute(request, env, url.pathname);
+    if (authResponse) return new Response(authResponse.body, { status: authResponse.status, headers: { ...Object.fromEntries(authResponse.headers), ...cors } });
+
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       return handleLogin(request, env, cors);
     }
@@ -299,7 +284,7 @@ export default {
       return reply({ authenticated: false }, 200, cors, { "Set-Cookie": cookieHeader("", 0) });
     }
     if (url.pathname === "/api/auth/me" && request.method === "GET") {
-      const authenticated = await verifySession(request, env.SESSION_HMAC_SECRET);
+      const authenticated = await verifySession(request, env);
       return reply({ authenticated }, authenticated ? 200 : 401, cors);
     }
 
@@ -308,7 +293,7 @@ export default {
       return handleIntegrationConfig(request, env, cors, configMatch[1]);
     }
     if (url.pathname.startsWith("/api/integrations/") && url.pathname.endsWith("/test") && request.method === "POST") {
-      if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) return reply({ error: "Authentication required" }, 401, cors);
+      if (!(await verifySession(request, env))) return reply({ error: "Authentication required" }, 401, cors);
       return reply({ ok: false, unavailable: true, message: "Connection testing will be enabled after the tool-specific Activepieces adapters are configured." }, 501, cors);
     }
 
@@ -316,7 +301,7 @@ export default {
     const envKey = ROUTES[url.pathname];
     if (!envKey) return reply({ error: "Not found" }, 404, cors);
 
-    if (!(await verifySession(request, env.SESSION_HMAC_SECRET))) {
+    if (!(await verifySession(request, env))) {
       return reply({ error: "Authentication required" }, 401, cors);
     }
     const webhookUrl = env[envKey];
