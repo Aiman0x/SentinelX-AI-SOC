@@ -1,8 +1,10 @@
 export interface AuthEnv {
   DB: D1Database;
   BOOTSTRAP_SECRET: string;
+  ALLOWED_ORIGIN: string;
+  LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
 }
-type User = { id:string; email:string; display_name:string; role:string; is_active:number };
+type User = { id:string; email:string; display_name:string; role:string; is_active:number; organization_id:string };
 const COOKIE = "sx_session";
 const TTL = 4 * 60 * 60;
 const enc = new TextEncoder();
@@ -36,9 +38,9 @@ function tokenFrom(req:Request) {
 export async function currentUser(req:Request, env:AuthEnv):Promise<User|null> {
   const token=tokenFrom(req); if(!token) return null;
   const tokenHash=await sha(token);
-  const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active
+  const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active,m.organization_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
-    LEFT JOIN organization_memberships m ON m.user_id=u.id
+    JOIN organization_memberships m ON m.user_id=u.id
     WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?
     ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END LIMIT 1`)
     .bind(tokenHash,new Date().toISOString()).first<User>();
@@ -49,8 +51,13 @@ async function log(env:AuthEnv,userId:string|null,event:string) {
 }
 export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promise<Response|null> {
   if(path==="/api/auth/bootstrap" && req.method==="POST") {
+    if(req.headers.get("Origin") && req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    const ip=req.headers.get("CF-Connecting-IP")||"unknown";
+    if(!(await env.LOGIN_RATE_LIMITER.limit({key:"bootstrap:"+ip})).success) return response({error:"Too many setup attempts"},429);
     if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
-    const body=await req.json() as {email?:string;name?:string;password?:string;organization?:string};
+    if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
+    let body:{email?:string;name?:string;password?:string;organization?:string};
+    try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
     const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", org=body.organization?.trim()||"SentinelX";
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256) return response({error:"Valid email, name and password (14+ characters) are required"},400);
     const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{n:number}>();
@@ -65,8 +72,16 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     return response({created:true,message:"Initial organization administrator created"},201);
   }
   if(path==="/api/auth/login" && req.method==="POST") {
-    const body=await req.json() as {email?:string;password?:string};
+    if(req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    const ip=req.headers.get("CF-Connecting-IP")||"unknown";
+    if(!(await env.LOGIN_RATE_LIMITER.limit({key:"login:"+ip})).success) return response({error:"Too many login attempts. Try again in one minute."},429);
+    if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
+    const length=Number(req.headers.get("Content-Length"));
+    if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
+    let body:{email?:string;password?:string};
+    try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
     const email=body.email?.trim().toLowerCase()||"", password=body.password||"";
+    if(email.length>254||password.length>256) return response({error:"Invalid credentials"},401);
     const row=await env.DB.prepare("SELECT id,email,display_name,password_hash,is_active FROM users WHERE email=?").bind(email).first<User&{password_hash:string}>();
     if(!row||row.is_active!==1||!(await passwordVerify(password,row.password_hash))) {
       await log(env,row?.id||null,"login_failed"); return response({error:"Invalid credentials"},401);
@@ -90,14 +105,14 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
     if(actor.role!=="owner"&&actor.role!=="admin") return response({error:"Admin permission required"},403);
     if(req.method==="GET") {
-      const users=await env.DB.prepare("SELECT u.id,u.email,u.display_name,m.role,u.is_active,u.created_at,u.last_login_at FROM users u LEFT JOIN organization_memberships m ON m.user_id=u.id ORDER BY u.created_at DESC").all();
+      const users=await env.DB.prepare("SELECT u.id,u.email,u.display_name,m.role,u.is_active,u.created_at,u.last_login_at FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE m.organization_id=? ORDER BY u.created_at DESC").bind(actor.organization_id).all();
       return response({users:users.results});
     }
     const body=await req.json() as {email?:string;name?:string;password?:string;role?:string};
     const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", role=body.role||"analyst";
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256||!["admin","analyst","viewer"].includes(role)) return response({error:"Invalid user details"},400);
-    const membership=await env.DB.prepare("SELECT organization_id FROM organization_memberships WHERE user_id=? LIMIT 1").bind(actor.id).first<{organization_id:string}>();
-    if(!membership) return response({error:"Organization membership missing"},409);
+    if(actor.role!=="owner" && role==="admin") return response({error:"Only the organization owner can create administrators"},403);
+    const membership={organization_id:actor.organization_id};
     const userId=id();
     try {
       await env.DB.batch([
@@ -113,6 +128,10 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
     if(actor.role!=="owner"&&actor.role!=="admin") return response({error:"Admin permission required"},403);
     if(disableMatch[1]===actor.id) return response({error:"You cannot disable your own account"},400);
+    const target=await env.DB.prepare("SELECT u.id,m.role FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE u.id=? AND m.organization_id=?").bind(disableMatch[1],actor.organization_id).first<{id:string;role:string}>();
+    if(!target) return response({error:"User not found in your organization"},404);
+    if(target.role==="owner") return response({error:"The organization owner cannot be disabled"},403);
+    if(actor.role!=="owner" && target.role==="admin") return response({error:"Only the organization owner can disable administrators"},403);
     await env.DB.batch([
       env.DB.prepare("UPDATE users SET is_active=0,updated_at=? WHERE id=?").bind(new Date().toISOString(),disableMatch[1]),
       env.DB.prepare("UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL").bind(new Date().toISOString(),disableMatch[1])
