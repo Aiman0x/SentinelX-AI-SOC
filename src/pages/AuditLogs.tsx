@@ -8,6 +8,7 @@ import { useData } from '../hooks/useData';
 import { loadAudit } from '../services/miscService';
 import { formatDateTime } from '../utils/formatDate';
 import { cap } from '../utils/severity';
+import { isBackendConfigured } from '../services/apiClient';
 
 export default function AuditLogs() {
   const { data, loading, error, reload } = useData(loadAudit);
@@ -29,7 +30,7 @@ export default function AuditLogs() {
   return (
     <>
       <PageHeader title="Audit Logs" subtitle="Searchable trail of analyst and service actions." />
-      <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">Sample audit records. In production the backend must generate tamper-resistant, access-controlled audit events — the browser cannot be a trusted source of audit data.</div>
+      <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">{isBackendConfigured ? 'Audit records loaded from the SentinelX backend. Backend-generated audit records are displayed read-only.' : 'Sample audit records. In production the backend must generate tamper-resistant, access-controlled audit events — the browser cannot be a trusted source of audit data.'}</div>
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-64" value={q} onChange={setQ} placeholder="Search action, target, source" label="Search audit log" />
