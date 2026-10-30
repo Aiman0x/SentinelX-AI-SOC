@@ -20,7 +20,7 @@ async function rateLimitKey(scope:string, ip:string) {
 }
 async function passwordHash(password:string, onStage?:(stage:string)=>void) {
   onStage?.("hash_password_random");
-  const salt=crypto.getRandomValues(new Uint8Array(16)), iterations=310000;
+  const salt=crypto.getRandomValues(new Uint8Array(16)), iterations=100000;
   onStage?.("hash_password_import_key");
   const key=await crypto.subtle.importKey("raw",enc.encode(password),"PBKDF2",false,["deriveBits"]);
   onStage?.("hash_password_derive_bits");
