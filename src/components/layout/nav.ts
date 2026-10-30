@@ -1,4 +1,4 @@
-import { Activity, BellRing, BookOpenCheck, Boxes, FolderKanban, LayoutDashboard, Microscope, Plug, ScrollText, Settings, UsersRound, type LucideIcon } from 'lucide-react';
+import { Activity, BellRing, Radio, BookOpenCheck, Boxes, FolderKanban, LayoutDashboard, Microscope, Plug, ScrollText, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   to: string;
@@ -10,6 +10,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/alerts', label: 'Security Alerts', icon: BellRing },
+  { to: '/telemetry', label: 'Windows Telemetry', icon: Radio },
   { to: '/cases', label: 'Incidents & Cases', icon: FolderKanban },
   { to: '/investigation', label: 'Investigation', icon: Microscope },
   { to: '/assets', label: 'Assets & Endpoints', icon: Boxes },
