@@ -9,7 +9,9 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useLocalStore } from '../hooks/useLocalStore';
-import { addAsset, assetsStore } from '../services/miscService';
+import { useData } from '../hooks/useData';
+import { isBackendConfigured } from '../services/apiClient';
+import { addAsset, assetsStore, loadAssets } from '../services/miscService';
 import type { AssetType, Criticality } from '../types/asset';
 import { timeAgo } from '../utils/formatDate';
 
@@ -18,7 +20,9 @@ const METHODS = ['None (registered only)', 'Wazuh agent', 'Sysmon', 'Syslog', 'S
 const blank = { name: '', type: 'Server' as AssetType, host: '', ip: '', os: '', criticality: 'medium' as Criticality, method: METHODS[0] };
 
 export default function Assets() {
-  const assets = useLocalStore(assetsStore);
+  const localAssets = useLocalStore(assetsStore);
+  const remoteAssets = useData(loadAssets);
+  const assets = isBackendConfigured ? remoteAssets.data ?? [] : localAssets;
   const { toast } = useApp();
   const [q, setQ] = useState('');
   const [f, setF] = useState({ type: 'all', os: 'all', crit: 'all', mon: 'all' });
@@ -42,13 +46,14 @@ export default function Assets() {
   return (
     <>
       <PageHeader title="Assets & Endpoints" subtitle="Inventory of systems registered for defensive monitoring."
-        actions={<button className="btn btn-primary" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" /> Add Asset</button>} />
+        actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" /> Add Asset</button> : undefined} />
 
       <div className="mb-4 flex items-start gap-2 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span><strong>Registered</strong> means the asset exists in the SentinelX inventory only. <strong>Verified</strong> means telemetry was actually received through an authorised, configured integration. SentinelX never scans or accesses a target you add.</span>
       </div>
 
+      {isBackendConfigured && (remoteAssets.loading ? <div className="mb-3 text-xs text-sx-mute">Loading assets from SentinelX backend…</div> : remoteAssets.error ? <div className="mb-3 text-xs text-sx-red">Backend assets unavailable: {remoteAssets.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only inventory from the SentinelX backend. Asset registration will be enabled after the configuration-write API is complete.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-64" value={q} onChange={setQ} placeholder="Search name, host, IP" label="Search assets" />
@@ -57,10 +62,10 @@ export default function Assets() {
           <Select label="Criticality" className="w-36" value={f.crit} onChange={(v) => setF({ ...f, crit: v })} options={[{ value: 'all', label: 'All criticality' }, ...['critical', 'high', 'medium', 'low'].map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))]} />
           <Select label="Monitoring status" className="w-40" value={f.mon} onChange={(v) => setF({ ...f, mon: v })} options={[{ value: 'all', label: 'All monitoring' }, { value: 'verified', label: 'Verified' }, { value: 'registered', label: 'Registered' }, { value: 'stale', label: 'Stale' }, { value: 'unmonitored', label: 'Unmonitored' }]} />
         </div>
-        {list.length === 0 ? <EmptyState title="No assets match" description="Adjust filters or add an asset." /> : (
+        {list.length === 0 ? <EmptyState title="No assets match" description={isBackendConfigured ? "No backend asset records match the current filters." : "Adjust filters or add an asset."} /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-xs">
-              <thead className="border-b border-sx-line bg-sx-bg/40"><tr>{['Asset', 'Hostname / domain', 'IP', 'Operating system', 'Type', 'Criticality', 'Monitoring', 'Method', 'Last event'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
+              <thead className="border-b border-sx-line bg-sx-bg/40"><tr>{['Asset', 'Hostname / domain', 'IP', 'Operating system', 'Type', 'Criticality', 'Monitoring', 'Method', 'Last event / verified'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-sx-line">
                 {list.map((a) => (
                   <tr key={a.id} className="transition-colors hover:bg-sx-elev/50">
@@ -72,7 +77,7 @@ export default function Assets() {
                     <td className="td"><SeverityBadge severity={a.criticality} /></td>
                     <td className="td"><StatusBadge value={a.monitoring} /></td>
                     <td className="td text-sx-mute">{a.method}</td>
-                    <td className="td whitespace-nowrap text-sx-mute">{a.lastEvent ? timeAgo(a.lastEvent) : 'never'}</td>
+                    <td className="td whitespace-nowrap text-sx-mute">{a.lastEvent ? timeAgo(a.lastEvent) : a.lastVerified ? `Verified ${timeAgo(a.lastVerified)}` : 'never'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -54,3 +54,37 @@ export interface AuditRecord {
   result: 'success' | 'failure' | 'denied';
   source: string;
 }
+
+
+export interface InvestigationRecord {
+  id: string;
+  caseId: string;
+  createdAt: string;
+  eventCount: number;
+  findingCount: number;
+  confidence: number;
+  dataOrigin: string;
+  status: string;
+  narrative: string;
+  hosts: string[];
+  accounts: string[];
+  sourceIps: string[];
+  eventIds: string[];
+  signals: string[];
+}
+
+
+export interface EvidenceRecord {
+  id: string;
+  caseId: string;
+  stepName: string;
+  sourceIntegration: string;
+  toolName: string;
+  excerpt: string;
+  collectedAt: string;
+  dataOrigin: string;
+  executionStatus: string;
+  evidenceHash: string;
+  relevance: string;
+  classification: string;
+}

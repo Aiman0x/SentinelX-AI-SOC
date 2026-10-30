@@ -1,0 +1,18 @@
+name = "sentinelx-api-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-10-30"
+
+[observability]
+enabled = true
+
+[[ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "73104"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
+[[kv_namespaces]]
+binding = "INTEGRATION_CONFIGS"
+id = "11b0f6bc1a374810b010978efcf11359"

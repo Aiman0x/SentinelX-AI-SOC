@@ -10,7 +10,9 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useLocalStore } from '../hooks/useLocalStore';
-import { addRule, rulesStore } from '../services/miscService';
+import { useData } from '../hooks/useData';
+import { isBackendConfigured } from '../services/apiClient';
+import { addRule, rulesStore, loadRules } from '../services/miscService';
 import type { Severity } from '../types/alert';
 import type { DetectionRule } from '../types/extra';
 import { timeAgo } from '../utils/formatDate';
@@ -20,7 +22,9 @@ type SortKey = 'name' | 'id' | 'severity' | 'status' | 'lastTested';
 const blank = { name: '', description: '', severity: 'medium' as Severity, requiredEvidence: '', logic: '', response: '' };
 
 export default function DetectionRules() {
-  const rules = useLocalStore(rulesStore);
+  const localRules = useLocalStore(rulesStore);
+  const remoteRules = useData(loadRules);
+  const rules = isBackendConfigured ? remoteRules.data ?? [] : localRules;
   const { toast } = useApp();
   const [q, setQ] = useState('');
   const [sev, setSev] = useState('all');
@@ -56,15 +60,16 @@ export default function DetectionRules() {
   return (
     <>
       <PageHeader title="Detection Rules" subtitle="Manage detection logic and validation status."
-        actions={<button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button>} />
+        actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button> : undefined} />
 
+      {isBackendConfigured && (remoteRules.loading ? <div className="mb-3 text-xs text-sx-mute">Loading detection rules from SentinelX backend…</div> : remoteRules.error ? <div className="mb-3 text-xs text-sx-red">Backend rules unavailable: {remoteRules.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only rules from the SentinelX backend. Rule editing and deployment are disabled until write APIs are complete.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-72" value={q} onChange={setQ} placeholder="Search name, ID, category, MITRE" label="Search rules" />
           <Select label="Severity" className="w-36" value={sev} onChange={setSev} options={[{ value: 'all', label: 'All severities' }, ...['critical', 'high', 'medium', 'low'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))]} />
           <Select label="Rule status" className="w-36" value={st} onChange={setSt} options={[{ value: 'all', label: 'All statuses' }, { value: 'enabled', label: 'Enabled' }, { value: 'disabled', label: 'Disabled' }, { value: 'draft', label: 'Draft' }]} />
         </div>
-        {list.length === 0 ? <EmptyState title="No rules match" /> : (
+        {list.length === 0 ? <EmptyState title="No rules match" description={isBackendConfigured ? "No backend detection rules match the current filters." : "Adjust filters or create a new rule."} /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-xs">
               <thead className="border-b border-sx-line bg-sx-bg/40"><tr>
@@ -91,7 +96,7 @@ export default function DetectionRules() {
       </Panel>
 
       <Drawer open={!!sel} onClose={() => setSel(null)} title={sel?.name} subtitle={<span className="mono">{sel?.id} · {sel?.category}</span>}
-        footer={<><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
+        footer={isBackendConfigured ? <span className="text-[11px] text-sx-mute">Backend rule record · write and deployment APIs pending.</span> : <><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
         {sel && (
           <div className="space-y-4 text-xs">
             <div className="flex flex-wrap gap-2"><SeverityBadge severity={sel.severity} /><StatusBadge value={sel.status} /><StatusBadge value={sel.maturity} /></div>

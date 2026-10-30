@@ -9,13 +9,9 @@ import { minutesAgo } from '../utils/formatDate';
 export const demoIntegrations: Integration[] = [
   {
     id: 'activepieces', name: 'ActivePieces', category: 'Orchestration',
-    purpose: 'Workflow orchestration: ingestion, validation, case creation and response playbooks.',
+    purpose: 'Workflow orchestration: ingestion, validation, case creation and response playbooks. Gateway connectivity is managed server-side.',
     state: 'demo', configured: false, verified: false,
-    fields: [
-      { key: 'baseUrl', label: 'ActivePieces base URL', placeholder: 'https://activepieces.example.com' },
-      { key: 'webhookPath', label: 'Ingest webhook path', placeholder: '/api/v1/webhooks/<flow-id>' },
-      { key: 'webhookSecret', label: 'Webhook secret', placeholder: '••••••••', secret: true, help: 'Stored server-side only.' },
-    ],
+    fields: [],
   },
   {
     id: 'wazuh', name: 'Wazuh', category: 'SIEM',

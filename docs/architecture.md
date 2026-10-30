@@ -2,153 +2,96 @@
 
 ## 1. Overview
 
-SentinelX is designed as a modular, AI-assisted defensive security platform. Its architecture separates event ingestion, detection, case management, investigation assistance, and defensive integrations.
+SentinelX is an AI-assisted defensive SOC platform under development. Its architecture separates telemetry ingestion, normalization, detection, correlation, investigation, evidence, tool configuration, and analyst-controlled response.
 
-The modular approach allows components to be developed, tested, and improved independently.
+ActivePieces is the primary backend workflow/orchestration layer. A small Cloudflare Worker is being added as the authenticated API boundary between the React GUI and ActivePieces.
 
-## 2. High-Level Architecture
+## 2. Current GUI/backend foundation
 
 ```text
-Security Event Sources
+React + TypeScript GUI (GitHub Pages)
+        |
+        | HTTPS, credentialed requests
+        v
+Cloudflare Worker API Gateway
+  - analyst login / signed session
+  - CORS and rate limiting
+  - read-only data proxy
+  - encrypted integration config API
+        |                         |
+        | GET /sync webhooks      | AES-256-GCM
+        v                         v
+ActivePieces workflows          Workers KV
         |
         v
-Event Ingestion
-        |
-        v
-Validation and Normalization
-        |
-        v
-Duplicate Event Check
-        |
-        v
-Case Management
-        |
-        v
-Detection and Alert Evaluation
-        |
-        v
-Investigation and Evidence
-        |
-        v
-Analyst Recommendations
-        |
-        v
-Authorized Response Workflow
+SentinelX tables
 ```
 
-This diagram represents the intended workflow. Not all stages are implemented or connected yet.
+The source for this foundation is on the `feat/cloudflare-api-gateway` branch. The Worker is not deployed and the GitHub Pages GUI has not yet been pointed at it. Until those setup steps are completed, the live GUI remains in demo mode.
 
-## 3. Architecture Components
+## 3. ActivePieces workflows
 
-### 3.1 Event Sources
+The existing ActivePieces project contains:
+- normalized telemetry intake and validation;
+- duplicate checking and case creation;
+- detection workflows;
+- event correlation and investigation records;
+- GUI read workflows for alerts, cases, investigations, evidence, audit logs, assets, rules, and integrations.
 
-Potential sources include:
+The eight GUI read workflows and selected core telemetry/detection workflows have passed structural validation. Structural validation is not a runtime test and does not verify real Windows events.
 
-- Windows security events
-- Linux system logs
-- Server security events
-- Network security alerts
-- Supported defensive security tools
+## 4. GUI data services
 
-The initial workflow uses sample Windows failed-login events.
+When `VITE_API_BASE_URL` is configured, the GUI requests data through the Worker. It does not hold ActivePieces webhook URLs, API keys, or tool passwords.
 
-### 3.2 Event Ingestion
+Backend-backed views currently include:
+- alerts and alert details;
+- cases (read-only);
+- assets (read-only);
+- detection rules (read-only);
+- investigations/correlation records;
+- audit records;
+- integration registry and encrypted configuration.
 
-The ingestion component receives supported events through a configured webhook.
+Trend charts and response playbooks remain explicitly illustrative/demo content. Case, asset, and rule write operations are not enabled.
 
-Its responsibilities include:
+## 5. Integration configuration security
 
-- Checking required fields
-- Validating event formats
-- Normalizing event information
-- Rejecting unsupported event types
-- Detecting duplicate event identifiers
+The Worker accepts allowlisted integration configuration only after analyst authentication. Configuration values are encrypted with AES-256-GCM before being stored in a dedicated Workers KV namespace. Passwords and webhook secrets are not returned to the browser.
 
-### 3.3 Detection Engine
+Saving configuration does not establish connectivity. Tool-specific ActivePieces adapters and health-check workflows must be implemented before an integration can be marked connected.
 
-The detection component evaluates security events against defined detection rules.
+## 6. Investigation and AI
 
-Planned examples include:
+Correlation records produced by ActivePieces are displayed as correlation findings and require analyst review. They are not represented as an autonomous AI verdict.
 
-- Repeated authentication failures
-- Failed login followed by a successful login
-- Suspicious script interpreter activity
-- Unexpected remote logons
-- Persistence-related changes
+A verified AI investigation component is still pending. It must explain what happened, identify affected systems/accounts, distinguish evidence from assumptions, and recommend defensive next steps. Any future model integration must be tested against real, authorized telemetry before being described as operational.
 
-Detection rules must be tested against suitable sample data before being described as validated.
+## 7. Defensive response
 
-### 3.4 Case Management
+Potentially disruptive actions must require explicit authorization, human approval, and audit logging. No real response action is exposed by this foundation.
 
-The case management component organizes suspicious events into investigation records.
-
-Potential case information includes:
-
-- Event identifier
-- Event timestamp
-- Source system
-- Source IP address, when available
-- Severity
-- Detection category
-- Investigation status
-- Evidence references
-- Analyst notes
-
-### 3.5 Investigation Assistance
-
-A future investigation component will help explain:
-
-- What happened
-- Which systems or accounts may be involved
-- What evidence supports the finding
-- Why the activity may be suspicious
-- Which additional checks are appropriate
-- Which defensive actions an analyst should consider
-
-Recommendations must distinguish confirmed evidence from assumptions.
-
-### 3.6 Defensive Integrations
-
-Potential integrations will be evaluated according to feasibility, hardware requirements, licensing, and compatibility.
-
-Each integration must have documented setup instructions and a verified test procedure.
-
-### 3.7 Response Workflow
-
-Response actions may affect real systems. Consequently, potentially disruptive actions should require appropriate authorization and should be recorded for auditing.
-
-## 4. Security Controls
-
-The design should include:
-
-- Authentication for event-ingestion endpoints
-- Input validation
-- Duplicate-event protection
-- Secure handling of credentials
-- Restricted access to investigation data
-- Audit records for important actions
-- Human approval for potentially disruptive response actions
-- Safe handling of errors and failed integrations
-
-## 5. Current Implementation Status
+## 8. Current implementation status
 
 | Component | Status |
 |---|---|
-| ActivePieces event-ingestion workflow | Configured; live authentication untested |
-| Input validation | Configured |
-| Duplicate checking | Configured |
-| Case creation | Configured |
-| Detection evaluation | Under development |
-| Defensive tool integrations | Planned and subject to testing |
-| Investigation assistance | Planned |
-| Graphical interface | Planned |
-| Automated response | Requires further design and safeguards |
+| ActivePieces telemetry intake | Configured; end-to-end real-event validation pending |
+| Core detection/correlation workflows | Structurally valid; runtime verification pending |
+| GUI read workflows | 8 workflows structurally valid |
+| React GUI | Implemented; backend-aware loaders added |
+| Cloudflare API gateway | Source scaffold and encrypted config storage added; not deployed |
+| GUI-to-Worker authentication | Implemented in source; browser session not verified |
+| Integration configuration | Encrypted save endpoint implemented; tool adapters pending |
+| Wazuh/Sysmon/network tool connections | Pending |
+| AI investigation model | Pending verification |
+| Case/rule/asset write APIs | Pending |
+| Real-event end-to-end testing | Deferred until GUI and backend foundation is configured |
 
-## 6. Future Development
+## 9. Development sequence
 
-Development will proceed incrementally, with each component tested before being treated as operational.
-
-The architecture will be revised as implementation details and verified integrations become available.
-## Frontend Architecture (Prototype)
-
-`React + Vite + Tailwind` single-page app. UI components call a thin `services/` layer; services return demo data now and will call the SentinelX backend API when `VITE_API_BASE_URL` is set. Secrets and health checks must be handled server-side. Details: [gui-design.md](gui-design.md).
+1. Complete and validate GUI + backend foundation.
+2. Configure and deploy the gateway securely.
+3. Add tool adapters and verify connections.
+4. Connect authorized Windows and remote telemetry.
+5. Verify detection, correlation, and AI investigation against real events.
+6. Add audited, approval-gated response workflows.

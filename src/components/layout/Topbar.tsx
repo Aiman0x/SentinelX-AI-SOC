@@ -2,6 +2,7 @@ import { Bell, ChevronRight, Menu, RefreshCw, RotateCcw, User } from 'lucide-rea
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useAlerts } from '../../hooks/useAlerts';
 import { isDemoMode } from '../../services/apiClient';
 import { resetAllDemoData } from '../../services/miscService';
@@ -20,6 +21,7 @@ function useClickAway(ref: React.RefObject<HTMLElement>, cb: () => void) {
 
 export function Topbar() {
   const { setMobileNavOpen, refresh, toast, openAlert, analyst } = useApp();
+  const { logout } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
@@ -69,9 +71,13 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2" ref={wrap}>
-        {isDemoMode && (
+        {isDemoMode ? (
           <span className="hidden items-center gap-1.5 rounded-md border border-sx-gold/50 bg-sx-gold/10 px-2 py-1 text-[10px] font-bold tracking-wider text-sx-gold sm:inline-flex" title="No backend is connected. All data shown is sample data.">
             <span className="h-1.5 w-1.5 rounded-full bg-sx-gold" aria-hidden /> DEMO MODE
+          </span>
+        ) : (
+          <span className="hidden items-center gap-1.5 rounded-md border border-sx-line bg-sx-elev px-2 py-1 text-[10px] font-bold tracking-wider text-sx-mute sm:inline-flex" title="A backend URL is configured. Each screen reports whether its own data request succeeds.">
+            <span className="h-1.5 w-1.5 rounded-full bg-sx-mute" aria-hidden /> API MODE
           </span>
         )}
         <time className="mono hidden text-[11px] text-sx-mute xl:block" dateTime={now.toISOString()}>
@@ -89,7 +95,7 @@ export function Topbar() {
           </button>
           {menu === 'bell' && (
             <div className="anim-fade absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-sx-line bg-sx-panel shadow-2xl">
-              <div className="border-b border-sx-line px-3 py-2 text-xs font-semibold">Open high-priority alerts <span className="font-normal text-sx-gold">(demo)</span></div>
+              <div className="border-b border-sx-line px-3 py-2 text-xs font-semibold">Open high-priority alerts {isDemoMode && <span className="font-normal text-sx-gold">(demo)</span>}</div>
               {critical.length === 0 && <div className="px-3 py-6 text-center text-xs text-sx-mute">No open high-priority alerts.</div>}
               {critical.map((a) => (
                 <button key={a.id} className="flex w-full flex-col gap-1 border-b border-sx-line px-3 py-2 text-left last:border-0 hover:bg-sx-elev" onClick={() => { setMenu('none'); openAlert(a.id); }}>
@@ -114,7 +120,8 @@ export function Topbar() {
                 <div className="text-[11px] text-sx-mute">SOC Analyst (demo profile)</div>
               </div>
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-sx-elev" onClick={() => { setMenu('none'); navigate('/settings'); }}><User className="h-3.5 w-3.5" /> Profile & settings</button>
-              <button className="flex w-full items-center gap-2 px-3 py-2 text-xs text-sx-warn hover:bg-sx-elev" onClick={() => { setMenu('none'); resetAllDemoData(); }}><RotateCcw className="h-3.5 w-3.5" /> Reset demo data</button>
+              {isDemoMode && <button className="flex w-full items-center gap-2 px-3 py-2 text-xs text-sx-warn hover:bg-sx-elev" onClick={() => { setMenu('none'); resetAllDemoData(); }}><RotateCcw className="h-3.5 w-3.5" /> Reset demo data</button>}
+              {!isDemoMode && <button className="flex w-full items-center gap-2 px-3 py-2 text-xs text-sx-warn hover:bg-sx-elev" onClick={() => { setMenu('none'); void logout(); }}><RotateCcw className="h-3.5 w-3.5" /> Sign out</button>}
             </div>
           )}
         </div>

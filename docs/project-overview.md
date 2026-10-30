@@ -2,71 +2,59 @@
 
 ## 1. Introduction
 
-SentinelX is an AI-assisted defensive cybersecurity project designed to support Security Operations Center (SOC) activities through security event processing, detection, investigation, and defensive recommendations.
+SentinelX is an AI-assisted defensive cybersecurity project designed to support SOC activities through security-event ingestion, detection, correlation, investigation, evidence handling, and defensive recommendations.
 
-The project aims to bring multiple defensive capabilities together in a centralized application rather than requiring analysts to work independently across disconnected tools.
+The goal is to bring defensive capabilities together in a centralized analyst GUI while retaining human oversight over consequential actions.
 
 ## 2. Problem Statement
 
-Security teams receive events from multiple systems, including endpoints, servers, and networks. Investigating these events manually can be time-consuming and may make it difficult to understand the context of a potential attack.
+Security teams receive events from endpoints, servers, and networks. Investigating these events manually can be time-consuming and may make it difficult to understand the context of suspicious activity.
 
-SentinelX aims to help address these challenges by organizing security events, applying detection logic, creating investigation cases, and supporting analysts with contextual explanations and recommended defensive actions.
+SentinelX aims to validate and correlate security events, organize findings into cases, and help analysts understand what happened and what defensive steps may be appropriate.
 
 ## 3. Project Objectives
 
-- Collect and validate supported security events.
-- Normalize incoming events into a consistent structure.
-- Detect suspicious activity using defined detection rules.
-- Reduce duplicate alerts and organize events into cases.
+- Collect and validate authorized security telemetry.
+- Normalize events into a consistent structure.
+- Detect suspicious activity using defined rules.
+- Reduce duplicate alerts and organize findings into cases.
 - Maintain investigation notes and evidence references.
-- Support incident investigation and defensive decision-making.
+- Provide contextual investigation assistance and defensive recommendations.
 - Integrate multiple defensive security tools where feasible.
-- Provide a graphical user interface for interacting with the system.
+- Provide a secure graphical interface for analysts.
 
-## 4. Planned Investigation Workflow
+## 4. Current Technology Direction
 
-1. Receive a security event from a supported source.
-2. Validate the event fields and format.
-3. Check whether the event has already been processed.
-4. Create a case when the event passes the required checks.
-5. Evaluate relevant detection rules.
-6. Collect available evidence and investigation context.
-7. Generate an analyst-friendly explanation and defensive recommendations.
-8. Record investigation results and approved response actions.
+- **Frontend:** React, TypeScript, Vite, Tailwind.
+- **Workflow/backend orchestration:** ActivePieces.
+- **API/authentication boundary:** Cloudflare Worker.
+- **Encrypted integration configuration storage:** Cloudflare Workers KV with AES-256-GCM encryption.
+- **Initial telemetry source:** Local Windows Security Event Log collector, followed by authorized remote telemetry sources.
 
-The complete workflow will be implemented and verified incrementally.
+## 5. Current Implementation
 
-## 5. Architecture
+The repository contains a dark SOC GUI prototype and a backend-integration foundation on the `feat/cloudflare-api-gateway` branch. Backend-aware data loaders and mappers are in place for alerts, cases, investigations, evidence, audit logs, assets, detection rules, and integration registry data.
 
-SentinelX is planned around the following components:
+The Cloudflare Worker source includes analyst login, signed sessions, rate limiting, authenticated read routes, and encrypted integration configuration storage. The Worker is not deployed and the GitHub Pages GUI has not yet been configured to use it.
 
-- **Event Ingestion:** Receives and validates security events.
-- **Workflow Orchestration:** Coordinates processing and detection workflows.
-- **Detection Engine:** Evaluates events against detection rules.
-- **Case Management:** Organizes security events and investigation records.
-- **Investigation Assistance:** Supports analysis and defensive recommendations.
-- **Integrations:** Connects supported defensive security tools.
-- **Graphical Interface:** Provides a centralized interface for analysts.
+Eight GUI read workflows and selected core telemetry/detection workflows passed structural validation in ActivePieces. This does not establish live connectivity or successful processing of real Windows events.
 
-Not every component is fully implemented yet. The architecture will be updated as development progresses.
+## 6. Capabilities Still Pending
 
-## 6. Current Implementation
-
-The initial ActivePieces ingestion workflow has been configured with input validation, duplicate checking, case creation, and response handling.
-
-Live webhook authentication has not yet been verified. Additional detection workflows, integrations, investigation assistance, and the graphical interface remain part of the ongoing development work.
+- Worker deployment and GUI-to-backend session verification.
+- Rotated bridge credentials and actual ActivePieces webhook URLs configured securely.
+- Tool-specific adapters and connection tests.
+- Case, asset, and rule write APIs.
+- Verified AI model investigation and recommendations.
+- Real-event validation from Windows and authorized remote systems.
+- Audited, approval-gated defensive response.
 
 ## 7. Security and Scope
 
-SentinelX is intended for defensive cybersecurity and authorized environments. Testing must use systems and data that the project owner is authorized to access.
-
-Authentication credentials, private keys, passwords, and sensitive customer information must not be committed to the repository.
+SentinelX is intended for defensive cybersecurity in systems the operator is authorized to monitor. Credentials and integration secrets must remain in secure server-side storage. Demo data, structurally valid workflows, and saved tool configurations must not be described as real telemetry, verified connectivity, or working AI.
 
 ## 8. Development Status
 
-**Status:** In Development
+**Status: In Development — GUI/backend foundation under construction.**
 
-This document describes the project's intended architecture and current direction. Planned capabilities should not be interpreted as completed or production-ready features.
-## GUI Prototype Update
-
-A React + TypeScript frontend prototype (dark black/red/gold SOC dashboard) has been added at the repository root. It uses **demo data only** and does not claim any live monitoring, AI analysis or integration. See [gui-design.md](gui-design.md).
+The project will move to real-event and AI verification only after the GUI and backend foundation is configured and connected.
