@@ -13,7 +13,7 @@ import { IncidentTimeline } from './IncidentTimeline';
 
 const STATUSES: CaseStatus[] = ['open', 'investigating', 'contained', 'resolved', 'closed'];
 
-export function CaseDetails({ c, alerts, onClose }: { c: SecurityCase; alerts: Alert[]; onClose: () => void }) {
+export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: SecurityCase; alerts: Alert[]; onClose: () => void; readOnly?: boolean }) {
   const { toast, analyst, openAlert } = useApp();
   const navigate = useNavigate();
   const [note, setNote] = useState('');
@@ -40,7 +40,7 @@ export function CaseDetails({ c, alerts, onClose }: { c: SecurityCase; alerts: A
         <h3 className="label">Incident overview</h3>
         <p className="text-[13px]">{c.overview}</p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {!readOnly && <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
             <span className="label">Case status</span>
             <Select label="Case status" value={c.status} onChange={(v) => { setCaseStatus(c.id, v as CaseStatus, analyst); toast(`Status changed to ${v}.`, 'success'); }}
@@ -51,7 +51,8 @@ export function CaseDetails({ c, alerts, onClose }: { c: SecurityCase; alerts: A
             <Select label="Assign analyst" value={c.assignee} onChange={(v) => { setAssignee(c.id, v); toast(`Assigned to ${v}.`, 'success'); }}
               options={ANALYSTS.map((s) => ({ value: s, label: s }))} />
           </div>
-        </div>
+        </div>}
+        {readOnly && <p className="mt-3 text-[11px] text-sx-mute">Read-only backend record. Case updates and assignment controls will be enabled when the write API is ready.</p>}
         <div className="mt-4 flex gap-2">
           <button className="btn btn-primary" onClick={() => navigate(`/investigation?alert=${c.alertIds[0] ?? ''}`)} disabled={c.alertIds.length === 0}><Microscope className="h-3.5 w-3.5" /> Open in Investigation</button>
         </div>
@@ -88,10 +89,10 @@ export function CaseDetails({ c, alerts, onClose }: { c: SecurityCase; alerts: A
       </div>
 
       <Panel title="Investigation notes" bodyClass="p-4">
-        <div className="flex gap-2">
+        {!readOnly && <div className="flex gap-2">
           <textarea className="input min-h-[60px] resize-y" placeholder="Add an investigation note…" value={note} onChange={(e) => setNote(e.target.value)} aria-label="New investigation note" />
           <button className="btn btn-gold self-end" onClick={submit} disabled={!note.trim()}><Send className="h-3.5 w-3.5" /> Add</button>
-        </div>
+        </div>}
         <ul className="mt-3 space-y-2">
           {c.notes.length === 0 && <li className="text-xs text-sx-mute">No notes yet.</li>}
           {c.notes.map((n) => (
@@ -101,7 +102,7 @@ export function CaseDetails({ c, alerts, onClose }: { c: SecurityCase; alerts: A
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-[11px] text-sx-mute">Prototype note: cases are saved in this browser’s local storage, which is not a secure database.</p>
+        <p className="mt-3 text-[11px] text-sx-mute">{readOnly ? 'Backend case notes are read-only until the notes API is implemented.' : 'Prototype note: cases are saved in this browser’s local storage, which is not a secure database.'}</p>
       </Panel>
     </div>
   );
