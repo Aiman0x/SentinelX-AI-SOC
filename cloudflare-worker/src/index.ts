@@ -95,7 +95,9 @@ async function readBodyLimited(request: Request, maxBytes: number): Promise<{ ra
 
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (request.headers.get("Origin") !== env.ALLOWED_ORIGIN) return reply({ error: "Origin not allowed" }, 403, cors);
-  if (!(await verifySession(request, env))) return reply({ error: "Authentication required" }, 401, cors);
+  const actor = await currentUser(request, env);
+  if (!actor) return reply({ error: "Authentication required" }, 401, cors);
+  if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
   const allowed = INTEGRATION_FIELDS[integrationId];
   if (!allowed) return reply({ error: "Unknown integration" }, 404, cors);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ error: "Secure configuration storage is not configured" }, 503, cors);
@@ -293,7 +295,9 @@ export default {
       return handleIntegrationConfig(request, env, cors, configMatch[1]);
     }
     if (url.pathname.startsWith("/api/integrations/") && url.pathname.endsWith("/test") && request.method === "POST") {
-      if (!(await verifySession(request, env))) return reply({ error: "Authentication required" }, 401, cors);
+      const actor = await currentUser(request, env);
+      if (!actor) return reply({ error: "Authentication required" }, 401, cors);
+      if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
       return reply({ ok: false, unavailable: true, message: "Connection testing will be enabled after the tool-specific Activepieces adapters are configured." }, 501, cors);
     }
 
