@@ -10,7 +10,9 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useLocalStore } from '../hooks/useLocalStore';
-import { addRule, rulesStore } from '../services/miscService';
+import { useData } from '../hooks/useData';
+import { isBackendConfigured } from '../services/apiClient';
+import { addRule, rulesStore, loadRules } from '../services/miscService';
 import type { Severity } from '../types/alert';
 import type { DetectionRule } from '../types/extra';
 import { timeAgo } from '../utils/formatDate';
@@ -20,7 +22,9 @@ type SortKey = 'name' | 'id' | 'severity' | 'status' | 'lastTested';
 const blank = { name: '', description: '', severity: 'medium' as Severity, requiredEvidence: '', logic: '', response: '' };
 
 export default function DetectionRules() {
-  const rules = useLocalStore(rulesStore);
+  const localRules = useLocalStore(rulesStore);
+  const remoteRules = useData(loadRules);
+  const rules = isBackendConfigured ? remoteRules.data ?? [] : localRules;
   const { toast } = useApp();
   const [q, setQ] = useState('');
   const [sev, setSev] = useState('all');
@@ -56,7 +60,7 @@ export default function DetectionRules() {
   return (
     <>
       <PageHeader title="Detection Rules" subtitle="Manage detection logic and validation status."
-        actions={<button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button>} />
+        actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button> : undefined} />
 
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
