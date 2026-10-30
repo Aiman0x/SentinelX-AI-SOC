@@ -155,7 +155,7 @@ function corsHeaders(origin: string, env: Env): HeadersInit {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
