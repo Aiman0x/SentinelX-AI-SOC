@@ -27,6 +27,7 @@ export function rowsFrom(payload: unknown): Row[] {
   const p = obj(payload);
   if (Array.isArray(p.records)) return p.records as Row[];
   if (Array.isArray(p.data)) return p.data as Row[];
+  if (p.data && typeof p.data === 'object') return rowsFrom(p.data);
   return [];
 }
 const cells = (row: Row) => ({ ...obj(row), ...obj(row.cells) });
