@@ -1,4 +1,4 @@
-import { Bug, KeyRound, Network, Radar, ScanSearch, Settings2, Shield, TestTube2, Workflow, type LucideIcon } from 'lucide-react';
+import { Bug, Network, Radar, ScanSearch, Settings2, Shield, TestTube2, Workflow, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Field, Panel } from '../components/common/Controls';
 import { ErrorState, LoadingState } from '../components/common/EmptyState';
