@@ -32,9 +32,9 @@ export default function Overview() {
       <PageHeader title="Security Operations Overview" subtitle="Monitor, investigate, and respond to security events." />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Open Cases" value={openCases} caption="Not resolved or closed" icon={FolderKanban} accent="gold" spark={[2, 3, 3, 4, 3, 5, openCases]} isDemo={isDemoMode} />
-        <StatCard label="Critical Alerts" value={critical} caption="Active, unresolved" icon={BellRing} accent="red" spark={[0, 1, 0, 2, 1, 3, critical]} isDemo={isDemoMode} />
-        <StatCard label="Monitored Assets" value={assets.length} caption={`${verified} with verified telemetry`} icon={Monitor} accent="neutral" spark={[9, 10, 10, 11, 11, 12, assets.length]} isDemo={isDemoMode} />
+        <StatCard label="Open Cases" value={openCases} caption="Not resolved or closed" icon={FolderKanban} accent="gold" spark={isDemoMode ? [2, 3, 3, 4, 3, 5, openCases] : undefined} isDemo={isDemoMode} />
+        <StatCard label="Critical Alerts" value={critical} caption="Active, unresolved" icon={BellRing} accent="red" spark={isDemoMode ? [0, 1, 0, 2, 1, 3, critical] : undefined} isDemo={isDemoMode} />
+        <StatCard label="Registered Assets" value={assets.length} caption={`${verified} with verified telemetry`} icon={Monitor} accent="neutral" spark={isDemoMode ? [9, 10, 10, 11, 11, 12, assets.length] : undefined} isDemo={isDemoMode} />
         <StatCard label="Connected Integrations" value={connected} caption={`of ${integrations.length} planned · ${integrations.filter((i) => i.verified).length} verified`} icon={Plug} accent="neutral" isDemo={isDemoMode} />
       </div>
 
