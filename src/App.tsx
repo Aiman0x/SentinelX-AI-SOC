@@ -56,14 +56,14 @@ function LoginScreen() {
       });
       const contentType = response.headers.get('content-type') || '';
       const rawResponse = await response.text();
-      let payload: { error?: string } = {};
+      let payload: { error?: string; stage?: string } = {};
       if (contentType.includes('application/json')) {
         try { payload = JSON.parse(rawResponse) as { error?: string }; }
         catch { throw new Error(`Backend returned malformed JSON (HTTP ${response.status}).`); }
       } else {
         throw new Error(`Backend returned a non-JSON response (HTTP ${response.status}, ${contentType || 'unknown content type'}). The frontend may be using an outdated API route.`);
       }
-      if (!response.ok) throw new Error(payload.error || `Admin setup failed (HTTP ${response.status}).`);
+      if (!response.ok) throw new Error([payload.error || `Admin setup failed (HTTP ${response.status}).`, payload.stage ? `Failure stage: ${payload.stage}` : ''].filter(Boolean).join(' — '));
       setBootstrapAvailable(false); setSetupMode(false); setPassword('');
       setSetupSecret(''); setSetupPassword(''); setSetupConfirm('');
       setSetupNotice('Initial Admin account created. Sign in with your new password.');
