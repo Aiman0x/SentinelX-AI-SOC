@@ -11,6 +11,7 @@ import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useAlerts } from '../hooks/useAlerts';
 import { useCases } from '../hooks/useCases';
+import { isBackendConfigured } from '../services/apiClient';
 import { ANALYSTS, createCase } from '../services/casesService';
 import type { Severity } from '../types/alert';
 
@@ -51,7 +52,7 @@ export default function Cases() {
   return (
     <>
       <PageHeader title="Incidents & Cases" subtitle="Track investigations from detection to closure."
-        actions={<button className="btn btn-primary" onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" /> New demo case</button>} />
+        actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" /> New demo case</button> : undefined} />
 
       <Panel>
         <div className="flex flex-wrap items-center gap-3 border-b border-sx-line p-3">
