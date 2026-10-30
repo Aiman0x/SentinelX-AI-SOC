@@ -29,7 +29,7 @@ function Get-EventFields {
     $fields = @{}
     foreach ($node in @($xml.Event.EventData.Data)) {
         if ($null -ne $node -and -not [string]::IsNullOrWhiteSpace([string]$node.Name)) {
-            $fields[[string]$node.Name] = [string]$node.'#text'
+            $fields[[string]$node.Name] = [string]$node.InnerText
         }
     }
 
