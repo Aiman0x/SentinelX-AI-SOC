@@ -11,7 +11,7 @@ Read-only gateway between the GitHub Pages frontend and the existing Activepiece
 - Login attempts are rate-limited (5 per minute per IP and Cloudflare location; Cloudflare's rate limiter is approximate).
 - CORS is restricted to `https://aiman0x.github.io` and credentialed requests only.
 - Activepieces bridge key remains a Worker secret and is never sent to the browser.
-- Only GET data routes are exposed. No case updates, playbook execution, or defensive actions are exposed in this phase.
+- Data retrieval is GET-only. The only write endpoint in this phase saves encrypted integration configuration; case updates, playbook execution, connection tests, and defensive actions are not exposed.
 - This is a single shared analyst login, not multi-user identity management. Use a unique, strong password and rotate it if shared.
 
 ## Authentication endpoints
