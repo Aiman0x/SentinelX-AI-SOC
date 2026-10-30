@@ -4,7 +4,7 @@ import { demoRules } from '../data/demoDetectionRules';
 import { demoPlaybooks } from '../data/demoPlaybooks';
 import { buildTrend, type TrendRange } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
-import type { DetectionRule, AuditRecord } from '../types/extra';
+import type { DetectionRule, AuditRecord, InvestigationRecord } from '../types/extra';
 import { apiGet, delay, isBackendConfigured } from './apiClient';
 import { rowsFrom, mapAsset, mapRule, mapAudit, mapInvestigation } from './backendMappers';
 import { createLocalStore } from './localStore';
