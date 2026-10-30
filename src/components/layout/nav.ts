@@ -1,4 +1,4 @@
-import { Activity, BellRing, BookOpenCheck, Boxes, FolderKanban, LayoutDashboard, Microscope, Plug, ScrollText, Settings, type LucideIcon } from 'lucide-react';
+import { Activity, BellRing, BookOpenCheck, Boxes, FolderKanban, LayoutDashboard, Microscope, Plug, ScrollText, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   to: string;
@@ -17,5 +17,6 @@ export const navItems: NavItem[] = [
   { to: '/rules', label: 'Detection Rules', icon: Activity },
   { to: '/playbooks', label: 'Response Playbooks', icon: BookOpenCheck },
   { to: '/audit', label: 'Audit Logs', icon: ScrollText },
+  { to: '/users', label: 'User Management', icon: UsersRound },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
