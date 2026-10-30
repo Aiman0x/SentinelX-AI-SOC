@@ -67,8 +67,7 @@ The repository includes `.github/workflows/deploy-worker.yml`. After this PR is 
 
 ### GitHub Actions deployment prerequisites
 
-- Add `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret. Grant only the Cloudflare permissions needed to deploy Workers Scripts for this account.
-- Add `CLOUDFLARE_ACCOUNT_ID` as a GitHub Actions repository/environment variable.
+- Add `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret. Grant only the Cloudflare permissions needed to deploy Workers Scripts for this account. The verified account ID is already configured in the workflow.
 - The workflow deploys only `cloudflare-worker/wrangler.toml`; it does not deploy or modify the existing `medicoreiph` Worker.
 
 ### Worker runtime configuration
