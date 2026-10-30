@@ -86,7 +86,7 @@ export default function Integrations() {
           <div className="space-y-3">
             {editing.fields.map((f) => (
               <Field key={f.key} label={f.label} htmlFor={`f-${f.key}`}>
-                <input id={`f-${f.key}`} type={f.secret ? 'password' : 'text'} className="input mono" value={values[f.key] ?? ''} placeholder={f.secret ? 'Enter secret (stored encrypted on backend)' : f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} autoComplete="off" />
+                <input id={`f-${f.key}`} type={f.secret ? 'password' : 'text'} className="input mono" value={values[f.key] ?? ''} placeholder={f.secret ? (isBackendConfigured ? 'Enter secret (encrypted on backend)' : 'Backend required to store secrets') : f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} autoComplete="off" disabled={f.secret && !isBackendConfigured} />
                 {f.secret && <p className="mt-1 text-[10px] text-sx-mute">Sent only over HTTPS to SentinelX and encrypted before storage. Secret values are never returned to the browser.</p>}
                 {f.help && <p className="mt-1 text-[10px] text-sx-mute">{f.help}</p>}
               </Field>
