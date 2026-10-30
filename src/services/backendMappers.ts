@@ -114,7 +114,7 @@ export function mapAudit(row: Row): AuditRecord {
 
 export function mapIntegrationRows(payload: unknown): Integration[] {
   const rows = rowsFrom(payload);
-  if (!rows.length) return demoIntegrations;
+  const configs = obj(obj(payload).configs);
   return demoIntegrations.map(base => {
     const match = rows.find(row => {
       const c = cells(row);
@@ -122,10 +122,17 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
       const name = str(c['Integration Name']).toLowerCase();
       return id.includes(base.id) || name.includes(base.name.toLowerCase());
     });
-    if (!match) return { ...base, state: 'not_configured', configured: false, verified: false };
-    const c = cells(match);
+    const c = match ? cells(match) : {};
     const s = str(c['Connection Status']).toLowerCase();
     const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('config') ? 'disconnected' : 'not_configured';
-    return { ...base, state, configured: !s.includes('not configured'), verified: s === 'connected', lastHealthCheck: c['Last Health Check'] ? date(c['Last Health Check']) : undefined };
+    const config = obj(configs[base.id]);
+    const savedValues = obj(config.values) as Record<string, string>;
+    const configured = config.configured === true || (!s.includes('not configured') && !!match);
+    return {
+      ...base, state: configured && state === 'not_configured' ? 'disconnected' : state,
+      configured, verified: s === 'connected',
+      lastHealthCheck: c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
+      savedConfig: savedValues, configuredKeys: arr(config.keys),
+    };
   });
 }
