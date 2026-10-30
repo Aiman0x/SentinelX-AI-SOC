@@ -10,15 +10,18 @@ import { SearchInput } from '../components/common/SearchInput';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useAlerts } from '../hooks/useAlerts';
-import { useCases } from '../hooks/useCases';
+import { useLocalStore } from '../hooks/useLocalStore';
+import { useData } from '../hooks/useData';
 import { isBackendConfigured } from '../services/apiClient';
-import { ANALYSTS, createCase } from '../services/casesService';
+import { ANALYSTS, createCase, casesStore, loadCases } from '../services/casesService';
 import type { Severity } from '../types/alert';
 
 type Filter = 'all' | 'open' | 'investigating' | 'contained' | 'resolved' | 'closed';
 
 export default function Cases() {
-  const cases = useCases();
+  const localCases = useLocalStore(casesStore);
+  const remoteCases = useData(loadCases);
+  const cases = isBackendConfigured ? remoteCases.data ?? [] : localCases;
   const { alerts } = useAlerts();
   const { toast, analyst } = useApp();
   const [params, setParams] = useSearchParams();
@@ -54,13 +57,14 @@ export default function Cases() {
       <PageHeader title="Incidents & Cases" subtitle="Track investigations from detection to closure."
         actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" /> New demo case</button> : undefined} />
 
+      {isBackendConfigured && (remoteCases.loading ? <div className="mb-3 text-xs text-sx-mute">Loading cases from SentinelX backend…</div> : remoteCases.error ? <div className="mb-3 text-xs text-sx-red">Backend cases unavailable: {remoteCases.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only incident records from the SentinelX backend. Case updates and notes will be enabled after write APIs are complete.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-3 border-b border-sx-line p-3">
           <Segmented<Filter> label="Filter by status" value={filter} onChange={setFilter}
             options={(['all', 'open', 'investigating', 'contained', 'resolved', 'closed'] as Filter[]).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))} />
           <SearchInput className="w-full sm:ml-auto sm:w-64" value={q} onChange={setQ} placeholder="Search cases" label="Search cases" />
         </div>
-        {list.length === 0 ? <EmptyState title="No cases found" description="Change the filter or create a new demo case." /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
+        {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description="Change the filter or create a new demo case." /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
       </Panel>
 
       {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} readOnly={isBackendConfigured} /></div>}
