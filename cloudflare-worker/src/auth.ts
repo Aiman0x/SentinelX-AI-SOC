@@ -51,6 +51,10 @@ async function log(env:AuthEnv,userId:string|null,event:string) {
   await env.DB.prepare("INSERT INTO auth_audit_log(id,user_id,event) VALUES(?,?,?)").bind(id(),userId,event).run();
 }
 export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promise<Response|null> {
+  if(path==="/api/auth/bootstrap-status" && req.method==="GET") {
+    const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{n:number}>();
+    return response({bootstrapAvailable:(count?.n||0)===0});
+  }
   if(path==="/api/auth/bootstrap" && req.method==="POST") {
     if(req.headers.get("Origin") && req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
     const ip=req.headers.get("CF-Connecting-IP")||"unknown";
