@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/layout/AppLayout';
 import { useAuth } from './context/AuthContext';
@@ -13,20 +13,56 @@ import NotFound from './pages/NotFound';
 import Overview from './pages/Overview';
 import Playbooks from './pages/Playbooks';
 import Settings from './pages/Settings';
-import { isDemoMode } from './services/apiClient';
+import Users from './pages/Users';
+import { API_BASE_URL, apiGet, isDemoMode } from './services/apiClient';
 
 function LoginScreen() {
   const { login } = useAuth();
+  const [email, setEmail] = useState('aiman132046@gmail.com');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [bootstrapAvailable, setBootstrapAvailable] = useState(false);
+  const [setupMode, setSetupMode] = useState(false);
+  const [setupSecret, setSetupSecret] = useState('');
+  const [setupName, setSetupName] = useState('Aiman Salman');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirm, setSetupConfirm] = useState('');
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupError, setSetupError] = useState('');
+  const [setupNotice, setSetupNotice] = useState('');
+
+  useEffect(() => {
+    apiGet<{ bootstrapAvailable: boolean }>('/api/auth/bootstrap-status')
+      .then(result => setBootstrapAvailable(result.bootstrapAvailable))
+      .catch(() => setBootstrapAvailable(false));
+  }, []);
+
+  const initializeAdmin = async (event: FormEvent) => {
+    event.preventDefault(); setSetupError(''); setSetupNotice('');
+    if (setupPassword !== setupConfirm) { setSetupError('Passwords do not match.'); return; }
+    setSetupBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/bootstrap`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-SentinelX-Bootstrap': setupSecret },
+        body: JSON.stringify({ email, name: setupName, password: setupPassword, organization: 'SentinelX' }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Could not initialize administrator.');
+      setBootstrapAvailable(false); setSetupMode(false); setPassword('');
+      setSetupSecret(''); setSetupPassword(''); setSetupConfirm('');
+      setSetupNotice('Initial Admin account created. Sign in with your new password.');
+    } catch (e) { setSetupError(e instanceof Error ? e.message : 'Could not initialize administrator.'); }
+    finally { setSetupBusy(false); }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
     setBusy(true);
     try {
-      await login(password);
+      await login(email, password);
       setPassword('');
     } catch {
       setError('Login failed. Check your password or try again later.');
@@ -36,7 +72,7 @@ function LoginScreen() {
   };
 
   return (
-    <main className="flex min-h-full items-center justify-center px-4 py-10">
+    <main className="flex min-h-full flex-col items-center justify-center gap-4 px-4 py-10">
       <form onSubmit={submit} className="panel w-full max-w-sm p-7">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-sx-red/50 bg-sx-reddark/40 text-lg font-black text-sx-red">SX</div>
@@ -49,7 +85,9 @@ function LoginScreen() {
           <p className="text-sm font-semibold">Analyst authentication</p>
           <p className="mt-1 text-xs text-sx-mute">Sign in to access the SentinelX security console.</p>
         </div>
-        <label htmlFor="analyst-password" className="label">Analyst password</label>
+        <label htmlFor="analyst-email" className="label">Work email</label>
+        <input id="analyst-email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className="input mb-4 py-2.5" placeholder="analyst@company.com" />
+        <label htmlFor="analyst-password" className="label">Password</label>
         <input
           id="analyst-password"
           type="password"
@@ -62,11 +100,26 @@ function LoginScreen() {
           placeholder="Enter your analyst password"
         />
         {error && <p role="alert" className="mt-3 text-xs text-sx-red">{error}</p>}
-        <button type="submit" disabled={busy || !password} className="btn btn-primary mt-5 w-full py-2.5">
+        <button type="submit" disabled={busy || !email || !password} className="btn btn-primary mt-5 w-full py-2.5">
           {busy ? 'Authenticating…' : 'Secure sign in'}
         </button>
         <p className="mt-4 text-center text-[10px] text-sx-mute">Session expires automatically after four hours.</p>
+        {setupNotice && <p role="status" className="mt-3 text-center text-xs text-sx-gold">{setupNotice}</p>}
+        {bootstrapAvailable && <button type="button" className="mt-4 w-full border-t border-sx-line pt-4 text-xs text-sx-gold hover:text-white" onClick={() => { setSetupMode(v=>!v); setSetupError(''); }}>{setupMode ? 'Back to sign in' : 'Initialize first Admin account'}</button>}
       </form>
+      {setupMode && bootstrapAvailable && (
+        <form onSubmit={initializeAdmin} className="panel mt-4 w-full max-w-sm space-y-3 p-6">
+          <h2 className="text-sm font-semibold">Secure first-time setup</h2>
+          <p className="text-[11px] text-sx-mute">Enter the one-time bootstrap secret configured in Cloudflare Worker secrets. This value is sent only to your SentinelX backend over HTTPS.</p>
+          <label className="block"><span className="label">Bootstrap secret</span><input className="input" type="password" autoComplete="off" required value={setupSecret} onChange={e=>setSetupSecret(e.target.value)} /></label>
+          <label className="block"><span className="label">Admin email</span><input className="input" type="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)} /></label>
+          <label className="block"><span className="label">Display name</span><input className="input" required minLength={2} maxLength={100} value={setupName} onChange={e=>setSetupName(e.target.value)} /></label>
+          <label className="block"><span className="label">New password</span><input className="input" type="password" autoComplete="new-password" required minLength={14} maxLength={256} value={setupPassword} onChange={e=>setSetupPassword(e.target.value)} /></label>
+          <label className="block"><span className="label">Confirm password</span><input className="input" type="password" autoComplete="new-password" required minLength={14} maxLength={256} value={setupConfirm} onChange={e=>setSetupConfirm(e.target.value)} /></label>
+          {setupError && <p role="alert" className="text-xs text-sx-red">{setupError}</p>}
+          <button className="btn btn-primary w-full" type="submit" disabled={setupBusy || !setupSecret || setupPassword.length<14 || !setupName || !email}>{setupBusy?'Creating Admin…':'Create first Admin'}</button>
+        </form>
+      )}
     </main>
   );
 }
@@ -87,6 +140,7 @@ function AuthenticatedApp() {
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="audit" element={<AuditLogs />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<Users />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
@@ -107,6 +161,7 @@ function AuthenticatedApp() {
         <Route path="playbooks" element={<Playbooks />} />
         <Route path="audit" element={<AuditLogs />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="users" element={<Users />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -1,7 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { ENVIRONMENT_LABEL } from '../../services/apiClient';
+import { ENVIRONMENT_LABEL, isDemoMode } from '../../services/apiClient';
 import { navItems } from './nav';
 
 export const APP_VERSION = 'v0.1.0';
@@ -28,7 +28,7 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-          {navItems.map(({ to, label, icon: Icon, end }) => (
+          {navItems.filter(({ to }) => to !== '/users' || !isDemoMode).map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
