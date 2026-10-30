@@ -62,27 +62,43 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     return response({bootstrapAvailable:(count?.n||0)===0 && Boolean(env.BOOTSTRAP_SECRET)});
   }
   if(path==="/api/auth/bootstrap" && req.method==="POST") {
-    if(req.headers.get("Origin") && !originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
-    const ip=req.headers.get("CF-Connecting-IP")||"unknown";
-    if(!(await env.LOGIN_RATE_LIMITER.limit({key:await rateLimitKey("bootstrap",ip)})).success) return response({error:"Too many setup attempts"},429);
-    if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
-    if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
-    const length=Number(req.headers.get("Content-Length"));
-    if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
-    let body:{email?:string;name?:string;password?:string;organization?:string};
-    try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
-    const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", org=body.organization?.trim()||"SentinelX";
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256) return response({error:"Valid email, name and password (14+ characters) are required"},400);
-    const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{n:number}>();
-    if((count?.n||0)>0) return response({error:"Bootstrap is already closed"},409);
-    const userId=id(), orgId=id(), slug="sentinelx-"+crypto.randomUUID().slice(0,8);
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO organizations(id,name,slug) VALUES(?,?,?)").bind(orgId,org,slug),
-      env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,role) VALUES(?,?,?,?,?)").bind(userId,email,name,await passwordHash(password),"admin"),
-      env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(orgId,userId,"owner")
-    ]);
-    await log(env,userId,"bootstrap_admin_created");
-    return response({created:true,message:"Initial organization administrator created"},201);
+    let stage = "origin_check";
+    try {
+      if(req.headers.get("Origin") && !originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
+      stage = "rate_limit";
+      const ip=req.headers.get("CF-Connecting-IP")||"unknown";
+      if(!(await env.LOGIN_RATE_LIMITER.limit({key:await rateLimitKey("bootstrap",ip)})).success) return response({error:"Too many setup attempts"},429);
+      stage = "bootstrap_secret_check";
+      if(!env.BOOTSTRAP_SECRET || req.headers.get("X-SentinelX-Bootstrap")!==env.BOOTSTRAP_SECRET) return response({error:"Forbidden"},403);
+      stage = "content_type_check";
+      if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
+      const length=Number(req.headers.get("Content-Length"));
+      if(Number.isFinite(length)&&length>4096) return response({error:"Request too large"},413);
+      stage = "parse_request";
+      let body:{email?:string;name?:string;password?:string;organization?:string};
+      try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
+      const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", org=body.organization?.trim()||"SentinelX";
+      stage = "validate_input";
+      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256) return response({error:"Valid email, name and password (14+ characters) are required"},400);
+      stage = "check_existing_users";
+      const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{n:number}>();
+      if((count?.n||0)>0) return response({error:"Bootstrap is already closed"},409);
+      const userId=id(), orgId=id(), slug="sentinelx-"+crypto.randomUUID().slice(0,8);
+      stage = "hash_password";
+      const hashedPassword=await passwordHash(password);
+      stage = "insert_initial_records";
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO organizations(id,name,slug) VALUES(?,?,?)").bind(orgId,org,slug),
+        env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,role) VALUES(?,?,?,?,?)").bind(userId,email,name,hashedPassword,"admin"),
+        env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(orgId,userId,"owner")
+      ]);
+      stage = "write_audit_log";
+      await log(env,userId,"bootstrap_admin_created");
+      return response({created:true,message:"Initial organization administrator created"},201);
+    } catch (error) {
+      console.error("SentinelX bootstrap failed", {stage, error: error instanceof Error ? error.message : String(error)});
+      return response({error:"Bootstrap failed",stage},500);
+    }
   }
   if(path==="/api/auth/login" && req.method==="POST") {
     if(!originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
