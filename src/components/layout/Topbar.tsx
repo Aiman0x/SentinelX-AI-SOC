@@ -71,9 +71,13 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2" ref={wrap}>
-        {isDemoMode && (
+        {isDemoMode ? (
           <span className="hidden items-center gap-1.5 rounded-md border border-sx-gold/50 bg-sx-gold/10 px-2 py-1 text-[10px] font-bold tracking-wider text-sx-gold sm:inline-flex" title="No backend is connected. All data shown is sample data.">
             <span className="h-1.5 w-1.5 rounded-full bg-sx-gold" aria-hidden /> DEMO MODE
+          </span>
+        ) : (
+          <span className="hidden items-center gap-1.5 rounded-md border border-sx-line bg-sx-elev px-2 py-1 text-[10px] font-bold tracking-wider text-sx-mute sm:inline-flex" title="A backend URL is configured. Each screen reports whether its own data request succeeds.">
+            <span className="h-1.5 w-1.5 rounded-full bg-sx-mute" aria-hidden /> API MODE
           </span>
         )}
         <time className="mono hidden text-[11px] text-sx-mute xl:block" dateTime={now.toISOString()}>
