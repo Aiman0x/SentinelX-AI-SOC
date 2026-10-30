@@ -26,7 +26,7 @@ async function passwordHash(password:string, onStage?:(stage:string)=>void) {
   onStage?.("hash_password_derive_bits");
   const bits=new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt,iterations},key,256));
   onStage?.("hash_password_encode");
-  return `pbkdf2-sha256${iterations}${b64(salt)}${b64(bits)}`;
+  return `pbkdf2-sha256$${iterations}$${b64(salt)}$${b64(bits)}`;
 }
 async function passwordVerify(password:string, encoded:string) {
   try {
