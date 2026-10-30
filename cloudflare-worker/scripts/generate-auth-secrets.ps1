@@ -32,8 +32,12 @@ try {
     $hash = $derive.GetBytes(32)
 
     $sessionBytes = New-Object byte[] 32
+    $encryptionBytes = New-Object byte[] 32
     $rng2 = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng2.GetBytes($sessionBytes) } finally { $rng2.Dispose() }
+    try {
+        $rng2.GetBytes($sessionBytes)
+        $rng2.GetBytes($encryptionBytes)
+    } finally { $rng2.Dispose() }
 
     Write-Output ""
     Write-Output "LOGIN_PASSWORD_HASH (Cloudflare Secret):"
@@ -42,8 +46,11 @@ try {
     Write-Output "SESSION_HMAC_SECRET (Cloudflare Secret):"
     Write-Output ([BitConverter]::ToString($sessionBytes).Replace("-", "").ToLowerInvariant())
     Write-Output ""
+    Write-Output "CONFIG_ENCRYPTION_KEY (Cloudflare Secret):"
+    Write-Output ([BitConverter]::ToString($encryptionBytes).Replace("-", "").ToLowerInvariant())
+    Write-Output ""
     Write-Output "Copy each value directly into the matching Cloudflare Worker Secret field."
-    Write-Output "Do NOT paste either value into GitHub, Activepieces, or this chat."
+    Write-Output "Do NOT paste any value into GitHub, Activepieces, or this chat."
 }
 finally {
     if ($derive) { $derive.Dispose() }
