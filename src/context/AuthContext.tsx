@@ -4,7 +4,7 @@ import { apiGet, apiPost, isDemoMode } from '../services/apiClient';
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 interface AuthState {
   status: AuthStatus;
-  login: (password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 const AuthContext = createContext<AuthState | null>(null);
@@ -21,8 +21,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, []);
 
-  const login = useCallback(async (password: string) => {
-    await apiPost<{ authenticated: boolean }>('/api/auth/login', { password });
+  const login = useCallback(async (email: string, password: string) => {
+    await apiPost<{ authenticated: boolean }>('/api/auth/login', { email, password });
     setStatus('authenticated');
   }, []);
 
