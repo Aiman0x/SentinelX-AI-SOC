@@ -20,5 +20,6 @@ export interface Asset {
   monitoring: MonitoringState;
   method: string; // e.g. "Wazuh agent", "Sysmon", "None"
   lastEvent?: string; // ISO
+  lastVerified?: string; // ISO
   addedBy?: 'demo' | 'user';
 }
