@@ -6,7 +6,7 @@ import { buildTrend, type TrendRange } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
 import type { DetectionRule, AuditRecord } from '../types/extra';
 import { apiGet, delay, isBackendConfigured } from './apiClient';
-import { rowsFrom, mapAsset, mapRule, mapAudit } from './backendMappers';
+import { rowsFrom, mapAsset, mapRule, mapAudit, mapInvestigation } from './backendMappers';
 import { createLocalStore } from './localStore';
 
 export const assetsStore = createLocalStore<Asset[]>('sentinelx.demo.assets.v1', () => structuredClone(demoAssets));
@@ -19,6 +19,10 @@ export async function loadAssets(): Promise<Asset[]> {
 export async function loadRules(): Promise<DetectionRule[]> {
   if (isBackendConfigured) return rowsFrom(await apiGet<unknown>('/api/rules')).map(mapRule);
   await delay(200); return rulesStore.getSnapshot();
+}
+export async function loadInvestigations(): Promise<InvestigationRecord[]> {
+  if (isBackendConfigured) return rowsFrom(await apiGet<unknown>('/api/investigations')).map(mapInvestigation);
+  await delay(200); return [];
 }
 export async function loadAudit(): Promise<AuditRecord[]> {
   if (isBackendConfigured) return rowsFrom(await apiGet<unknown>('/api/audit')).map(mapAudit);
