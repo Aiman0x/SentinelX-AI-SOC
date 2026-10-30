@@ -60,7 +60,7 @@ export function mapCase(row: Row): SecurityCase {
   const recommended = arr(c['Recommended Actions'] ?? c.recommended_actions);
   return {
     id, title: str(c['Case Title'], str(c.case_title, 'Security investigation')), severity: severityValue, status,
-    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c.Source, str(c.source, 'Unknown asset'))].filter(x => x !== 'Unknown asset'),
+    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'])].filter(Boolean),
     createdAt: date(c['Created At'] ?? c.created_at), updatedAt: date(c['Updated At'] ?? c.updated_at ?? c['Created At']),
     overview: str(c['AI Analysis'], str(c['Final Report'], raw || 'No investigation summary recorded.')),
     notes: [], evidence: arr(c.evidence_event_ids), alertIds: [str(c['Source Event ID'], str(c.event_id))].filter(Boolean),
@@ -72,7 +72,7 @@ export function mapCase(row: Row): SecurityCase {
 export function mapAsset(row: Row): Asset {
   const c = cells(row);
   const monitoringText = str(c['Monitoring Status']).toLowerCase();
-  const monitoring: Asset['monitoring'] = monitoringText.includes('connect') && !monitoringText.includes('not') ? 'verified' : monitoringText.includes('degrad') || monitoringText.includes('stale') ? 'stale' : monitoringText.includes('not connected') || monitoringText.includes('unmonitored') ? 'unmonitored' : 'registered';
+  const monitoring: Asset['monitoring'] = monitoringText.includes('connect') && !monitoringText.includes('not') ? 'verified' : monitoringText.includes('degrad') || monitoringText.includes('stale') ? 'stale' : monitoringText.includes('not connected') || monitoringText.includes('unmonitored') || monitoringText.includes('retired') ? 'unmonitored' : 'registered';
   const typeText = str(c['Asset Type'], 'Server');
   const type: AssetType = /workstation|endpoint/i.test(typeText) ? 'Workstation' : /domain/i.test(typeText) ? 'Domain' : /network/i.test(typeText) ? 'Network device' : /cloud/i.test(typeText) ? 'Cloud service' : /database/i.test(typeText) ? 'Database' : 'Server';
   const critText = str(c.Criticality, 'medium').toLowerCase();
@@ -107,7 +107,7 @@ export function mapAudit(row: Row): AuditRecord {
     actorType: str(c['Actor Type']).toLowerCase().includes('human') ? 'user' : 'service', action: event,
     actionType, target: str(c['Case ID'], str(c['Evidence Reference'], '—')),
     result: outcome.includes('fail') ? 'failure' : outcome.includes('block') || outcome.includes('denied') ? 'denied' : 'success',
-    source: str(c['Organization ID'], 'SentinelX workflow'),
+    source: 'SentinelX Audit Log',
   };
 }
 
