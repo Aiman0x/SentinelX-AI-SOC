@@ -6,7 +6,6 @@ import { assetsStore, loadAssets } from '../services/miscService';
 import { getIntegrations, loadIntegrations } from '../services/integrationsService';
 import { useData } from '../hooks/useData';
 import { isDemoMode, isBackendConfigured } from '../services/apiClient';
-import { useData } from '../hooks/useData';
 import { IntegrationHealth } from '../components/dashboard/IntegrationHealth';
 import { RecentAlerts } from '../components/dashboard/RecentAlerts';
 import { SecurityTrendChart } from '../components/dashboard/SecurityTrendChart';
