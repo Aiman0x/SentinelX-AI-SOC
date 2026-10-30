@@ -124,7 +124,7 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     });
     const c = match ? cells(match) : {};
     const s = str(c['Connection Status']).toLowerCase();
-    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('config') ? 'disconnected' : 'not_configured';
+    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
     const config = obj(configs[base.id]);
     const savedValues = obj(config.values) as Record<string, string>;
     const configured = config.configured === true || (!s.includes('not configured') && !!match);
