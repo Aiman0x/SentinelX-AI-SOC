@@ -11,7 +11,12 @@ export async function loadIntegrations(): Promise<Integration[]> {
   if (isBackendConfigured) return mapIntegrationRows(await apiGet<unknown>('/api/integrations'));
   await delay(250); return getIntegrations();
 }
-export function saveIntegrationConfig(integration: Integration, values: Record<string, string>) {
+export async function saveIntegrationConfig(integration: Integration, values: Record<string, string>) {
+  if (isBackendConfigured) {
+    const result = await apiPost<{ saved: boolean }>(`/api/integrations/${integration.id}/config`, { values });
+    if (!result.saved) throw new Error('Backend did not confirm configuration save.');
+    return;
+  }
   const safe: Record<string, string> = {};
   for (const f of integration.fields) if (!f.secret && values[f.key]) safe[f.key] = values[f.key];
   const all = integrationConfigStore.getSnapshot();
