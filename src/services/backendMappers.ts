@@ -55,8 +55,8 @@ export function mapCase(row: Row): SecurityCase {
   const statusText = str(c.Status, str(c.status)).toLowerCase();
   const status: CaseStatus = statusText.includes('closed') ? 'closed' : statusText.includes('resolved') ? 'resolved' : statusText.includes('contain') ? 'contained' : statusText.includes('triag') || statusText.includes('investig') || statusText.includes('escalat') ? 'investigating' : 'open';
   const severityValue = severity(c.Severity ?? c.severity);
-  const raw = str(c['Raw Evidence'], c.raw_evidence);
-  const timelineRaw = str(c['Evidence Timeline'], c.evidence_timeline);
+  const raw = str(c['Raw Evidence'], str(c.raw_evidence));
+  const timelineRaw = str(c['Evidence Timeline'], str(c.evidence_timeline));
   const recommended = arr(c['Recommended Actions'] ?? c.recommended_actions);
   return {
     id, title: str(c['Case Title'], str(c.case_title, 'Security investigation')), severity: severityValue, status,
