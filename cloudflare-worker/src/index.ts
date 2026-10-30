@@ -185,7 +185,7 @@ function getCookie(request: Request, name: string): string | null {
   return null;
 }
 function cookieHeader(value: string, maxAge: number): string {
-  return `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None; Partitioned`;
+  return `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 async function verifyPassword(password: string, encoded: string): Promise<boolean> {
