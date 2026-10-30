@@ -63,11 +63,22 @@ Copy each webhook URL from its corresponding published Activepieces workflow tri
 
 ## Deployment
 
-1. Run scripts/generate-auth-secrets.ps1 locally and add its three outputs as Worker Secrets.
-2. Add the non-secret variables and eight Activepieces webhook URLs copied from their published trigger settings.
-3. Ensure the eight Activepieces read workflows use the same rotated bridge key as AP_BRIDGE_KEY.
-4. Deploy this Worker from the feat/cloudflare-api-gateway branch (or run npx wrangler deploy from this directory).
-5. Set the GitHub repository variable VITE_API_BASE_URL to the deployed Worker URL and publish the GUI.
-6. Verify browser session-cookie behavior and actual Activepieces response shapes before enabling live dashboard data.
+The repository includes `.github/workflows/deploy-worker.yml`. After this PR is merged to `main`, it can deploy the separate `sentinelx-api-gateway` Worker when Worker files change, or be started manually from GitHub Actions.
+
+### GitHub Actions deployment prerequisites
+
+- Add `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret. Grant only the Cloudflare permissions needed to deploy Workers Scripts for this account.
+- Add `CLOUDFLARE_ACCOUNT_ID` as a GitHub Actions repository/environment variable.
+- The workflow deploys only `cloudflare-worker/wrangler.toml`; it does not deploy or modify the existing `medicoreiph` Worker.
+
+### Worker runtime configuration
+
+1. Run `scripts/generate-auth-secrets.ps1` locally and add its three outputs as Worker Secrets. The password is chosen locally and is never sent to GitHub or this repository.
+2. Add `ALLOWED_ORIGIN` = `https://aiman0x.github.io` as a Worker variable.
+3. Add the eight Activepieces webhook URL secrets copied from their published trigger settings, with `/sync` appended.
+4. Rotate the shared bridge credential on all eight Activepieces read workflows, then set the matching value as `AP_BRIDGE_KEY` in Worker Secrets. Keep it separate from the Windows telemetry ingestion key.
+5. Deploy the Worker through the GitHub Actions workflow. Runtime routes remain unavailable until the required Worker secrets are configured.
+6. After the Worker is deployed and its exact workers.dev URL is confirmed, set the GitHub repository variable `VITE_API_BASE_URL` to that URL and publish the GUI.
+7. Verify browser session-cookie behavior and actual Activepieces response shapes before enabling live dashboard data.
 
 A successful `/health` endpoint is intentionally not provided: only the authentication and actual data endpoints should be used to validate the deployed gateway.
