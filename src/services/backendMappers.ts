@@ -72,7 +72,7 @@ export function mapCase(row: Row): SecurityCase {
 export function mapAsset(row: Row): Asset {
   const c = cells(row);
   const monitoringText = str(c['Monitoring Status']).toLowerCase();
-  const monitoring: Asset['monitoring'] = monitoringText.includes('connect') && !monitoringText.includes('not') ? 'verified' : monitoringText.includes('degrad') ? 'stale' : monitoringText.includes('not connected') ? 'unmonitored' : 'registered';
+  const monitoring: Asset['monitoring'] = monitoringText.includes('connect') && !monitoringText.includes('not') ? 'verified' : monitoringText.includes('degrad') || monitoringText.includes('stale') ? 'stale' : monitoringText.includes('not connected') || monitoringText.includes('unmonitored') ? 'unmonitored' : 'registered';
   const typeText = str(c['Asset Type'], 'Server');
   const type: AssetType = /workstation|endpoint/i.test(typeText) ? 'Workstation' : /domain/i.test(typeText) ? 'Domain' : /network/i.test(typeText) ? 'Network device' : /cloud/i.test(typeText) ? 'Cloud service' : /database/i.test(typeText) ? 'Database' : 'Server';
   const critText = str(c.Criticality, 'medium').toLowerCase();
