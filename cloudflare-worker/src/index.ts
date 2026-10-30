@@ -17,6 +17,7 @@ export interface Env {
   AP_READ_ASSETS_URL: string;
   AP_READ_DETECTION_RULES_URL: string;
   AP_READ_SECURITY_INTEGRATIONS_URL: string;
+  AP_READ_WINDOWS_TELEMETRY_URL: string;
 }
 
 const SESSION_COOKIE = "sx_session";
@@ -32,6 +33,7 @@ const ROUTES: Record<string, keyof Env> = {
   "/api/audit": "AP_READ_AUDIT_LOGS_URL",
   "/api/assets": "AP_READ_ASSETS_URL",
   "/api/rules": "AP_READ_DETECTION_RULES_URL",
+  "/api/telemetry": "AP_READ_WINDOWS_TELEMETRY_URL",
 };
 
 
