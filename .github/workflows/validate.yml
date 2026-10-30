@@ -1,0 +1,36 @@
+name: Validate SentinelX
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [feat/cloudflare-api-gateway]
+
+permissions:
+  contents: read
+
+jobs:
+  gui-build:
+    name: GUI typecheck and production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build GUI in demo-safe mode
+        run: npm run build
+
+  worker-dry-run:
+    name: Cloudflare Worker bundle validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate Worker bundle without deploying
+        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml
