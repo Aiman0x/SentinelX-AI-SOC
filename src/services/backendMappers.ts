@@ -16,7 +16,7 @@ const arr = (v: unknown): string[] => {
 };
 const severity = (v: unknown): Severity => {
   const s = str(v).toLowerCase();
-  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'low' ? 'low' : 'medium';
+  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'low' || s === 'informational' ? 'low' : 'medium';
 };
 const date = (v: unknown): string => {
   const d = v ? new Date(String(v)) : new Date(0);
@@ -78,7 +78,7 @@ export function mapAsset(row: Row): Asset {
   const critText = str(c.Criticality, 'medium').toLowerCase();
   const criticality: Criticality = critText === 'critical' || critText === 'high' || critText === 'low' ? critText : 'medium';
   const host = str(c['Hostname / Domain / IP'], '—');
-  return { id: str(c['Asset ID'], str(row.id, 'asset-unknown')), name: str(c['Asset Name'], host), host, ip: '—', os: str(c['Operating System'], '—'), type, criticality, monitoring, method: str(c['Telemetry Source'], 'None'), lastEvent: c['Last Verified'] ? date(c['Last Verified']) : undefined };
+  return { id: str(c['Asset ID'], str(row.id, 'asset-unknown')), name: str(c['Asset Name'], host), host, ip: '—', os: str(c['Operating System'], '—'), type, criticality, monitoring, method: str(c['Telemetry Source'], 'None'), lastEvent: undefined };
 }
 
 export function mapRule(row: Row): DetectionRule {
@@ -107,7 +107,7 @@ export function mapAudit(row: Row): AuditRecord {
     actorType: str(c['Actor Type']).toLowerCase().includes('human') ? 'user' : 'service', action: event,
     actionType, target: str(c['Case ID'], str(c['Evidence Reference'], '—')),
     result: outcome.includes('fail') ? 'failure' : outcome.includes('block') || outcome.includes('denied') ? 'denied' : 'success',
-    source: str(c.Details, str(c['Organization ID'], 'SentinelX workflow')),
+    source: str(c['Organization ID'], 'SentinelX workflow'),
   };
 }
 
@@ -123,7 +123,7 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     });
     const c = match ? cells(match) : {};
     const s = str(c['Connection Status']).toLowerCase();
-    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
+    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('simulated') ? 'demo' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
     const config = obj(configs[base.id]);
     const savedValues = obj(config.values) as Record<string, string>;
     const configured = config.configured === true || (!s.includes('not configured') && !!match);
