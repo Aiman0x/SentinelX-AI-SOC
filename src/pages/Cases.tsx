@@ -64,7 +64,7 @@ export default function Cases() {
             options={(['all', 'open', 'investigating', 'contained', 'resolved', 'closed'] as Filter[]).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))} />
           <SearchInput className="w-full sm:ml-auto sm:w-64" value={q} onChange={setQ} placeholder="Search cases" label="Search cases" />
         </div>
-        {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description="Change the filter or create a new demo case." /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
+        {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description={isBackendConfigured ? "No backend case records match the current filter." : "Change the filter or create a new demo case."} /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
       </Panel>
 
       {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} readOnly={isBackendConfigured} /></div>}
