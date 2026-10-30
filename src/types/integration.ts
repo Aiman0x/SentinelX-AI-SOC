@@ -21,6 +21,8 @@ export interface Integration {
   /** A real health check has succeeded. Always false in the frontend-only prototype. */
   verified: boolean;
   lastHealthCheck?: string;
+  savedConfig?: Record<string, string>;
+  configuredKeys?: string[];
   fields: IntegrationField[];
 }
 
