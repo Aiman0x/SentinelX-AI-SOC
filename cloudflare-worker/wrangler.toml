@@ -7,6 +7,7 @@ enabled = true
 
 [vars]
 ALLOWED_ORIGIN = "https://sentinelx-api-gateway.aiman132046.workers.dev,https://aiman0x.github.io"
+AP_READ_WINDOWS_TELEMETRY_URL = "https://cloud.activepieces.com/api/v1/webhooks/IGVyNQj1mZ0oX4EnqhH1l/sync"
 
 [assets]
 directory = "../dist"
