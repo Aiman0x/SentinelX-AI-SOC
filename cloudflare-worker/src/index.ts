@@ -34,7 +34,6 @@ const ROUTES: Record<string, keyof Env> = {
 
 
 const INTEGRATION_FIELDS: Record<string, string[]> = {
-  activepieces: ["baseUrl", "webhookPath", "webhookSecret"],
   wazuh: ["apiUrl", "apiUser", "apiPassword"],
   sysmon: ["collector", "configVersion"],
   clamav: ["host", "port"],
