@@ -311,18 +311,16 @@ export default {
     }
 
     if (request.method !== "GET") return reply({ error: "Method not allowed" }, 405, cors);
-    const envKey = ROUTES[url.pathname];
-    if (!envKey) return reply({ error: "Not found" }, 404, cors);
 
-    const actor = await currentUser(request, env);
-    if (!actor) {
-      return reply({ error: "Authentication required" }, 401, cors);
-    }
     if (url.pathname === "/api/integrations") {
       const actor = await currentUser(request, env);
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       return reply({ data: [], configs: await integrationConfigSummary(env, actor.organization_id) }, 200, cors);
     }
+
+    const envKey = ROUTES[url.pathname];
+    if (!envKey) return reply({ error: "Not found" }, 404, cors);
+    if (!(await verifySession(request, env))) return reply({ error: "Authentication required" }, 401, cors);
 
     const webhookUrl = env[envKey];
     if (typeof webhookUrl !== "string" || !webhookUrl || !env.AP_BRIDGE_KEY) {
@@ -341,9 +339,6 @@ export default {
       catch { return reply({ error: "Upstream returned invalid JSON" }, 502, cors); }
       if (payload && typeof payload === "object" && "data" in payload) {
         payload = (payload as { data: unknown }).data;
-      }
-      if (url.pathname === "/api/integrations") {
-        return reply({ data: payload, configs: await integrationConfigSummary(env, actor.organization_id) }, 200, cors);
       }
       return reply(payload, 200, cors);
     } catch {
