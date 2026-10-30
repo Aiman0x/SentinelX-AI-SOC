@@ -45,7 +45,7 @@ export default function Integrations() {
     <>
       <PageHeader title="Integrations" subtitle="Planned and optional defensive tool connections." />
       <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
-        These tools are <strong>planned or optional</strong> — none is assumed to be installed. States shown are sample values. “Connected” appears only after a real backend health check passes. Saving a configuration is not the same as a verified connection.
+        {isBackendConfigured ? 'Backend status is based on the integration registry and successful API reachability. Tool configurations are stored securely, but a saved configuration is not a verified tool connection.' : 'These tools are planned or optional — none is assumed to be installed. States shown are sample values. Saving a configuration is not the same as a verified connection.'}
       </div>
 
       {loading ? <div className="panel"><LoadingState /></div> : error ? <div className="panel"><ErrorState message={error} onRetry={reload} /></div> : (
@@ -67,7 +67,7 @@ export default function Integrations() {
                 <p className="mt-3 flex-1 text-xs text-sx-mute">{i.purpose}</p>
                 <dl className="mt-3 space-y-1.5 border-t border-sx-line pt-3 text-[11px]">
                   <div className="flex justify-between"><dt className="text-sx-mute">Configuration</dt><dd>{configured ? <span className="text-sx-warn">Saved · not verified</span> : <span className="text-sx-mute">Not configured</span>}</dd></div>
-                  <div className="flex justify-between"><dt className="text-sx-mute">Verified connection</dt><dd className="text-sx-mute">No</dd></div>
+                  <div className="flex justify-between"><dt className="text-sx-mute">Verified connection</dt><dd className={i.verified ? 'text-sx-green' : 'text-sx-mute'}>{i.verified ? 'Yes' : 'No'}</dd></div>
                   <div className="flex justify-between"><dt className="text-sx-mute">Last successful health check</dt><dd className="mono">{i.lastHealthCheck ? formatDateTime(i.lastHealthCheck) : 'never'}</dd></div>
                   {last && <div className="rounded border border-sx-line bg-sx-bg p-2 text-sx-mute"><span className="text-sx-warn">Last test:</span> {last.message}</div>}
                 </dl>
