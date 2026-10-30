@@ -25,3 +25,9 @@ namespace_id = "73104"
 [[kv_namespaces]]
 binding = "INTEGRATION_CONFIGS"
 id = "11b0f6bc1a374810b010978efcf11359"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sentinelx-auth-users"
+database_id = "5d1561a8-8e32-475d-b45e-67a0424b44f2"
+migrations_dir = "migrations"
