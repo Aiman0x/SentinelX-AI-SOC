@@ -1,6 +1,7 @@
 import { Network, Radar, Shield, Workflow, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getIntegrations } from '../../services/integrationsService';
+import { getIntegrations, loadIntegrations } from '../../services/integrationsService';
+import { useData } from '../../hooks/useData';
 import { Panel } from '../common/Controls';
 import { StatusBadge } from '../common/StatusBadge';
 import type { IntegrationState } from '../../types/integration';
@@ -8,7 +9,8 @@ import type { IntegrationState } from '../../types/integration';
 const icons: Record<string, LucideIcon> = { activepieces: Workflow, wazuh: Shield, sysmon: Radar, network: Network };
 
 export function IntegrationHealth() {
-  const all = getIntegrations();
+  const { data } = useData(loadIntegrations);
+  const all = data ?? getIntegrations();
   const net = all.filter((i) => i.id === 'suricata' || i.id === 'zeek');
   // Network monitoring is "connected" only if every network sensor is; otherwise the worst/least state is shown.
   const netState: IntegrationState = net.every((n) => n.state === 'connected') ? 'connected' : net.some((n) => n.state === 'error') ? 'error' : net.some((n) => n.state === 'disconnected') ? 'disconnected' : net.every((n) => n.state === 'not_configured') ? 'not_configured' : 'demo';
@@ -36,7 +38,7 @@ export function IntegrationHealth() {
         );
       })}
       <p className="text-[11px] text-sx-mute sm:col-span-2 xl:col-span-4">
-        “Connected” is only shown after a successful backend health check. States above are sample values for the demo.
+        “Connected” is only shown after a successful backend health check. Live backend status is shown when configured; otherwise these are sample values.
       </p>
     </Panel>
   );
