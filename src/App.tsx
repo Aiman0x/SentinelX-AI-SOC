@@ -41,11 +41,17 @@ function LoginScreen() {
   const initializeAdmin = async (event: FormEvent) => {
     event.preventDefault(); setSetupError(''); setSetupNotice('');
     if (setupPassword !== setupConfirm) { setSetupError('Passwords do not match.'); return; }
+    // HTTP header values must be byte-safe ASCII. Trim copied whitespace and reject hidden/non-ASCII characters.
+    const normalizedBootstrapSecret = setupSecret.trim();
+    if (!/^[\\x20-\\x7E]+$/.test(normalizedBootstrapSecret)) {
+      setSetupError('Bootstrap secret contains unsupported characters. Copy the original Cloudflare secret again; do not type or translate it.');
+      return;
+    }
     setSetupBusy(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/bootstrap`, {
         method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-SentinelX-Bootstrap': setupSecret },
+        headers: { 'Content-Type': 'application/json', 'X-SentinelX-Bootstrap': normalizedBootstrapSecret },
         body: JSON.stringify({ email, name: setupName, password: setupPassword, organization: 'SentinelX' }),
       });
       const payload = await response.json() as { error?: string };
