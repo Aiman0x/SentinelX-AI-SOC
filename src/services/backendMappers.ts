@@ -1,7 +1,7 @@
 import type { Alert, Severity } from '../types/alert';
 import type { SecurityCase, CaseStatus } from '../types/case';
 import type { Asset, AssetType, Criticality } from '../types/asset';
-import type { DetectionRule, AuditRecord } from '../types/extra';
+import type { DetectionRule, AuditRecord, InvestigationRecord } from '../types/extra';
 import type { Integration } from '../types/integration';
 import { demoIntegrations } from '../data/demoIntegrations';
 
@@ -135,4 +135,25 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
       savedConfig: savedValues, configuredKeys: arr(config.keys),
     };
   });
+}
+
+
+export function mapInvestigation(row: Row): InvestigationRecord {
+  const c = cells(row);
+  return {
+    id: str(c['Correlation ID'], str(row.id, 'investigation-unknown')),
+    caseId: str(c['Case ID'], '—'),
+    createdAt: date(c['Created At']),
+    eventCount: Number(c['Event Count'] ?? 0),
+    findingCount: Number(c['Finding Count'] ?? 0),
+    confidence: Number(c.Confidence ?? 0),
+    dataOrigin: str(c['Data Origin'], 'UNKNOWN'),
+    status: str(c['Investigation Status'], 'Needs Analyst Review'),
+    narrative: str(c['Investigation Narrative'], 'No investigation narrative recorded.'),
+    hosts: arr(c['Host Summary']),
+    accounts: arr(c['Account Summary']),
+    sourceIps: arr(c['Source IP Summary']),
+    eventIds: arr(c['Related Event IDs']),
+    signals: arr(c['Correlation Signals']),
+  };
 }
