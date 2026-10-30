@@ -81,7 +81,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     return response({created:true,message:"Initial organization administrator created"},201);
   }
   if(path==="/api/auth/login" && req.method==="POST") {
-    if(req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    if(!originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
     const ip=req.headers.get("CF-Connecting-IP")||"unknown";
     if(!(await env.LOGIN_RATE_LIMITER.limit({key:"login:"+ip})).success) return response({error:"Too many login attempts. Try again in one minute."},429);
     if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
@@ -104,7 +104,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     return response({authenticated:true,user:{id:row.id,email:row.email,name:row.display_name}},200,{"Set-Cookie":cookie(token,TTL)});
   }
   if(path==="/api/auth/password" && req.method==="POST") {
-    if(req.headers.get("Origin")!==env.ALLOWED_ORIGIN) return response({error:"Origin not allowed"},403);
+    if(!originAllowed(req.headers.get("Origin")||"",env)) return response({error:"Origin not allowed"},403);
     const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
     if(!req.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return response({error:"JSON required"},415);
     const length=Number(req.headers.get("Content-Length"));
