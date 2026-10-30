@@ -26,7 +26,7 @@ export interface Result<T> {
 
 export const delay = (ms = 250) => new Promise<void>((r) => setTimeout(r, ms));
 
-async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
   if (!isBackendConfigured) throw new BackendNotConfiguredError();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -48,3 +48,4 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
 
 export const apiGet = <T>(path: string) => request<T>('GET', path);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>('POST', path, body);
+export const apiDelete = <T>(path: string) => request<T>('DELETE', path);
