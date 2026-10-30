@@ -1,8 +1,8 @@
 import { ExternalLink, FolderPlus, Microscope, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useLocalStore } from '../../hooks/useLocalStore';
-import { alertsStore, updateAlert } from '../../services/alertsService';
+import { useAlerts } from '../../hooks/useAlerts';
+import { updateAlert } from '../../services/alertsService';
 import { createCaseFromAlert } from '../../services/casesService';
 import { formatDateTime } from '../../utils/formatDate';
 import { Drawer } from '../common/Drawer';
@@ -20,7 +20,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function AlertDetails({ alertId, onClose }: { alertId: string | null; onClose: () => void }) {
-  const alerts = useLocalStore(alertsStore);
+  const { alerts } = useAlerts();
   const { toast, openAlert, analyst } = useApp();
   const navigate = useNavigate();
   const alert = alertId ? alerts.find((a) => a.id === alertId) : undefined;
@@ -37,7 +37,7 @@ export function AlertDetails({ alertId, onClose }: { alertId: string | null; onC
     navigate(`/cases?case=${c.id}`);
   };
   const investigate = () => {
-    if (alert.status === 'open') updateAlert(alert.id, { status: 'investigating' });
+    if (isDemoMode && alert.status === 'open') updateAlert(alert.id, { status: 'investigating' });
     onClose();
     navigate(`/investigation?alert=${alert.id}`);
   };
@@ -49,12 +49,19 @@ export function AlertDetails({ alertId, onClose }: { alertId: string | null; onC
       title={<span className="flex items-center gap-2">{alert.ruleName} {isDemoMode && <DemoTag />}</span>}
       subtitle={<span className="mono">{alert.id} · Event ID {alert.eventId} · {formatDateTime(alert.timestamp)}</span>}
       footer={
-        <>
-          <button className="btn" onClick={() => { updateAlert(alert.id, { status: 'false_positive' }); toast('Marked as false positive (local demo state).', 'info'); }}>False positive</button>
-          <button className="btn" onClick={() => { updateAlert(alert.id, { status: 'resolved' }); toast('Alert marked resolved (local demo state).', 'success'); }}>Resolve</button>
-          <button className="btn btn-gold" onClick={makeCase}><FolderPlus className="h-3.5 w-3.5" /> {alert.caseId ? 'Open Case' : 'Create Case'}</button>
-          <button className="btn btn-primary" onClick={investigate}><Microscope className="h-3.5 w-3.5" /> Investigate</button>
-        </>
+        isDemoMode ? (
+          <>
+            <button className="btn" onClick={() => { updateAlert(alert.id, { status: 'false_positive' }); toast('Marked as false positive (local demo state).', 'info'); }}>False positive</button>
+            <button className="btn" onClick={() => { updateAlert(alert.id, { status: 'resolved' }); toast('Alert marked resolved (local demo state).', 'success'); }}>Resolve</button>
+            <button className="btn btn-gold" onClick={makeCase}><FolderPlus className="h-3.5 w-3.5" /> {alert.caseId ? 'Open Case' : 'Create Case'}</button>
+            <button className="btn btn-primary" onClick={investigate}><Microscope className="h-3.5 w-3.5" /> Investigate</button>
+          </>
+        ) : (
+          <>
+            {alert.caseId && <button className="btn btn-gold" onClick={() => { onClose(); navigate(`/cases?case=${alert.caseId}`); }}>Open Case</button>}
+            <button className="btn btn-primary" onClick={investigate}><Microscope className="h-3.5 w-3.5" /> View Investigations</button>
+          </>
+        )
       }
     >
       <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -63,6 +70,7 @@ export function AlertDetails({ alertId, onClose }: { alertId: string | null; onC
         <span className="rounded-md border border-sx-line px-2 py-0.5 text-[11px] text-sx-mute">{alert.source}</span>
       </div>
 
+      {!isDemoMode && <p className="mb-4 rounded border border-sx-line bg-sx-panel p-2 text-[11px] text-sx-mute">Backend alert record · read-only. Triage updates and case creation will be enabled when their write APIs are complete.</p>}
       <Section title="Alert summary">
         <p className="text-[13px]">{alert.summary}</p>
         <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-sx-line bg-sx-panel p-3 text-xs">
