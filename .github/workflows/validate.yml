@@ -32,5 +32,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install GUI dependencies
+        run: npm ci
+      - name: Build static assets for Worker validation
+        run: npm run build
       - name: Validate Worker bundle without deploying
         run: npx --yes wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml
