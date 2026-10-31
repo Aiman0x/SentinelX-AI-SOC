@@ -126,13 +126,15 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('simulated') ? 'demo' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
     const config = obj(configs[base.id]);
     const savedValues = obj(config.values) as Record<string, string>;
+    const health = obj(config.health);
+    const healthVerified = health.ok === true;
     // A successful /api/integrations request has already completed a real Activepieces webhook round-trip.
     const activepiecesReachable = base.id === 'activepieces';
     const configured = activepiecesReachable || config.configured === true || (!s.includes('not configured') && !!match);
     return {
       ...base, state: activepiecesReachable ? 'connected' : configured && state === 'not_configured' ? 'disconnected' : state,
-      configured, verified: activepiecesReachable || s === 'connected',
-      lastHealthCheck: activepiecesReachable ? new Date().toISOString() : c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
+      configured, verified: activepiecesReachable || healthVerified || s === 'connected',
+      lastHealthCheck: activepiecesReachable ? new Date().toISOString() : (typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined),
       savedConfig: savedValues, configuredKeys: arr(config.keys),
     };
   });
