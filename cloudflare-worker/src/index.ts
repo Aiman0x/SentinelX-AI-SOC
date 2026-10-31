@@ -309,7 +309,34 @@ export default {
       const actor = await currentUser(request, env);
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
-      return reply({ ok: false, unavailable: true, message: "Connection testing will be enabled after the tool-specific Activepieces adapters are configured." }, 501, cors);
+      const integrationId = url.pathname.split("/")[3];
+      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "Secure storage is ready. This integration needs its host/collector adapter before a real health check can be performed." }, 501, cors);
+      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure configuration storage is not configured." }, 503, cors);
+      const storageKey = integrationConfigKey(actor.organization_id, integrationId);
+      const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
+      if (!encrypted) return reply({ ok: false, message: "Save Wazuh configuration before testing." }, 400, cors);
+      try {
+        const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
+        const base = new URL(values.apiUrl || "");
+        if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) return reply({ ok: false, message: "Use a valid HTTPS Wazuh API URL without embedded credentials." }, 400, cors);
+        if (!values.apiUser || !values.apiPassword) return reply({ ok: false, message: "Wazuh API username and password are required." }, 400, cors);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        try {
+          const basic = btoa(unescape(encodeURIComponent(values.apiUser + ":" + values.apiPassword)));
+          const auth = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/security/user/authenticate", { method: "POST", headers: { Authorization: "Basic " + basic, Accept: "application/json" }, signal: controller.signal, redirect: "error" });
+          if (!auth.ok) return reply({ ok: false, message: auth.status === 401 ? "Wazuh API rejected the credentials." : "Wazuh API authentication failed (HTTP " + auth.status + ")." }, 200, cors);
+          const authJson = await auth.json();
+          const token = authJson && authJson.data && authJson.data.token;
+          if (typeof token !== "string" || !token) return reply({ ok: false, message: "Wazuh API did not return an authentication token." }, 200, cors);
+          const check = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/agents?limit=1", { headers: { Authorization: "Bearer " + token, Accept: "application/json" }, signal: controller.signal, redirect: "error" });
+          if (!check.ok) return reply({ ok: false, message: "Wazuh authenticated, but its agents endpoint failed (HTTP " + check.status + ")." }, 200, cors);
+          const result = await check.json();
+          return reply({ ok: true, message: "Wazuh API authenticated and agent inventory is reachable.", details: { agentCount: result && result.data ? result.data.total_affected_items : null }, checkedAt: new Date().toISOString() }, 200, cors);
+        } finally { clearTimeout(timeout); }
+      } catch (error) {
+        return reply({ ok: false, message: error && error.name === "AbortError" ? "Wazuh API health check timed out after 10 seconds." : "Could not reach Wazuh API. Check HTTPS reachability and certificate trust." }, 200, cors);
+      }
     }
 
     if (request.method !== "GET") return reply({ error: "Method not allowed" }, 405, cors);
