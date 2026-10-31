@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { Play, RefreshCw, Search, ShieldAlert, Square } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Panel } from '../components/common/Controls';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
-import { getWindowsTelemetry, type WindowsTelemetryEvent } from '../services/telemetryService';
+import {
+  getLocalCollectorStatus, getWindowsTelemetry, startLocalCollector, stopLocalCollector,
+  type LocalCollectorStatus, type WindowsTelemetryEvent,
+} from '../services/telemetryService';
 
 const displayDate = (value: string) => {
   const date = new Date(value);
@@ -15,13 +18,38 @@ export default function WindowsTelemetry() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [agent, setAgent] = useState<LocalCollectorStatus | null>(null);
+  const [agentError, setAgentError] = useState('Local agent is not connected.');
+  const [actionBusy, setActionBusy] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try { setEvents(await getWindowsTelemetry()); }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not load Windows telemetry.'); }
     finally { setLoading(false); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  const refreshAgent = useCallback(async () => {
+    try { setAgent(await getLocalCollectorStatus()); setAgentError(''); }
+    catch (e) { setAgent(null); setAgentError(e instanceof Error ? e.message : 'Local agent is unavailable.'); }
+  }, []);
+  const runAction = async (action: 'start' | 'stop') => {
+    setActionBusy(true);
+    try {
+      const status = action === 'start' ? await startLocalCollector() : await stopLocalCollector();
+      setAgent(status); setAgentError('');
+      if (action === 'start') window.setTimeout(() => void load(), 1800);
+    } catch (e) {
+      setAgentError(e instanceof Error ? e.message : 'Could not control the local collector.');
+      await refreshAgent();
+    } finally { setActionBusy(false); }
+  };
+
+  useEffect(() => { void load(); void refreshAgent(); }, [load, refreshAgent]);
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refreshAgent(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshAgent]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return events.filter(e => !q || [e.eventId,e.eventType,e.host,e.username,e.sourceIp,e.source,e.dataOrigin,e.validationStatus].join(' ').toLowerCase().includes(q));
@@ -29,9 +57,23 @@ export default function WindowsTelemetry() {
   const realCount = events.filter(e => e.dataOrigin === 'REAL_UNVERIFIED').length;
 
   return <>
-    <PageHeader title="Windows Telemetry" subtitle="Raw endpoint events received from the Windows collector. Events here are telemetry, not automatically confirmed alerts."
-      actions={<button className="btn" onClick={() => void load()}><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>} />
-    <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <PageHeader title="Windows Telemetry" subtitle="Control the read-only local collector and inspect Windows Security events received by SentinelX."
+      actions={<button className="btn" onClick={() => { void load(); void refreshAgent(); }}><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>} />
+    <Panel>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold">Local Windows collector</h2>
+          <p className="mt-1 text-xs text-sx-mute">Reads Security Event ID 4625 only · read-only · sends to the configured SentinelX intake</p>
+          <p className="mt-2 text-xs">{agent ? <span className="text-emerald-400">Agent connected · collector {agent.collector}</span> : <span className="text-sx-gold">Agent offline</span>}</p>
+          {agentError && <p className="mt-1 text-xs text-sx-mute">{agentError} Start the SentinelX Local Agent on this Windows PC, then refresh.</p>}
+        </div>
+        <div className="flex gap-2">
+          <button className="btn" disabled={!agent || agent.collector === 'running' || actionBusy} onClick={() => void runAction('start')}><Play className="h-3.5 w-3.5" /> {actionBusy ? 'Working…' : 'Start collector'}</button>
+          <button className="btn" disabled={!agent || agent.collector !== 'running' || actionBusy} onClick={() => void runAction('stop')}><Square className="h-3.5 w-3.5" /> Stop collector</button>
+        </div>
+      </div>
+    </Panel>
+    <div className="my-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
       <Panel><p className="text-[11px] uppercase tracking-wider text-sx-mute">Received events</p><p className="mt-1 text-2xl font-semibold">{events.length}</p></Panel>
       <Panel><p className="text-[11px] uppercase tracking-wider text-sx-mute">Real / unverified</p><p className="mt-1 text-2xl font-semibold text-sx-gold">{realCount}</p></Panel>
       <Panel><p className="text-[11px] uppercase tracking-wider text-sx-mute">Sample events</p><p className="mt-1 text-2xl font-semibold">{events.length-realCount}</p></Panel>
