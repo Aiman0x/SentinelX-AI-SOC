@@ -141,7 +141,7 @@ async function integrationConfigSummary(env: Env, organizationId: string): Promi
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
       if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
       const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
-      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !["webhookSecret", "apiPassword"].includes(key)));
+      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
       result[id] = { configured: true, values: publicValues, keys: Object.keys(values) };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
   }
