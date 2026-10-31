@@ -128,13 +128,12 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     const savedValues = obj(config.values) as Record<string, string>;
     const health = obj(config.health);
     const healthVerified = health.ok === true;
-    // A successful /api/integrations request has already completed a real Activepieces webhook round-trip.
-    const activepiecesReachable = base.id === 'activepieces';
-    const configured = activepiecesReachable || config.configured === true || (!s.includes('not configured') && !!match);
+    // Registry access alone does not prove an ActivePieces webhook round-trip.
+    const configured = config.configured === true || (!s.includes('not configured') && !!match);
     return {
-      ...base, state: activepiecesReachable ? 'connected' : configured && state === 'not_configured' ? 'disconnected' : state,
-      configured, verified: activepiecesReachable || healthVerified || s === 'connected',
-      lastHealthCheck: activepiecesReachable ? new Date().toISOString() : (typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined),
+      ...base, state: configured && state === 'not_configured' ? 'disconnected' : state,
+      configured, verified: healthVerified || s === 'connected',
+      lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
       savedConfig: savedValues, configuredKeys: arr(config.keys),
     };
   });
