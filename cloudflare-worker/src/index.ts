@@ -133,8 +133,8 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
     return reply({ error: "Could not securely save integration configuration" }, 500, cors);
   }
 }
-async function integrationConfigSummary(env: Env, organizationId: string): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }>> {
-  const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[] }> = {};
+async function integrationConfigSummary(env: Env, organizationId: string): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }>> {
+  const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }> = {};
   for (const id of Object.keys(INTEGRATION_FIELDS)) {
     try {
       const storageKey = integrationConfigKey(organizationId, id);
@@ -142,7 +142,9 @@ async function integrationConfigSummary(env: Env, organizationId: string): Promi
       if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
       const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
       const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
-      result[id] = { configured: true, values: publicValues, keys: Object.keys(values) };
+      const healthRaw = await env.INTEGRATION_CONFIGS.get(storageKey + ":health");
+      const health = healthRaw ? JSON.parse(healthRaw) as { ok: boolean; message: string; checkedAt: string } : undefined;
+      result[id] = { configured: true, values: publicValues, keys: Object.keys(values), health };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
   }
   return result;
@@ -332,7 +334,10 @@ export default {
           const check = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/agents?limit=1", { headers: { Authorization: "Bearer " + token, Accept: "application/json" }, signal: controller.signal, redirect: "error" });
           if (!check.ok) return reply({ ok: false, message: "Wazuh authenticated, but its agents endpoint failed (HTTP " + check.status + ")." }, 200, cors);
           const result = await check.json();
-          return reply({ ok: true, message: "Wazuh API authenticated and agent inventory is reachable.", details: { agentCount: result && result.data ? result.data.total_affected_items : null }, checkedAt: new Date().toISOString() }, 200, cors);
+          const checkedAt = new Date().toISOString();
+          const health = { ok: true, message: "Wazuh API authenticated and agent inventory is reachable.", checkedAt };
+          await env.INTEGRATION_CONFIGS.put(storageKey + ":health", JSON.stringify(health));
+          return reply({ ...health, details: { agentCount: result && result.data ? result.data.total_affected_items : null } }, 200, cors);
         } finally { clearTimeout(timeout); }
       } catch (error) {
         return reply({ ok: false, message: error && error.name === "AbortError" ? "Wazuh API health check timed out after 10 seconds." : "Could not reach Wazuh API. Check HTTPS reachability and certificate trust." }, 200, cors);
