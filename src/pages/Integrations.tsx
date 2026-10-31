@@ -73,7 +73,7 @@ export default function Integrations() {
                 </dl>
                 <div className="mt-3 flex gap-2">
                   {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)}><Settings2 className="h-3.5 w-3.5" /> Configure</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Gateway managed</div>}
-                  {!isBackendConfigured ? <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Adapter test pending</div>}
+                  {!isBackendConfigured ? <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button> : <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id || !configured}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? "Testing…" : "Test Connection"}</button>}
                 </div>
               </Panel>
             );
