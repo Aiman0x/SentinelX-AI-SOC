@@ -310,7 +310,7 @@ export default {
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
       const integrationId = url.pathname.split("/")[3];
-      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "Secure storage is ready. This integration needs its host/collector adapter before a real health check can be performed." }, 501, cors);
+      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "Secure storage is ready. This integration needs its host/collector adapter before a real health check can be performed." }, 200, cors);
       if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure configuration storage is not configured." }, 503, cors);
       const storageKey = integrationConfigKey(actor.organization_id, integrationId);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
