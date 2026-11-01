@@ -1,8 +1,8 @@
 # SentinelX — AI-Assisted Security Operations Center
 
-SentinelX is a defensive SOC capstone project focused on authorized telemetry ingestion, detection, investigation, evidence handling, and analyst-guided response.
+SentinelX is a multi-tenant, BYO-integrations AI SOC platform focused on authorized telemetry ingestion, detection, investigation, evidence handling, and analyst-guided response. Each workspace can connect its own supported security tools and configure its own LLM provider; no single Wazuh server or model provider is mandatory.
 
-The intended design uses **ActivePieces as the primary workflow/orchestration backend**, and a **Cloudflare Worker** to serve the React GUI and securely proxy authenticated API requests to ActivePieces.
+The intended design uses a **Cloudflare Worker** as the authenticated control plane and a **React GUI** for workspace management. **ActivePieces** remains an optional/reusable workflow orchestration layer. Tool and model credentials are workspace-scoped and stored server-side.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ Eight GUI read workflows already exist and are enabled. This confirms workflow c
 - Rotate the shared GUI bridge credential on all eight ActivePieces read workflows.
 - Configure the eight published ActivePieces webhook URLs as Worker Secrets.
 
-See `cloudflare-worker/README.md` for the exact runtime secret names and setup instructions.
+See `cloudflare-worker/README.md` for the exact runtime secret names and setup instructions. See `docs/BYO_LLM_AND_MULTI_TENANT_ARCHITECTURE.md` for the target BYO-LLM and multi-tenant connector design.
 
 ## Still pending
 
@@ -81,4 +81,4 @@ Without `VITE_API_BASE_URL`, the GUI uses demo data. Never put secrets in `VITE_
 - Do not describe demo data, saved configurations, or structurally valid workflows as verified telemetry or connected tools.
 - Keep disruptive response actions disabled until authentication, approval, and audit controls are implemented.
 
-**Status: In Development — unified Workers deployment prepared; runtime configuration and deployment remain pending.**
+**Status: In Development — BYO-LLM and multi-tenant connector architecture documented; runtime implementation and deployment remain pending.**
