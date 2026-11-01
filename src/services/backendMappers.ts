@@ -123,7 +123,7 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     });
     const c = match ? cells(match) : {};
     const s = str(c['Connection Status']).toLowerCase();
-    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('simulated') ? 'demo' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
+    const state: Integration['state'] = health.ok === true ? 'connected' : config.configured === true ? 'disconnected' : 'not_configured';
     const config = obj(configs[base.id]);
     const savedValues = obj(config.values) as Record<string, string>;
     const health = obj(config.health);
@@ -132,7 +132,7 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     const configured = config.configured === true || (!s.includes('not configured') && !!match);
     return {
       ...base, state: configured && state === 'not_configured' ? 'disconnected' : state,
-      configured, verified: healthVerified || s === 'connected',
+      configured, verified: healthVerified,
       lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
       savedConfig: savedValues, configuredKeys: arr(config.keys),
     };
