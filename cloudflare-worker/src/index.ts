@@ -1,4 +1,5 @@
 import { currentUser, handleAuthRoute } from "./auth";
+import { handleAIRoute } from "./ai";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -287,6 +288,9 @@ export default {
         : reply({ error: "Origin not allowed" }, 403);
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
+
+    const aiResponse = await handleAIRoute(request, env, url.pathname);
+    if (aiResponse) return new Response(aiResponse.body, { status: aiResponse.status, headers: { ...Object.fromEntries(aiResponse.headers), ...cors } });
 
     const authResponse = await handleAuthRoute(request, env, url.pathname);
     if (authResponse) return new Response(authResponse.body, { status: authResponse.status, headers: { ...Object.fromEntries(authResponse.headers), ...cors } });
