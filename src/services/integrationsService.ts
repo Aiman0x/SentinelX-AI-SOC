@@ -30,8 +30,8 @@ export async function testConnection(integration: Integration): Promise<TestResu
     result = { ok: false, unavailable: true, at, message: 'Cannot verify: no SentinelX backend is configured. Health checks must run server-side.' };
   } else {
     try {
-      const res = await apiPost<{ ok: boolean; message?: string }>(`/api/integrations/${integration.id}/test`, {});
-      result = { ok: !!res.ok, at, message: res.message ?? (res.ok ? 'Health check passed.' : 'Health check failed.') };
+      const res = await apiPost<{ ok: boolean; unavailable?: boolean; message?: string }>(`/api/integrations/${integration.id}/test`, {});
+      result = { ok: !!res.ok, unavailable: !!res.unavailable, at, message: res.message ?? (res.ok ? 'Health check passed.' : 'Health check failed.') };
     } catch (e) { result = { ok: false, at, message: e instanceof Error ? e.message : 'Health check failed.' }; }
   }
   const all = integrationConfigStore.getSnapshot();
