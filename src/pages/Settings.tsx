@@ -4,6 +4,7 @@ import { Field, Panel, Select } from '../components/common/Controls';
 import { PageHeader } from '../components/layout/PageHeader';
 import { APP_VERSION } from '../components/layout/Sidebar';
 import { useApp } from '../context/AppContext';
+import { AIProviderSettings } from '../components/settings/AIProviderSettings';
 import { API_BASE_URL, ENVIRONMENT_LABEL, isBackendConfigured, apiPost } from '../services/apiClient';
 import { resetAllDemoData } from '../services/miscService';
 import { createLocalStore } from '../services/localStore';
@@ -103,9 +104,10 @@ export default function Settings() {
             <p className="py-3 text-[11px] text-sx-mute">Delivery (email / chat) requires a backend. These switches only save your preference.</p>
           </>)}
           {active === 'integrations' && (
-            <div className="space-y-3 py-4 text-xs">
-              <div className="flex justify-between"><span className="text-sx-mute">Backend API</span><span className="mono">{isBackendConfigured ? API_BASE_URL : 'Not configured (demo mode)'}</span></div>
-              <p className="text-sx-mute">Per-tool configuration is on the Integrations page. API keys and passwords are never entered or stored in the browser.</p>
+            <div className="space-y-4 py-4 text-xs">
+              <div className="flex justify-between gap-3"><span className="text-sx-mute">Backend API</span><span className="mono break-all">{isBackendConfigured ? API_BASE_URL : 'Not configured (demo mode)'}</span></div>
+              <AIProviderSettings />
+              <p className="text-sx-mute">Per-tool security integrations are configured on the Integrations page. Credentials are stored server-side, not in the browser.</p>
             </div>
           )}
           {active === 'retention' && (
