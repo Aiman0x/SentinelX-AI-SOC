@@ -70,13 +70,13 @@ export function AIProviderSettings() {
         <input className="input mt-1" type="url" value={baseUrl} onChange={(e)=>setBaseUrl(e.target.value)} required placeholder="https://your-llm.example.com/v1" disabled={busy || !isBackendConfigured} />
       </label>}
       <label className="block text-xs text-sx-mute">API key
-        <input className="input mt-1" type="password" autoComplete="new-password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} required={!configured} placeholder={configured ? "Saved key hidden — enter a new key to replace it" : "Paste your provider API key"} disabled={!isBackendConfigured || busy} />
+        <input className="input mt-1" type="password" autoComplete="new-password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} required placeholder={configured ? "Saved key hidden — enter a new key to replace it" : "Paste your provider API key"} disabled={!isBackendConfigured || busy} />
       </label>
       {configured && <p className="text-[10px] text-sx-ok">Provider configured · {provider} · {model} {hint && "· " + hint}</p>}
       {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
       {message && <p role="status" className="text-xs text-sx-gold break-words">{message}</p>}
       <div className="flex flex-wrap gap-2">
-        <button className="btn btn-primary btn-sm" type="submit" disabled={!isBackendConfigured || busy || !model.trim() || (!apiKey.trim() && !configured)}>{busy ? "Working…" : "Save provider"}</button>
+        <button className="btn btn-primary btn-sm" type="submit" disabled={!isBackendConfigured || busy || !model.trim() || apiKey.trim().length < 8}>{busy ? "Working…" : "Save provider"}</button>
         <button className="btn btn-sm" type="button" onClick={test} disabled={!isBackendConfigured || busy || !configured}>Test connection</button>
       </div>
     </form>
