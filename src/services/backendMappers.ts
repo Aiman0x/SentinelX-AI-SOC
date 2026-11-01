@@ -112,28 +112,17 @@ export function mapAudit(row: Row): AuditRecord {
 }
 
 export function mapIntegrationRows(payload: unknown): Integration[] {
-  const rows = rowsFrom(payload);
   const configs = obj(obj(payload).configs);
   return demoIntegrations.map(base => {
-    const match = rows.find(row => {
-      const c = cells(row);
-      const id = str(c['Integration ID']).toLowerCase();
-      const name = str(c['Integration Name']).toLowerCase();
-      return id.includes(base.id) || name.includes(base.name.toLowerCase());
-    });
-    const c = match ? cells(match) : {};
-    const s = str(c['Connection Status']).toLowerCase();
-    const state: Integration['state'] = health.ok === true ? 'connected' : config.configured === true ? 'disconnected' : 'not_configured';
     const config = obj(configs[base.id]);
-    const savedValues = obj(config.values) as Record<string, string>;
     const health = obj(config.health);
     const healthVerified = health.ok === true;
-    // Registry access alone does not prove an ActivePieces webhook round-trip.
-    const configured = config.configured === true || (!s.includes('not configured') && !!match);
+    const configured = config.configured === true || healthVerified;
+    const state: Integration['state'] = healthVerified ? 'connected' : configured ? 'disconnected' : 'not_configured';
+    const savedValues = obj(config.values) as Record<string, string>;
     return {
-      ...base, state: configured && state === 'not_configured' ? 'disconnected' : state,
-      configured, verified: healthVerified,
-      lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
+      ...base, state, configured, verified: healthVerified,
+      lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : undefined,
       savedConfig: savedValues, configuredKeys: arr(config.keys),
     };
   });
