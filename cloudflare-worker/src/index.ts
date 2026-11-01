@@ -101,13 +101,12 @@ function integrationConfigKey(organizationId: string, integrationId: string): st
 
 function isPublicHttpsTarget(url: URL): boolean {
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return false;
-  const host = url.hostname.toLowerCase().replace(/^\\[|\\]$/g, "");
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return false;
-  if (/^(?:0|10|127|169\\.254|192\\.168|172\\.(?:1[6-9]|2\\d|3[01]))(?:\\.\\d{1,3}){2}$/.test(host)) return false;
+  if (/^(?:0|10|127|169\.254|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2}$/.test(host)) return false;
   if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return false;
   return true;
 }
-
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) return reply({ error: "Origin not allowed" }, 403, cors);
   const actor = await currentUser(request, env);
