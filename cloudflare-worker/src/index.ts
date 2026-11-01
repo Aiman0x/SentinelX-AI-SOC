@@ -316,8 +316,26 @@ export default {
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
       const integrationId = url.pathname.split("/")[3];
-      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "Secure storage is ready. This integration needs its host/collector adapter before a real health check can be performed." }, 200, cors);
-      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure configuration storage is not configured." }, 503, cors);
+      if (integrationId === "activepieces") {
+        if (!env.AP_READ_SECURITY_INTEGRATIONS_URL || !env.AP_BRIDGE_KEY) return reply({ ok: false, unavailable: true, message: "ActivePieces read webhook or bridge credential is not configured." }, 200, cors);
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          try {
+            const upstream = await fetch(env.AP_READ_SECURITY_INTEGRATIONS_URL, { headers: { Accept: "application/json", "X-SentinelX-Bridge-Key": env.AP_BRIDGE_KEY }, signal: controller.signal, redirect: "error" });
+            if (!upstream.ok) return reply({ ok: false, message: "ActivePieces webhook returned HTTP " + upstream.status + "." }, 200, cors);
+            await upstream.arrayBuffer();
+            const checkedAt = new Date().toISOString();
+            const health = { ok: true, message: "ActivePieces webhook is reachable and accepted the bridge credential.", checkedAt };
+            if (env.INTEGRATION_CONFIGS) await env.INTEGRATION_CONFIGS.put(integrationConfigKey(actor.organization_id, integrationId) + ":health", JSON.stringify(health));
+            return reply(health, 200, cors);
+          } finally { clearTimeout(timeout); }
+        } catch (error) {
+          return reply({ ok: false, message: error && error.name === "AbortError" ? "ActivePieces health check timed out after 10 seconds." : "Could not reach the ActivePieces webhook." }, 200, cors);
+        }
+      }
+      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "A saved configuration is not a live connection. This tool needs its SentinelX host collector/adapter before a real health check can run." }, 200, cors);
+      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure storage is not configured." }, 503, cors);
       const storageKey = integrationConfigKey(actor.organization_id, integrationId);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
       if (!encrypted) return reply({ ok: false, message: "Save Wazuh configuration before testing." }, 400, cors);
