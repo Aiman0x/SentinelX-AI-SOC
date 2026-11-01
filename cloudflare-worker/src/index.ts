@@ -136,15 +136,15 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
 }
 async function integrationConfigSummary(env: Env, organizationId: string): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }>> {
   const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }> = {};
-  for (const id of Object.keys(INTEGRATION_FIELDS)) {
+  for (const id of ["activepieces", ...Object.keys(INTEGRATION_FIELDS)]) {
     try {
       const storageKey = integrationConfigKey(organizationId, id);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
-      if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
-      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
-      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
       const healthRaw = await env.INTEGRATION_CONFIGS.get(storageKey + ":health");
       const health = healthRaw ? JSON.parse(healthRaw) as { ok: boolean; message: string; checkedAt: string } : undefined;
+      if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [], health }; continue; }
+      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
+      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
       result[id] = { configured: true, values: publicValues, keys: Object.keys(values), health };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
   }
