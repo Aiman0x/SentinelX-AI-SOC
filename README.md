@@ -34,7 +34,7 @@ The intended public origin is `https://sentinelx-api-gateway.aiman132046.workers
 - Backend-aware GUI data loaders and mappers for alerts, cases, investigations, evidence references, assets, rules, audit logs, and integrations.
 - Cloudflare Worker source with PBKDF2 analyst-password verification, signed HttpOnly session cookies, login rate limiting, and origin restriction.
 - Authenticated read routes from the GUI through the existing ActivePieces read workflows.
-- Encrypted integration-configuration endpoint using AES-256-GCM and a dedicated Workers KV namespace.
+- Encrypted workspace-scoped integration configuration using AES-256-GCM and Workers KV.\n- BYO-LLM settings and encrypted per-workspace provider credentials for OpenAI, Anthropic, Gemini, and OpenAI-compatible HTTPS endpoints.\n- Server-side provider connection tests and an authenticated AI investigation endpoint; analyst role can run investigations while workspace admins manage provider credentials.
 - Workers Static Assets configuration to serve the GUI and route `/api/*` requests through the same Worker origin.
 
 ## ActivePieces status
@@ -56,7 +56,7 @@ See `cloudflare-worker/README.md` for the exact runtime secret names and setup i
 - Configure Worker secrets and ActivePieces webhook URLs.
 - Implement case, asset, and detection-rule write APIs.
 - Build tool-specific adapters and health checks for Wazuh, Sysmon, Suricata, Zeek, ClamAV, and YARA.
-- Connect and verify an AI investigation model.
+- Add a workspace provider API key in Settings and run a live connection test (requires a customer-owned provider key).
 - Validate real Windows and authorized remote telemetry.
 - Add audited, human-approved defensive response workflows.
 
@@ -81,4 +81,4 @@ Without `VITE_API_BASE_URL`, the GUI uses demo data. Never put secrets in `VITE_
 - Do not describe demo data, saved configurations, or structurally valid workflows as verified telemetry or connected tools.
 - Keep disruptive response actions disabled until authentication, approval, and audit controls are implemented.
 
-**Status: In Development — BYO-LLM and multi-tenant connector architecture documented; runtime implementation and deployment remain pending.**
+**Status: In Development — BYO-LLM runtime API and Settings UI implemented on the feature branch; deployment and live provider verification remain pending.**
