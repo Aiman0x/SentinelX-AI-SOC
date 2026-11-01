@@ -6,6 +6,7 @@ import type { Alert } from '../../types/alert';
 import { formatDateTime } from '../../utils/formatDate';
 import { cap } from '../../utils/severity';
 import { severityRank } from '../../utils/severity';
+import { apiPost, isBackendConfigured } from '../../services/apiClient';
 
 /**
  * AI ANALYST ASSISTANT (placeholder).
@@ -72,6 +73,9 @@ export function AnalystAssistant({ alerts, focus }: { alerts: Alert[]; focus: Al
   const [notes, setNotes] = useState<string[]>([]);
   const [noteOpen, setNoteOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [aiAnswer, setAiAnswer] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const hyps = useMemo(() => deriveHypotheses(alerts), [alerts]);
   const steps = useMemo(() => [...new Set(alerts.flatMap((a) => a.nextSteps))], [alerts]);
@@ -85,6 +89,21 @@ export function AnalystAssistant({ alerts, focus }: { alerts: Alert[]; focus: Al
     mitre.forEach((t) => { if (!seen.includes(t.tactic)) seen.push(t.tactic); });
     return seen;
   }, [mitre]);
+
+  const runAIInvestigation = async () => {
+    setAiBusy(true); setAiError(''); setAiAnswer('');
+    try {
+      const evidence = alerts.slice(0, 30).map((a) => ({
+        id: a.id, time: a.timestamp, severity: a.severity, rule: a.ruleName,
+        host: a.asset, sourceIp: a.sourceIp, evidence: a.evidence, recommendedSteps: a.nextSteps,
+      }));
+      const result = await apiPost<{ answer: string }>('/api/ai/analyze', {
+        prompt: 'Investigate these security alerts. Identify what is observed, plausible attack hypotheses, confidence and uncertainty, likely attack sequence without assuming causality, and prioritized read-only next steps.\n\n' + JSON.stringify(evidence),
+      });
+      setAiAnswer(result.answer);
+    } catch (e) { setAiError(e instanceof Error ? e.message : 'AI investigation failed.'); }
+    finally { setAiBusy(false); }
+  };
 
   const saveNote = () => {
     if (!draft.trim()) return;
@@ -107,9 +126,13 @@ export function AnalystAssistant({ alerts, focus }: { alerts: Alert[]; focus: Al
     <div className="flex h-full flex-col">
       <div className="border-b border-sx-line px-4 py-3">
         <h2 className="panel-title flex items-center gap-2"><Bot className="h-4 w-4 text-sx-gold" /> AI Analyst Assistant</h2>
-        <div className="mt-2 flex items-start gap-2 rounded-lg border border-sx-warn/30 bg-sx-warn/5 p-2 text-[11px] text-sx-warn">
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-sx-line bg-sx-elev/40 p-2 text-[11px] text-sx-mute">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>AI analysis service is not configured. The content below is rule-based demo analysis of the data on screen — no AI model was used.</span>
+          <span>{isBackendConfigured ? 'Run an actual investigation using the workspace BYO-LLM provider. Template sections remain clearly labelled as rule-based.' : 'AI backend is not connected. The sections below are rule-based demo analysis — no AI model was used.'}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button className="btn btn-primary btn-sm" onClick={runAIInvestigation} disabled={!isBackendConfigured || aiBusy}>{aiBusy ? 'Analyzing…' : 'Run AI investigation'}</button>
+          {aiError && <span role="alert" className="self-center text-[11px] text-sx-red">{aiError}</span>}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="btn btn-primary btn-sm" onClick={() => { setSummary({ text: buildSummary(alerts), at: new Date().toISOString() }); toast('Template summary generated (no AI model).', 'info'); }}><FileText className="h-3 w-3" /> Generate Summary</button>
@@ -119,6 +142,11 @@ export function AnalystAssistant({ alerts, focus }: { alerts: Alert[]; focus: Al
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-3">
+        {aiAnswer && <Block icon={Bot} title="AI investigation result" tag="MODEL GENERATED" tagCls="border-sx-ok/40 text-sx-ok bg-sx-ok/10">
+          <p className="whitespace-pre-wrap text-xs leading-relaxed">{aiAnswer}</p>
+          <p className="mt-2 text-[10px] text-sx-mute">AI-generated analysis is advisory. Validate findings against source telemetry before taking action.</p>
+        </Block>}
+
         {noteOpen && (
           <div className="rounded-lg border border-sx-gold/40 bg-sx-gold/5 p-3 anim-fade">
             <textarea className="input min-h-[64px]" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Analyst note…" aria-label="Analyst note" autoFocus />
