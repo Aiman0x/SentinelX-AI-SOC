@@ -72,7 +72,7 @@ async function callModel(config: ProviderConfig, prompt: string): Promise<string
     if (config.provider === "anthropic") {
       response = await fetch(url, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: 128, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
     } else if (config.provider === "gemini") {
-      response = await fetch(url + "?key=" + encodeURIComponent(config.apiKey), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 128 } }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 128 } }), signal: controller.signal, redirect: "error" });
     } else {
       response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: 128, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
     }
