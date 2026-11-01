@@ -38,7 +38,7 @@ const ROUTES: Record<string, keyof Env> = {
 
 
 const INTEGRATION_FIELDS: Record<string, string[]> = {
-  wazuh: ["apiUrl", "apiUser", "apiPassword"],
+  wazuh: ["apiUrl", "apiUser", "apiPassword", "accessClientId", "accessClientSecret"],
   sysmon: ["collector", "configVersion"],
   clamav: ["host", "port"],
   yara: ["rulesPath"],
@@ -326,12 +326,12 @@ export default {
         const timeout = setTimeout(() => controller.abort(), 10000);
         try {
           const basic = btoa(unescape(encodeURIComponent(values.apiUser + ":" + values.apiPassword)));
-          const auth = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/security/user/authenticate", { method: "POST", headers: { Authorization: "Basic " + basic, Accept: "application/json" }, signal: controller.signal, redirect: "error" });
+          const auth = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/security/user/authenticate", { method: "POST", headers: { Authorization: "Basic " + basic, Accept: "application/json", ...(values.accessClientId && values.accessClientSecret ? { "CF-Access-Client-Id": values.accessClientId, "CF-Access-Client-Secret": values.accessClientSecret } : {}) }, signal: controller.signal, redirect: "error" });
           if (!auth.ok) return reply({ ok: false, message: auth.status === 401 ? "Wazuh API rejected the credentials." : "Wazuh API authentication failed (HTTP " + auth.status + ")." }, 200, cors);
           const authJson = await auth.json();
           const token = authJson && authJson.data && authJson.data.token;
           if (typeof token !== "string" || !token) return reply({ ok: false, message: "Wazuh API did not return an authentication token." }, 200, cors);
-          const check = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/agents?limit=1", { headers: { Authorization: "Bearer " + token, Accept: "application/json" }, signal: controller.signal, redirect: "error" });
+          const check = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/agents?limit=1", { headers: { Authorization: "Bearer " + token, Accept: "application/json", ...(values.accessClientId && values.accessClientSecret ? { "CF-Access-Client-Id": values.accessClientId, "CF-Access-Client-Secret": values.accessClientSecret } : {}) }, signal: controller.signal, redirect: "error" });
           if (!check.ok) return reply({ ok: false, message: "Wazuh authenticated, but its agents endpoint failed (HTTP " + check.status + ")." }, 200, cors);
           const result = await check.json();
           const checkedAt = new Date().toISOString();
