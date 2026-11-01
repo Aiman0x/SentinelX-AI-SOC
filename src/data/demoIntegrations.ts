@@ -21,6 +21,8 @@ export const demoIntegrations: Integration[] = [
       { key: 'apiUrl', label: 'Wazuh API URL', placeholder: 'https://wazuh.example.com:55000' },
       { key: 'apiUser', label: 'API user', placeholder: 'sentinelx-readonly' },
       { key: 'apiPassword', label: 'API password', placeholder: '••••••••', secret: true },
+      { key: 'accessClientId', label: 'Cloudflare Access Client ID (optional)', placeholder: 'Access service token ID', secret: true, help: 'Only if the Wazuh API is protected by Cloudflare Access.' },
+      { key: 'accessClientSecret', label: 'Cloudflare Access Client Secret (optional)', placeholder: 'Access service token secret', secret: true, help: 'Stored encrypted; never put this in a public URL.' },
     ],
   },
   {
