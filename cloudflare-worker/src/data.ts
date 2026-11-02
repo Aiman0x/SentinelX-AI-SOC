@@ -71,7 +71,8 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     return json({ data: rows.results.map(casePayload) });
   }
   if (path === "/api/cases" && request.method === "POST") {
-    const body = parseBody(await request.json().catch(() => null));
+    const incoming = parseBody(await request.json().catch(() => null));
+    const body = parseBody(incoming?.data) || incoming;
     const title = text(body?.title, 240);
     if (!title) return json({ error: "Case title is required" }, 400);
     const caseId = text(body?.caseId, 120) || "SX-" + uid().slice(0, 12).toUpperCase();
@@ -92,19 +93,30 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     } catch { return json({ error: "Case ID already exists in this organization" }, 409); }
   }
   const caseMatch = path.match(/^\/api\/cases\/([^/]+)$/);
+  if (caseMatch && request.method === "GET") {
+    const caseId = decodeURIComponent(caseMatch[1]);
+    const row = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND (case_id=? OR id=?) LIMIT 1").bind(org, caseId, caseId).first<Record<string, unknown>>();
+    return row ? json({ data: [casePayload(row)] }) : json({ error: "Case not found in this organization" }, 404);
+  }
   if (caseMatch && request.method === "POST") {
     const caseId = decodeURIComponent(caseMatch[1]);
-    const body = parseBody(await request.json().catch(() => null));
+    const incoming = parseBody(await request.json().catch(() => null));
+    const body = parseBody(incoming?.data) || incoming;
     if (!body) return json({ error: "Invalid JSON body" }, 400);
-    const existing = await env.DB.prepare("SELECT id FROM cases WHERE org_id=? AND (case_id=? OR id=?) LIMIT 1").bind(org, caseId, caseId).first<{id:string}>();
+    const existing = await env.DB.prepare("SELECT id,payload_json FROM cases WHERE org_id=? AND (case_id=? OR id=?) LIMIT 1").bind(org, caseId, caseId).first<{id:string;payload_json:string}>();
     if (!existing) return json({ error: "Case not found in this organization" }, 404);
     const allowed = ["status","severity","assignee","overview","title","source"];
     const sets: string[] = []; const values: unknown[] = [];
     for (const field of allowed) if (body[field] !== undefined) { sets.push(field + "=?"); values.push(text(body[field], field === "overview" ? 8000 : 240)); }
+    if (body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)) {
+      let previous: Record<string, unknown> = {};
+      try { previous = JSON.parse(existing.payload_json || "{}"); } catch { /* replace malformed legacy payload */ }
+      sets.push("payload_json=?"); values.push(JSON.stringify({ ...previous, ...(body.payload as Record<string, unknown>) }));
+    }
     if (!sets.length) return json({ error: "No supported case fields supplied" }, 400);
     sets.push("updated_at=?"); values.push(iso()); values.push(org, caseId, caseId);
     await env.DB.prepare("UPDATE cases SET " + sets.join(",") + " WHERE org_id=? AND (case_id=? OR id=?)").bind(...values).run();
-    await audit(env, actor, "case_updated", caseId, "Updated fields: " + allowed.filter(k => body[k] !== undefined).join(", "));
+    await audit(env, actor, "case_updated", caseId, "Updated fields: " + [...allowed.filter(k => body[k] !== undefined), ...(body.payload ? ["payload"] : [])].join(", "));
     return json({ updated: true });
   }
 
