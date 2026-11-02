@@ -21,12 +21,13 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
   const bridge = request.headers.get("X-SentinelX-Bridge-Key");
   if (bridge !== null) {
     if (!env.AP_BRIDGE_KEY || !secretEqual(bridge, env.AP_BRIDGE_KEY)) return null;
-    const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
-    const orgId = text(body?.org_id, 120) || text(new URL(request.url).searchParams.get("org_id"), 120);
-    if (!orgId) return null;
-    const org = await env.DB.prepare("SELECT id FROM organizations WHERE id=? AND is_active=1").bind(orgId).first<{id:string}>();
-    if (!org) return null;
-    return { id: "activepieces", role: "service", organization_id: orgId, email: "activepieces@sentinelx.internal", display_name: "Activepieces" };
+    const orgToken = request.headers.get("X-SentinelX-Org-Key") || "";
+    if (orgToken.length < 40 || orgToken.length > 256) return null;
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(orgToken)));
+    const tokenHash = btoa(String.fromCharCode(...digest)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+    const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL").bind(tokenHash).first<{id:string;org_id:string}>();
+    if (!row) return null;
+    return { id: row.id, role: "service", organization_id: row.org_id, email: "collector@sentinelx.internal", display_name: "Authenticated Collector" };
   }
   return await currentUser(request, env as Parameters<typeof currentUser>[1]) as Actor | null;
 }
