@@ -1,4 +1,4 @@
-import { Activity, Bug, Globe, Network, Radar, ScanSearch, Settings2, Shield, TestTube2, Workflow, Search, type LucideIcon } from 'lucide-react';
+import { Bug, Globe, Network, Radar, ScanSearch, Settings2, Shield, TestTube2, Workflow, Search, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Field, Panel } from '../components/common/Controls';
 import { ErrorState, LoadingState } from '../components/common/EmptyState';
