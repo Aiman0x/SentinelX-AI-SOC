@@ -385,13 +385,12 @@ export async function runScheduledMonitoring(env: AIEnv): Promise<void> {
       const severity = severityMatch ? severityMatch[1].toLowerCase() : "unclassified";
       if (severity !== "critical" && severity !== "high") continue;
       const ledgerId = crypto.randomUUID();
-      await env.DB.prepare(
+      const claim = await env.DB.prepare(
         "INSERT INTO monitoring_processed(id,org_id,record_id,status,attempts) VALUES(?,?,?,'PROCESSING',1) " +
         "ON CONFLICT(org_id,record_id) DO UPDATE SET status='PROCESSING',attempts=attempts+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') " +
         "WHERE monitoring_processed.status='FAILED' AND monitoring_processed.attempts<3"
       ).bind(ledgerId, orgId, String(record.id)).run();
-      const claimed = await env.DB.prepare("SELECT status FROM monitoring_processed WHERE org_id=? AND record_id=?").bind(orgId, String(record.id)).first<{status:string}>();
-      if (claimed?.status !== "PROCESSING") continue;
+      if ((claim.meta?.changes ?? 0) !== 1) continue;
       try {
         const safeEvidence = config.maskSensitiveData ? maskSensitive(rawEvidence) : rawEvidence;
         const bounded = fitPrompt(JSON.stringify({ entityType: record.entity_type, source: record.source_table, observedAt: record.created_at, evidence: safeEvidence }), Math.min(config.maxInputTokens, 4000));
