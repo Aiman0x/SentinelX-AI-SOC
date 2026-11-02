@@ -121,7 +121,7 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   return json({ accepted, collectorId: row.id, receivedAt: new Date().toISOString() });
 }
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat") return null;
+  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
