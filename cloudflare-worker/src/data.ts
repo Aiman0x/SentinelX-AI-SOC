@@ -161,10 +161,14 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
       canonicalCaseId = parent.case_id;
     }
     const id = uid(); const approvalId = "SX-APR-" + id.slice(0, 12).toUpperCase();
-    await env.DB.prepare("INSERT INTO approvals(id,org_id,approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,execution_status,execution_mode) VALUES(?,?,?,?,?,?,?,?,?,?, 'Pending Approval','Not Executed','SIMULATED - no real containment')")
-      .bind(id, org, approvalId, canonicalCaseId, actionType, text(body?.targetAsset, 240), proposed, reason, risk, actor.display_name || actor.email).run();
-    await audit(env, actor, "approval_requested", approvalId, "Defensive action approval requested; no action executed");
-    return json({ created: true, approval: { id, approvalId, status: "Pending Approval", executionStatus: "Not Executed" } }, 201);
+    const targetAsset = text(body?.targetAsset, 240);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const actionBinding = JSON.stringify({ org, caseId: canonicalCaseId, actionType, targetAsset, proposed, reason, risk });
+    const bindingHash = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(actionBinding)))));
+    await env.DB.prepare("INSERT INTO approvals(id,org_id,approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,requested_by_actor_id,status,execution_status,execution_mode,expires_at,action_binding_hash,lifecycle_state) VALUES(?,?,?,?,?,?,?,?,?,?,?, 'Pending Approval','Not Executed','APPROVAL_REQUIRED - no action executed',?,?,'PENDING_APPROVAL')")
+      .bind(id, org, approvalId, canonicalCaseId, actionType, targetAsset, proposed, reason, risk, actor.display_name || actor.email, actor.id, expiresAt, bindingHash).run();
+    await audit(env, actor, "approval_requested", approvalId, "Defensive action approval requested; no action executed; expires in 15 minutes");
+    return json({ created: true, approval: { id, approvalId, status: "Pending Approval", executionStatus: "Not Executed", expiresAt, actionBindingHash: bindingHash } }, 201);
   }
 
   const decisionMatch = path.match(/^\/api\/approvals\/([^/]+)\/decision$/);
@@ -174,11 +178,22 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const body = parseBody(await request.json().catch(() => null));
     const decision = text(body?.decision, 24);
     if (!["Approved","Rejected","Cancelled"].includes(decision)) return json({ error: "Decision must be Approved, Rejected or Cancelled" }, 400);
-    const result = await env.DB.prepare("UPDATE approvals SET status=?,approved_by=?,decision_at=?,lifecycle_state=?,execution_status='Not Executed' WHERE org_id=? AND (approval_id=? OR id=?) AND status='Pending Approval'")
-      .bind(decision, actor.display_name || actor.email, iso(), decision === "Approved" ? "APPROVED" : decision === "Rejected" ? "REJECTED" : "EXPIRED", org, approvalId, approvalId).run();
-    if (!result.meta.changes) return json({ error: "Pending approval not found in this organization" }, 404);
-    await audit(env, actor, "approval_decided", approvalId, "Approval decision: " + decision + ". Execution remains disabled.");
-    return json({ updated: true, decision, executionStatus: "Not Executed" });
+    const pending = await env.DB.prepare("SELECT approval_id,requested_by_actor_id,expires_at FROM approvals WHERE org_id=? AND (approval_id=? OR id=?) AND status='Pending Approval' LIMIT 1")
+      .bind(org, approvalId, approvalId).first<{approval_id:string;requested_by_actor_id:string|null;expires_at:string|null}>();
+    if (!pending) return json({ error: "Pending approval not found in this organization" }, 404);
+    if (pending.requested_by_actor_id && pending.requested_by_actor_id === actor.id && decision === "Approved") {
+      await audit(env, actor, "approval_self_approval_blocked", pending.approval_id, "Requester cannot approve their own response action.", "Denied");
+      return json({ error: "Four-eyes control: the requester cannot approve their own action." }, 403);
+    }
+    if (pending.expires_at && Date.parse(pending.expires_at) <= Date.now()) {
+      await env.DB.prepare("UPDATE approvals SET status='Expired',lifecycle_state='EXPIRED',execution_status='Not Executed' WHERE org_id=? AND approval_id=? AND status='Pending Approval'").bind(org, pending.approval_id).run();
+      return json({ error: "Approval request expired. Create a new request after reviewing the evidence." }, 410);
+    }
+    const result = await env.DB.prepare("UPDATE approvals SET status=?,approved_by=?,approved_by_actor_id=?,decision_at=?,lifecycle_state=?,execution_status='Not Executed',execution_mode='APPROVED - execution still requires a separate guarded step' WHERE org_id=? AND approval_id=? AND status='Pending Approval'")
+      .bind(decision, actor.display_name || actor.email, actor.id, iso(), decision === "Approved" ? "APPROVED" : decision === "Rejected" ? "REJECTED" : "EXPIRED", org, pending.approval_id).run();
+    if (!result.meta.changes) return json({ error: "Approval changed concurrently; reload and review its current state." }, 409);
+    await audit(env, actor, "approval_decided", pending.approval_id, "Approval decision: " + decision + ". No real action executed.");
+    return json({ updated: true, decision, executionStatus: "Not Executed", nextStep: decision === "Approved" ? "A separate provider-specific executor and post-action verification are required." : undefined });
   }
 
   if (path === "/api/records" && request.method === "GET") {
