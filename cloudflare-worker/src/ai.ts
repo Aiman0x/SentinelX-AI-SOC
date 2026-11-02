@@ -130,7 +130,8 @@ async function runFailover(settings: AISettings, prompt: string): Promise<{ answ
   }
   throw new Error("All configured LLM providers failed. " + (last instanceof Error ? last.message : ""));
 }
-\nexport async function handleAIRoute(request: Request, env: AIEnv, path: string): Promise<Response | null> {
+
+export async function handleAIRoute(request: Request, env: AIEnv, path: string): Promise<Response | null> {
   if (!path.startsWith("/api/ai/")) return null;
   const actor = await currentUser(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
