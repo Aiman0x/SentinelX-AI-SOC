@@ -136,7 +136,10 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   }
 
   if (path === "/api/approvals" && request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,approved_by,requested_at,decision_at,execution_status,execution_result,audit_reference,lifecycle_state,expires_at,execution_mode,verification_result FROM approvals WHERE org_id=? ORDER BY requested_at DESC LIMIT 200").bind(org).all();
+    const approvalId = text(new URL(request.url).searchParams.get("approval_id"), 180);
+    const rows = approvalId
+      ? await env.DB.prepare("SELECT approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,approved_by,requested_at,decision_at,execution_status,execution_result,audit_reference,lifecycle_state,expires_at,execution_mode,verification_result FROM approvals WHERE org_id=? AND approval_id=? ORDER BY requested_at DESC LIMIT 200").bind(org, approvalId).all()
+      : await env.DB.prepare("SELECT approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,approved_by,requested_at,decision_at,execution_status,execution_result,audit_reference,lifecycle_state,expires_at,execution_mode,verification_result FROM approvals WHERE org_id=? ORDER BY requested_at DESC LIMIT 200").bind(org).all();
     return json({ data: rows.results });
   }
 
