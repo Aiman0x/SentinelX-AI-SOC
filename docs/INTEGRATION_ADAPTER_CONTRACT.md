@@ -131,3 +131,8 @@ All three threat-intel adapters use the current user's own API key and read-only
 ### Verification boundary
 
 The connector code and API contract are implemented. Wazuh cannot be marked live-connected until an administrator supplies a reachable trusted HTTPS API endpoint and that user's own read-only Wazuh credentials. Sysmon, Suricata and Zeek need a collector installed on the respective endpoint/sensor and fresh health/telemetry reports. Provider API keys are never bundled with SentinelX; each user supplies their own.
+
+
+### Host collector event ingestion
+
+Sysmon, Suricata and Zeek adapters use the authenticated collector pipeline. After creating a host collector, send health reports to POST /api/collector/heartbeat and normalized event batches to POST /api/collector/events with Authorization: Bearer <collector-token>. The event body is { integrationId: 'sysmon' | 'suricata' | 'zeek', events: [{ eventId, observedAt, payload }] }. Batches accept 1–100 events and are stored in D1 soc_records using the organization resolved from the collector token, never from caller-supplied org_id. The ingestion layer strips common credential fields before storage and deduplicates per collector + event ID. The connector query adapters then read only that organization's matching records.
