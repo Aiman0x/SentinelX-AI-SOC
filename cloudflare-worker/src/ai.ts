@@ -240,7 +240,8 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
         try {
           const result = await runAgentTool(request, env as any, catalogResult.actor, selected.id, toolInput);
           const serialized = JSON.stringify(result);
-          evidence.push({ step, tool: selected.id, rationale, result: serialized.length > 10000 ? serialized.slice(0, 10000) + "[result truncated]" : result });
+          const safeEvidence = config.maskSensitiveData ? maskSensitive(serialized) : serialized;
+          evidence.push({ step, tool: selected.id, rationale, result: safeEvidence.length > 10000 ? safeEvidence.slice(0, 10000) + "[result truncated]" : safeEvidence });
         } catch (error) {
           evidence.push({ step, tool: selected.id, rationale, result: { toolError: error instanceof Error ? error.message.slice(0, 300) : "Tool query failed" } });
         }
@@ -252,7 +253,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
         selectedProvider = final.provider; selectedModel = final.model; attemptedFallbacks += final.attempts.length;
         conclusion = final.answer;
       }
-      return json({ plan, steps: evidence, conclusion, provider: selectedProvider, model: selectedModel, toolCalls: evidence.length, maxSteps, accessMode: "read_only", audit: "Each tool call has a persisted audit record.", generatedAt: new Date().toISOString() });
+      return json({ plan, steps: evidence, conclusion, provider: selectedProvider, model: selectedModel, toolCalls: evidence.length, maxSteps, accessMode: "read_only", audit: "Each tool call has a persisted audit record.", attemptedFallbacks, generatedAt: new Date().toISOString() });
     } catch (error) { return json({ error: error instanceof Error ? error.message : "Agent investigation failed." }, 502); }
   }
   if (path === "/api/ai/analyze" && request.method === "POST") {
