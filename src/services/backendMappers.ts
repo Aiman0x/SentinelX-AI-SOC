@@ -117,8 +117,9 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
     const config = obj(configs[base.id]);
     const health = obj(config.health);
     const healthVerified = health.ok === true;
-    const configured = config.configured === true || healthVerified;
-    const state: Integration['state'] = healthVerified ? 'connected' : configured ? 'disconnected' : 'not_configured';
+    const hasHealth = typeof health.checkedAt === 'string';
+    const configured = config.configured === true || healthVerified || hasHealth;
+    const state: Integration['state'] = healthVerified ? 'connected' : health.status === 'unhealthy' || health.status === 'not_installed' ? 'error' : configured ? 'disconnected' : 'not_configured';
     const savedValues = obj(config.values) as Record<string, string>;
     return {
       ...base, state, configured, verified: healthVerified,
