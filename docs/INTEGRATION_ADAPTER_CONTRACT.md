@@ -144,3 +144,10 @@ The Worker LLM gateway supports a primary provider plus up to three fallback pro
 Before analysis, the gateway optionally masks common secret-value pairs, bearer tokens, email addresses and phone numbers. It then applies a configurable approximate input budget (500–12,000 tokens; default 6,000; ~4 characters/token) and truncates excess evidence. Responses include the selected provider/model, fallback count, estimated input tokens, configured budget, masking status and truncation status.
 
 Masking is best-effort and not a guarantee of anonymization. Provider requests can still disclose submitted evidence to the selected third-party provider. Do not send credentials, regulated personal data or confidential telemetry unless the organization has approved that provider and its data terms.
+
+## Autonomous agent loop and tool safety
+
+`POST /api/ai/agent` accepts an investigation prompt and optional `maxSteps` (clamped server-side to 1–5). The planner receives only the authenticated user's configured query-capable connectors. It can request one schema-constrained read-only query per step or finish. The gateway rejects unknown connectors, unsupported fields and non-primitive values; it does not expose write, shell, containment or remediation operations.
+
+Tool outputs are untrusted evidence, not instructions. The LLM system policy explicitly guards against prompt injection embedded in telemetry, alert text, command lines, URLs and tool results. Evidence is optionally masked and capped before being sent back to the model. Every connector call writes an audit start record before execution and updates it with success/failure afterward; if the audit start cannot be persisted, the tool is not called. Maximum tool calls are hard-limited to five. Conclusions are advisory and must be reviewed by an analyst.
+
