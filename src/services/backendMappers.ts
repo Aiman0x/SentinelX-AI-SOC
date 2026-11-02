@@ -112,19 +112,23 @@ export function mapAudit(row: Row): AuditRecord {
 }
 
 export function mapIntegrationRows(payload: unknown): Integration[] {
-  const configs = obj(obj(payload).configs);
-  return demoIntegrations.map(base => {
-    const config = obj(configs[base.id]);
-    const health = obj(config.health);
-    const healthVerified = health.ok === true;
-    const hasHealth = typeof health.checkedAt === 'string';
-    const configured = config.configured === true || healthVerified || hasHealth;
-    const state: Integration['state'] = healthVerified ? 'connected' : health.status === 'unhealthy' || health.status === 'not_installed' ? 'error' : configured ? 'disconnected' : 'not_configured';
-    const savedValues = obj(config.values) as Record<string, string>;
+  const rows = rowsFrom(payload);
+  return rows.map((row) => {
+    const item = obj(row);
+    const health = obj(item.health);
+    const fields = (Array.isArray(item.fields) ? item.fields : []).map((f) => {
+      const v = obj(f);
+      return { key: str(v.key), label: str(v.label, str(v.key)), placeholder: str(v.placeholder), secret: v.type === 'password', type: (v.type === 'password' || v.type === 'url' ? v.type : 'text') as 'password' | 'url' | 'text', required: v.required === true, help: str(v.help) || undefined };
+    });
+    const configured = item.configured === true;
+    const verified = item.verified === true || health.ok === true;
     return {
-      ...base, state, configured, verified: healthVerified,
-      lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : undefined,
-      savedConfig: savedValues, configuredKeys: arr(config.keys),
+      id: str(item.id), name: str(item.name), purpose: str(item.purpose, str(item.description)),
+      category: str(item.category, 'Endpoint') as Integration['category'],
+      state: verified ? 'connected' : configured ? 'disconnected' : 'not_configured',
+      configured, verified, lastHealthCheck: typeof item.lastHealthCheck === 'string' ? date(item.lastHealthCheck) : undefined,
+      configuredKeys: arr(item.configuredKeys), fields,
+      schema: obj(item.schema) as Integration['schema'],
     };
   });
 }
