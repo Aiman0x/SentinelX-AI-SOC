@@ -119,3 +119,11 @@ The investigation workspace exposes a bounded agent endpoint at `POST /api/ai/ag
 
 Safety controls: maximum five tool calls (server-enforced; UI can request 1–5), read-only connector query allowlist, no shell/response/remediation tools, strict audit start and completion/failure records for every connector call, and a system-level prompt-injection guard that treats logs and tool results as untrusted data. Audit creation fails closed: a connector query is not run if its audit start record cannot be written. Agent output remains advisory and requires analyst review.
 
+
+## Blue-team reporting and analyst workflows
+
+- The investigation workspace includes **Threat hunt** and **Phishing triage** prompt presets for the bounded read-only agent. The analyst supplies the hypothesis, alert, email or indicators; the agent may query only connectors configured for that signed-in user.
+- `POST /api/ai/report` generates tenant-scoped daily, weekly or case-specific incident reports. Reports include evidence-backed candidate MITRE ATT&CK mappings, uncertainty and defensive recommendations; they are stored as `soc_report` records and audit logged.
+- Cloudflare Worker Cron is configured for daily (02:00 UTC) and weekly (Monday 03:00 UTC) report generation. Scheduled reports run only for active organizations with an AI provider configured and are stored in D1. Provider billing is charged to the configured provider account.
+- Cron/report generation does not perform containment or remediation. MITRE mappings are candidate mappings requiring analyst validation.
+- **Monitoring limitation:** collectors currently push normalized Sysmon/Suricata/Zeek events into tenant-scoped D1. Fully autonomous alert-to-agent investigation/queue processing and host-side Sysmon/Suricata/Zeek deployment scripts remain separate implementation work; do not interpret scheduled reports as continuous autonomous response.
