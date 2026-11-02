@@ -50,11 +50,11 @@ The following workflows now use D1 for their primary SOC data writes/reads:
 - Post-action verification audit
 - Asset coverage audit
 
-The legacy case records were copied to D1 before cleanup: **69 cases** across both old case schemas, plus **167 other SOC records** and **1 approval** (237 migrated records total). The two legacy Activepieces case tables were then deleted. Their `source_schema` values remain in D1 for traceability.
+The legacy case records were copied to D1 before cleanup: **69 cases** from the populated legacy case table (the second duplicate contained 0 rows), plus **167 other SOC records** and **1 approval** (237 migrated records total). Both legacy Activepieces case tables were then deleted. Their `source_schema` values remain in D1 for traceability.
 
 The two obsolete Activepieces approval intake/decision flows and the obsolete incident-record read proxy were removed because the Worker now owns those gateway routes. The eight `ARCHIVE` flows were already absent from the Activepieces project when checked; no active flow was deleted under that label.
 
-Other Activepieces tables remain as legacy/reference data during the wider transition. D1 is the source of truth for the migrated case, telemetry, event, finding, investigation, timeline, asset, audit and approval paths.
+Other Activepieces tables remain as legacy/reference data during the wider transition. The 19 legacy audit rows and 19 incoming-event rows that still carried `ORG-DEFAULT` were normalized to the real organization UUID; a project-wide scan found no remaining `ORG-DEFAULT` values in table records or active flow definitions. D1 is the source of truth for the migrated case, telemetry, event, finding, investigation, timeline, asset, audit and approval paths.
 
 ## Collector setup
 
@@ -80,4 +80,4 @@ For the existing Windows PowerShell collector, add the organization token to the
 - The implementation is on `feat/byo-llm-multi-tenant-integrations`.
 - `validate-multitenant.yml` builds the frontend and bundles the Worker without deploying.
 - `deploy-worker.yml` applies the automatic D1 migration and deploys the Worker on updates to `main`.
-- The connected D1 schema/data changes have been applied. The updated Worker code and Activepieces draft changes still require CI validation, deployment and flow publication before live traffic uses them.
+- The connected D1 schema/data changes have been applied. The updated Worker code is committed on the feature branch and the critical Activepieces flows validate successfully (zero invalid steps). The Worker code has not yet been deployed from this branch; merge/deploy is a separate release step.
