@@ -10,6 +10,7 @@ type ProviderConfig = {
   apiKey: string;
   baseUrl?: string;
 };
+type AISettings = { primary: ProviderConfig; fallbacks: ProviderConfig[]; maskSensitiveData: boolean; maxInputTokens: number };
 
 const enc = new TextEncoder();
 function bytesToB64(bytes: Uint8Array): string {
@@ -27,18 +28,21 @@ async function keyFor(secret: string, usage: KeyUsage[]) {
   return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, usage);
 }
 function storageKey(org: string) { return org + ":ai-provider:v1"; }
-async function seal(config: ProviderConfig, secret: string, org: string) {
+async function seal(config: AISettings, secret: string, org: string) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await keyFor(secret, ["encrypt"]);
   const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(org + ":ai-provider:v1") }, key, enc.encode(JSON.stringify(config)));
   return JSON.stringify({ v: 1, iv: bytesToB64(iv), data: bytesToB64(new Uint8Array(data)) });
 }
-async function unseal(raw: string, secret: string, org: string): Promise<ProviderConfig> {
+async function unseal(raw: string, secret: string, org: string): Promise<AISettings> {
   const envelope = JSON.parse(raw) as { v: number; iv: string; data: string };
   if (envelope.v !== 1) throw new Error("Unsupported encrypted configuration version");
   const key = await keyFor(secret, ["decrypt"]);
   const data = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(envelope.iv), additionalData: enc.encode(org + ":ai-provider:v1") }, key, fromB64(envelope.data));
-  return JSON.parse(new TextDecoder().decode(data)) as ProviderConfig;
+  const decoded = JSON.parse(new TextDecoder().decode(data)) as AISettings | ProviderConfig;
+  // Backward-compatible migration from the original single-provider format.
+  if ("primary" in decoded) return decoded;
+  return { primary: decoded, fallbacks: [], maskSensitiveData: true, maxInputTokens: 6000 };
 }
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -63,16 +67,16 @@ function endpoint(config: ProviderConfig): string {
   if (!validEndpoint(base)) throw new Error("Custom endpoint must be a public HTTPS URL.");
   return base.replace(/\/$/, "") + (base.endsWith("/v1") ? "/chat/completions" : "/v1/chat/completions");
 }
-async function callModel(config: ProviderConfig, prompt: string): Promise<string> {
+async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens = 1200): Promise<string> {
   const url = endpoint(config);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
     let response: Response;
     if (config.provider === "anthropic") {
-      response = await fetch(url, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: 128, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
     } else if (config.provider === "gemini") {
-      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 128 } }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens } }), signal: controller.signal, redirect: "error" });
     } else {
       response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: 128, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
     }
@@ -94,7 +98,39 @@ async function callModel(config: ProviderConfig, prompt: string): Promise<string
   } finally { clearTimeout(timeout); }
 }
 
-export async function handleAIRoute(request: Request, env: AIEnv, path: string): Promise<Response | null> {
+
+// Mask common secrets and direct identifiers before evidence leaves the SentinelX gateway.
+function maskSensitive(text: string): string {
+  return text
+    .replace(/(api[_ -]?key|password|passwd|secret|access[_ -]?token|authorization)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
+    .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b/gi, "[EMAIL]")
+    .replace(/\\b(?:\\+?\\d[\\d .()\\-]{7,}\\d)\\b/g, "[PHONE]");
+}
+function estimateTokens(text: string): number { return Math.ceil(text.length / 4); }
+function fitPrompt(text: string, budget: number): { text: string; estimatedTokens: number; truncated: boolean } {
+  const maxChars = Math.max(400, Math.min(24000, budget * 4));
+  const truncated = text.length > maxChars;
+  const fitted = truncated ? text.slice(0, maxChars) + "\\n[Evidence truncated to the configured input-token budget.]" : text;
+  return { text: fitted, estimatedTokens: estimateTokens(fitted), truncated };
+}
+async function runFailover(settings: AISettings, prompt: string): Promise<{ answer: string; provider: string; model: string; attempts: string[] }> {
+  const chain = [settings.primary, ...settings.fallbacks].filter(Boolean);
+  const attempts: string[] = [];
+  let last: unknown;
+  for (const config of chain) {
+    try {
+      const answer = await callModel(config, prompt);
+      return { answer, provider: config.provider, model: config.model, attempts };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Provider failed";
+      attempts.push(config.provider + "/" + config.model + ": " + message);
+      last = error;
+    }
+  }
+  throw new Error("All configured LLM providers failed. " + (last instanceof Error ? last.message : ""));
+}
+\nexport async function handleAIRoute(request: Request, env: AIEnv, path: string): Promise<Response | null> {
   if (!path.startsWith("/api/ai/")) return null;
   const actor = await currentUser(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
@@ -106,22 +142,30 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
     if (!raw) return json({ configured: false });
     try {
       const c = await unseal(raw, env.CONFIG_ENCRYPTION_KEY, actor.organization_id);
-      return json({ configured: true, provider: c.provider, model: c.model, baseUrl: c.provider === "openai-compatible" ? c.baseUrl : undefined, apiKeyPresent: Boolean(c.apiKey), apiKeyHint: c.apiKey ? "••••••••" + c.apiKey.slice(-4) : "" });
+      return json({ configured: true, provider: c.primary.provider, model: c.primary.model, baseUrl: c.primary.provider === "openai-compatible" ? c.primary.baseUrl : undefined, apiKeyPresent: Boolean(c.primary.apiKey), apiKeyHint: c.primary.apiKey ? "••••••••" + c.primary.apiKey.slice(-4) : "", fallbacks: c.fallbacks.map(x => ({ provider: x.provider, model: x.model, configured: true })), maskSensitiveData: c.maskSensitiveData, maxInputTokens: c.maxInputTokens });
     } catch { return json({ error: "Saved AI provider configuration could not be decrypted." }, 500); }
   }
   if (path === "/api/ai/config" && request.method === "POST") {
     let body: Record<string, unknown>;
     try { body = await request.json() as Record<string, unknown>; } catch { return json({ error: "Invalid JSON." }, 400); }
-    const provider = body.provider;
-    const model = typeof body.model === "string" ? body.model.trim() : "";
-    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
-    const baseUrl = typeof body.baseUrl === "string" ? body.baseUrl.trim() : "";
-    if (!["openai", "anthropic", "gemini", "openai-compatible"].includes(String(provider)) || !model || model.length > 160 || apiKey.length < 8 || apiKey.length > 2048) return json({ error: "Choose a provider/model and enter a valid API key." }, 400);
-    if (provider === "openai-compatible" && !validEndpoint(baseUrl)) return json({ error: "Custom endpoint must be a public HTTPS URL." }, 400);
+    const parseProvider = (item: any): ProviderConfig | null => {
+      if (!item || !["openai", "anthropic", "gemini", "openai-compatible"].includes(String(item.provider))) return null;
+      const model = typeof item.model === "string" ? item.model.trim() : "";
+      const apiKey = typeof item.apiKey === "string" ? item.apiKey.trim() : "";
+      const baseUrl = typeof item.baseUrl === "string" ? item.baseUrl.trim() : "";
+      if (!model || model.length > 160 || apiKey.length < 8 || apiKey.length > 2048) return null;
+      if (item.provider === "openai-compatible" && !validEndpoint(baseUrl)) return null;
+      return { provider: item.provider, model, apiKey, ...(item.provider === "openai-compatible" ? { baseUrl } : {}) };
+    };
+    const primary = parseProvider(body);
+    const fallbacksRaw = Array.isArray(body.fallbacks) ? body.fallbacks : [];
+    const fallbacks = fallbacksRaw.slice(0, 3).map(parseProvider);
+    if (!primary || fallbacks.some(x => !x)) return json({ error: "Primary and fallback providers need valid provider, model and API key values. Maximum three fallbacks." }, 400);
+    const maxInputTokens = Math.max(500, Math.min(12000, Number(body.maxInputTokens) || 6000));
     try {
-      const config: ProviderConfig = { provider: provider as ProviderConfig["provider"], model, apiKey, ...(provider === "openai-compatible" ? { baseUrl } : {}) };
+      const config: AISettings = { primary, fallbacks: fallbacks as ProviderConfig[], maskSensitiveData: body.maskSensitiveData !== false, maxInputTokens };
       await env.INTEGRATION_CONFIGS.put(key, await seal(config, env.CONFIG_ENCRYPTION_KEY, actor.organization_id));
-      return json({ saved: true, configured: true, provider, model, apiKeyPresent: true });
+      return json({ saved: true, configured: true, provider: primary.provider, model: primary.model, fallbackCount: fallbacks.length, maskSensitiveData: config.maskSensitiveData, maxInputTokens });
     } catch { return json({ error: "Could not securely save AI provider configuration." }, 500); }
   }
   if (path === "/api/ai/test" && request.method === "POST") {
@@ -129,7 +173,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
     if (!raw) return json({ ok: false, message: "Save an AI provider configuration first." }, 400);
     try {
       const config = await unseal(raw, env.CONFIG_ENCRYPTION_KEY, actor.organization_id);
-      const answer = await callModel(config, "Reply with exactly: SentinelX provider connection successful.");
+      const result = await runFailover(config, "Reply with exactly: SentinelX provider connection successful.");\n      const answer = result.answer;
       return json({ ok: true, message: "Provider authenticated and generated a response.", preview: answer.slice(0, 180), checkedAt: new Date().toISOString() });
     } catch (error) { return json({ ok: false, message: error instanceof Error ? error.message : "Provider test failed." }); }
   }
