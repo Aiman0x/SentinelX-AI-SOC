@@ -2,6 +2,7 @@ import { currentUser, handleAuthRoute } from "./auth";
 import { handleAIRoute } from "./ai";
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
+import { handleConnectorRoute } from "./connectors";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -296,6 +297,9 @@ export default {
         : reply({ error: "Origin not allowed" }, 403);
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
+
+    const connectorResponse = await handleConnectorRoute(request, env, url.pathname);
+    if (connectorResponse) return new Response(connectorResponse.body, { status: connectorResponse.status, headers: { ...Object.fromEntries(connectorResponse.headers), ...cors } });
 
     const collectorResponse = await handleCollectorRoute(request, env, url.pathname);
     if (collectorResponse) return new Response(collectorResponse.body, { status: collectorResponse.status, headers: { ...Object.fromEntries(collectorResponse.headers), ...cors } });
