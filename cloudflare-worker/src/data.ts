@@ -64,10 +64,15 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (actor.role === "viewer" && request.method !== "GET") return json({ error: "Viewer role is read-only" }, 403);
 
   if (path === "/api/cases" && request.method === "GET") {
-    const source = text(new URL(request.url).searchParams.get("source"), 240);
-    const rows = source
-      ? await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND source=? ORDER BY created_at DESC LIMIT 500").bind(org, source).all<Record<string, unknown>>()
-      : await env.DB.prepare("SELECT * FROM cases WHERE org_id=? ORDER BY created_at DESC LIMIT 500").bind(org).all<Record<string, unknown>>();
+    const url = new URL(request.url);
+    const source = text(url.searchParams.get("source"), 240);
+    const sourceSchema = text(url.searchParams.get("source_schema"), 80);
+    const fieldName = text(url.searchParams.get("field_name"), 80);
+    const fieldValue = text(url.searchParams.get("field_value"), 500);
+    const fieldPath = /^[A-Za-z0-9 _-]{1,80}$/.test(fieldName) ? '$."' + fieldName + '"' : "";
+    if (fieldName && !fieldPath) return json({ error: "Invalid field_name" }, 400);
+    const rows = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND (?='' OR source=?) AND (?='' OR source_schema=?) AND (?='' OR json_extract(payload_json,?)=?) ORDER BY created_at DESC LIMIT 500")
+      .bind(org, source, source, sourceSchema, sourceSchema, fieldName, fieldPath, fieldValue).all<Record<string, unknown>>();
     return json({ data: rows.results.map(casePayload) });
   }
   if (path === "/api/cases" && request.method === "POST") {
@@ -78,14 +83,15 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const severity = text(body?.severity, 32) || "Unclassified";
     const status = text(body?.status, 32) || "New";
     const source = text(body?.source, 240);
+    const sourceSchema = text(body?.source_schema, 80) || "gateway";
     const overview = text(body?.overview, 8000);
     const assignee = text(body?.assignee, 240);
     const extra = body?.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? body.payload as Record<string, unknown> : {};
     const payload = JSON.stringify({ ...extra, assets: Array.isArray(body?.assets) ? body!.assets : (extra.assets || []), alertIds: Array.isArray(body?.alertIds) ? body!.alertIds : (extra.alertIds || []) });
     const id = uid();
     try {
-      await env.DB.prepare("INSERT INTO cases(id,org_id,case_id,source_schema,title,source,severity,status,assignee,overview,payload_json) VALUES(?,?,?,'gateway',?,?,?,?,?,?,?)")
-        .bind(id, org, caseId, title, source, severity, status, assignee, overview, payload).run();
+      await env.DB.prepare("INSERT INTO cases(id,org_id,case_id,source_schema,title,source,severity,status,assignee,overview,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(id, org, caseId, sourceSchema, title, source, severity, status, assignee, overview, payload).run();
       await audit(env, actor, "case_created", caseId, "Created case " + title);
       return json({ created: true, case: { id, caseId, title, severity, status } }, 201);
     } catch { return json({ error: "Case ID already exists in this organization" }, 409); }
@@ -97,7 +103,7 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     if (!body) return json({ error: "Invalid JSON body" }, 400);
     const existing = await env.DB.prepare("SELECT id FROM cases WHERE org_id=? AND (case_id=? OR id=?) LIMIT 1").bind(org, caseId, caseId).first<{id:string}>();
     if (!existing) return json({ error: "Case not found in this organization" }, 404);
-    const allowed = ["status","severity","assignee","overview","title"];
+    const allowed = ["status","severity","assignee","overview","title","source"];
     const sets: string[] = []; const values: unknown[] = [];
     for (const field of allowed) if (body[field] !== undefined) { sets.push(field + "=?"); values.push(text(body[field], field === "overview" ? 8000 : 240)); }
     if (!sets.length) return json({ error: "No supported case fields supplied" }, 400);
@@ -170,11 +176,15 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const entity = text(url.searchParams.get("entity_type"), 80);
     const sourceTable = text(url.searchParams.get("source_table"), 80);
     const caseId = text(url.searchParams.get("case_id"), 120);
+    const fieldName = text(url.searchParams.get("field_name"), 80);
+    const fieldValue = text(url.searchParams.get("field_value"), 500);
+    const fieldPath = /^[A-Za-z0-9 _-]{1,80}$/.test(fieldName) ? '$."' + fieldName + '"' : "";
     if (!entity) return json({ error: "entity_type query parameter is required" }, 400);
+    if (fieldName && !fieldPath) return json({ error: "Invalid field_name" }, 400);
     const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 200) || 200));
     const rows = sourceTable
-      ? await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND source_table=? AND (?='' OR case_id=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, sourceTable, caseId, caseId, limit).all<{id:string;payload_json:string}>()
-      : await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND (?='' OR case_id=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, caseId, caseId, limit).all<{id:string;payload_json:string}>();
+      ? await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND source_table=? AND (?='' OR case_id=?) AND (?='' OR json_extract(payload_json,?)=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, sourceTable, caseId, caseId, fieldName, fieldPath, fieldValue, limit).all<{id:string;payload_json:string}>()
+      : await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND (?='' OR case_id=?) AND (?='' OR json_extract(payload_json,?)=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, caseId, caseId, fieldName, fieldPath, fieldValue, limit).all<{id:string;payload_json:string}>();
     return json({ data: rows.results.map(row => { try { return { id: row.id, cells: JSON.parse(row.payload_json) }; } catch { return { id: row.id, cells: {} }; } }) });
   }
   if (path === "/api/records" && request.method === "POST") {
