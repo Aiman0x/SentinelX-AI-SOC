@@ -28,17 +28,18 @@ function casePayload(row: Record<string, unknown>) {
   let payload: Record<string, unknown> = {};
   try { payload = JSON.parse(String(row.payload_json || "{}")); } catch { /* use typed fields */ }
   const cells = {
+    ...payload,
     "Case ID": row.case_id, case_id: row.case_id,
     "Case Title": row.title, "AI Analysis": row.overview,
     "Source": row.source, "Severity": row.severity, "Status": row.status,
     "Created At": row.created_at, "Updated At": row.updated_at,
-    "Assignee": row.assignee, ...payload,
+    "Assignee": row.assignee,
   };
   return { id: row.id, cells };
 }
 export async function handleDataRoute(request: Request, env: DataEnv, path: string): Promise<Response | null> {
   if (!path.startsWith("/api/cases") && !path.startsWith("/api/notes") && !path.startsWith("/api/approvals") &&
-      !["/api/alerts","/api/investigations","/api/evidence","/api/audit","/api/assets","/api/rules","/api/telemetry","/api/integrations"].includes(path)) return null;
+      !["/api/alerts","/api/investigations","/api/evidence","/api/audit","/api/assets","/api/rules","/api/telemetry","/api/approvals"].includes(path)) return null;
   if (!allowedOrigin(request, env)) return json({ error: "Origin not allowed" }, 403);
   const actor = await actorFor(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
@@ -138,9 +139,8 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   }
 
   const entityMap: Record<string,string> = {
-    "/api/alerts":"findings", "/api/investigations":"investigations", "/api/evidence":"evidence",
-    "/api/audit":"audit", "/api/assets":"assets", "/api/rules":"rules", "/api/telemetry":"telemetry",
-    "/api/integrations":"integrations",
+    "/api/alerts":"findings", "/api/investigations":"correlation_investigations", "/api/evidence":"evidence",
+    "/api/audit":"audit", "/api/assets":"assets", "/api/rules":"rules", "/api/telemetry":"telemetry_intake",
   };
   const entity = entityMap[path];
   if (entity && request.method === "GET") {
