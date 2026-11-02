@@ -293,7 +293,38 @@ const activepieces: ToolAdapter = {
   },
   async query() { throw new Error("Use SentinelX workflow and SOC data routes for ActivePieces-backed data."); }
 };
-const adapters: ToolAdapter[] = [
+const cloudflareResponse: ToolAdapter = {
+  id:"cloudflare_response",name:"Cloudflare Response",category:"Response",description:"Approval-gated Cloudflare zone IP blocking. This connector is never exposed to the read-only AI tool catalog.",
+  schema:{version:"1.0",fields:[
+    field("apiToken","Cloudflare API token","Token with Zone Firewall Services Edit permission","password",true,"Use a dedicated least-privilege token limited to the intended zone."),
+    field("zoneId","Cloudflare Zone ID","Your zone ID","text",true,"Only this zone is eligible for IP block actions.")
+  ],query:{supported:false,description:"Action-only integration. Never callable by the read-only agent."}},
+  async connect(context,values) {
+    if(Object.keys(values).some(k=>!["apiToken","zoneId"].includes(k))) throw new Error("Unsupported Cloudflare Response field.");
+    if(!values.apiToken || values.apiToken.length<20 || values.apiToken.length>512) throw new Error("Provide a Cloudflare API token.");
+    if(!/^[a-f0-9]{32}$/i.test(values.zoneId||"")) throw new Error("Zone ID must be 32 hexadecimal characters.");
+    const key=storageKey(context.actor,this.id),old=await context.env.INTEGRATION_CONFIGS.get(key);
+    const prev=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
+    await context.env.INTEGRATION_CONFIGS.put(key,await seal({...prev,...values},context.env.CONFIG_ENCRYPTION_KEY,key));
+    return {saved:true,configuredKeys:["apiToken","zoneId"]};
+  },
+  async test(context) {
+    const at=now();
+    try {
+      const v=await saved(context,this.id);
+      if(!/^[a-f0-9]{32}$/i.test(v.zoneId||"")) throw new Error("Zone ID is invalid.");
+      const r=await fetchJson("https://api.cloudflare.com/client/v4/zones/"+encodeURIComponent(v.zoneId),{headers:{Authorization:"Bearer "+v.apiToken,Accept:"application/json"}});
+      if(!r.response.ok || r.data?.success!==true) throw new Error("Cloudflare token cannot read the configured zone (HTTP "+r.response.status+"). Check zone scope and token permissions.");
+      const result={ok:true,message:"Cloudflare zone is reachable. Actual block permission is checked when an approved action is executed.",checkedAt:at,details:{zoneId:v.zoneId,zoneName:r.data?.result?.name||null}};
+      await health(context,this.id,result); return result;
+    } catch(e) {
+      const result={ok:false,message:e instanceof Error?e.message:"Cloudflare response connection failed.",checkedAt:at};
+      await health(context,this.id,result); return result;
+    }
+  },
+  async query() { throw new Error("Action-only integration; it cannot be queried by the AI agent."); }
+};
+\nconst adapters: ToolAdapter[] = [\n  cloudflareResponse,
   activepieces,wazuh,
   hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry and driver events delivered by the SentinelX host collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
@@ -344,10 +375,61 @@ export async function runAgentTool(request: Request, env: ConnectorEnv, actor: A
 }
 
 export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path:string):Promise<Response|null> {
-  if(!path.startsWith("/api/integrations")) return null;
+  if(!path.startsWith("/api/integrations") && !path.startsWith("/api/response/")) return null;
   const actor=await currentUser(request,env as Parameters<typeof currentUser>[1]);
   if(!actor) return json({error:"Authentication required"},401);
-  if(request.method==="GET" && path==="/api/integrations") {
+  const executeMatch=path.match(/^\/api\/response\/execute\/([A-Za-z0-9_-]+)$/);
+  if(executeMatch && request.method==="POST") {
+    if(actor.role!=="owner" && actor.role!=="admin") return json({error:"Owner/admin approval required."},403);
+    const approvalId=decodeURIComponent(executeMatch[1]);
+    const approval=await env.DB.prepare("SELECT id,approval_id,org_id,action_type,target_asset,requested_by_actor_id,approved_by_actor_id,status,expires_at,execution_status,execution_attempt_id FROM approvals WHERE org_id=? AND approval_id=? LIMIT 1")
+      .bind(actor.organization_id,approvalId).first<any>();
+    if(!approval) return json({error:"Approval not found in this workspace."},404);
+    if(approval.status!=="Approved" || !approval.approved_by_actor_id) return json({error:"Action must be approved before execution."},409);
+    if(approval.requested_by_actor_id && approval.requested_by_actor_id===approval.approved_by_actor_id) return json({error:"Four-eyes control failed: requester and approver must differ."},403);
+    if(approval.approved_by_actor_id!==actor.id) return json({error:"Only the authenticated approver may execute this approved request."},403);
+    if(approval.expires_at && Date.parse(approval.expires_at)<=Date.now()) return json({error:"Approval expired. Request and approve a new action."},410);
+    if(approval.execution_status!=="Not Executed" || approval.execution_attempt_id) return json({error:"Action is already executed or an execution attempt exists; inspect audit records before retrying."},409);
+    if(approval.action_type!=="block_ip") return json({error:"No production executor is enabled for this action type."},501);
+    const target=String(approval.target_asset||"").trim();
+    const validV4=/^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/.test(target);
+    const validV6=/^[0-9a-fA-F:]{3,39}$/.test(target) && target.includes(":");
+    if(!validV4&&!validV6) return json({error:"The approved target_asset must be a single IPv4 or IPv6 address."},400);
+    const configKey=storageKey(actor,"cloudflare_response");
+    const raw=await env.INTEGRATION_CONFIGS.get(configKey);
+    if(!raw) return json({error:"Connect and test your own Cloudflare Response integration first."},400);
+    const values=await unseal(raw,env.CONFIG_ENCRYPTION_KEY,configKey);
+    const attempt=crypto.randomUUID();
+    const claim=await env.DB.prepare("UPDATE approvals SET execution_attempt_id=?,execution_status='Execution Started',lifecycle_state='EXECUTING',execution_mode='REAL ACTION - Cloudflare IP Access Rule' WHERE org_id=? AND approval_id=? AND status='Approved' AND execution_status='Not Executed' AND execution_attempt_id IS NULL")
+      .bind(attempt,actor.organization_id,approvalId).run();
+    if((claim.meta?.changes??0)!==1) return json({error:"Could not claim this approval; reload its current state."},409);
+    await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(attempt,actor.organization_id,actor.id,"Human Approver","response_execution_started",approvalId,JSON.stringify({actionType:"block_ip",target,provider:"cloudflare",zoneId:values.zoneId,approvalId}),"Started").run();
+    try {
+      if(!/^[a-f0-9]{32}$/i.test(values.zoneId||"")) throw new Error("Configured Cloudflare Zone ID is invalid.");
+      const response=await fetchJson("https://api.cloudflare.com/client/v4/zones/"+encodeURIComponent(values.zoneId)+"/firewall/access_rules/rules",{
+        method:"POST",headers:{Authorization:"Bearer "+values.apiToken,Accept:"application/json","Content-Type":"application/json"},
+        body:JSON.stringify({mode:"block",configuration:{target:validV4?"ip":"ip6",value:target},notes:"SentinelX approved action "+approvalId+"; review audit trail before removal."})
+      });
+      if(!response.response.ok || response.data?.success!==true) throw new Error("Cloudflare rejected the block request (HTTP "+response.response.status+"). Check token permission and zone.");
+      const providerId=String(response.data?.result?.id||"");
+      const verify=await fetchJson("https://api.cloudflare.com/client/v4/zones/"+encodeURIComponent(values.zoneId)+"/firewall/access_rules/rules/"+encodeURIComponent(providerId),{headers:{Authorization:"Bearer "+values.apiToken,Accept:"application/json"}});
+      const verified=verify.response.ok && verify.data?.success===true && String(verify.data?.result?.configuration?.value||"")===target;
+      await env.DB.prepare("UPDATE approvals SET execution_status=?,lifecycle_state=?,execution_result=?,verification_result=?,audit_reference=? WHERE org_id=? AND approval_id=? AND execution_attempt_id=?")
+        .bind(verified?"Executed":"Executed - verification inconclusive",verified?"EXECUTED":"VERIFY_INCONCLUSIVE",JSON.stringify({provider:"cloudflare",providerRuleId:providerId,target,verified}),verified?"Cloudflare rule read-back matched the approved IP.":"Rule was created but read-back verification was inconclusive.",attempt,actor.organization_id,approvalId,attempt).run();
+      await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(),actor.organization_id,actor.id,"Human Approver","response_execution_completed",approvalId,JSON.stringify({actionType:"block_ip",target,provider:"cloudflare",providerRuleId:providerId,verified}),verified?"Success":"Warning").run();
+      return json({executed:true,verified,approvalId,actionType:"block_ip",target,provider:"cloudflare",providerRuleId:providerId,verification:verified?"read_back_confirmed":"inconclusive",note:"This is a real network access-control change. Confirm service impact and removal procedure."},verified?200:202);
+    } catch(e) {
+      const message=e instanceof Error?e.message:"Provider execution failed.";
+      await env.DB.prepare("UPDATE approvals SET execution_status='Execution Failed - inspect provider',lifecycle_state='EXECUTION_FAILED',execution_result=?,verification_result='Not verified' WHERE org_id=? AND approval_id=? AND execution_attempt_id=?")
+        .bind(message.slice(0,500),actor.organization_id,approvalId,attempt).run();
+      await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(),actor.organization_id,actor.id,"Human Approver","response_execution_failed",approvalId,message.slice(0,500),"Failure").run().catch(()=>undefined);
+      return json({error:message,approvalId,executionStatus:"Execution Failed - inspect provider before retrying"},502);
+    }
+  }
+\n  if(request.method==="GET" && path==="/api/integrations") {
     const data=[];
     for(const adapter of adapters) {
       const key=storageKey(actor,adapter.id);
