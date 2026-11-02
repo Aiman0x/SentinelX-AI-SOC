@@ -109,7 +109,7 @@ function maskSensitive(text: string): string {
 }
 function estimateTokens(text: string): number { return Math.ceil(text.length / 4); }
 function fitPrompt(text: string, budget: number): { text: string; estimatedTokens: number; truncated: boolean } {
-  const maxChars = Math.max(400, Math.min(24000, budget * 4));
+  const maxChars = Math.max(400, Math.min(48000, budget * 4));
   const truncated = text.length > maxChars;
   const fitted = truncated ? text.slice(0, maxChars) + "\n[Evidence truncated to the configured input-token budget.]" : text;
   return { text: fitted, estimatedTokens: estimateTokens(fitted), truncated };
@@ -182,7 +182,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
   if (path === "/api/ai/analyze" && request.method === "POST") {
     let body: { prompt?: unknown };
     try { body = await request.json() as typeof body; } catch { return json({ error: "Invalid JSON." }, 400); }
-    if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 12000) return json({ error: "Prompt must be 1–12000 characters." }, 400);
+    if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 48000) return json({ error: "Prompt must be 1–48000 characters." }, 400);
     const raw = await env.INTEGRATION_CONFIGS.get(key);
     if (!raw) return json({ error: "Configure an AI provider in Settings first." }, 400);
     try {
