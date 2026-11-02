@@ -120,12 +120,56 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.id).run();
   return json({ accepted, collectorId: row.id, receivedAt: new Date().toISOString() });
 }
+function scrubSecrets(value: unknown, depth = 0): unknown {
+  if (depth > 8) return "[depth-limited]";
+  if (Array.isArray(value)) return value.slice(0, 100).map(item => scrubSecrets(item, depth + 1));
+  if (!value || typeof value !== "object") return typeof value === "string" ? value.slice(0, 4000) : value;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
+    if (/(password|secret|token|api.?key|authorization|cookie|private.?key)/i.test(key)) continue;
+    out[key.slice(0, 100)] = scrubSecrets(item, depth + 1);
+  }
+  return out;
+}
+async function receiveEvents(req: Request, env: CollectorEnv) {
+  const authorization = req.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
+  const collector = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  if (!collector) return json({ error: "Invalid or revoked collector token" }, 401);
+  const body = await readJson(req, 262144);
+  const integrationId = typeof body?.integrationId === "string" ? body.integrationId : "";
+  if (!["sysmon", "suricata", "zeek"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata or zeek" }, 400);
+  if (!Array.isArray(body?.events) || body.events.length < 1 || body.events.length > 100) return json({ error: "Provide between 1 and 100 normalized events" }, 400);
+  const entityType = integrationId + "_event";
+  const statements: D1PreparedStatement[] = [];
+  let accepted = 0;
+  for (const raw of body.events) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const event = raw as Record<string, unknown>;
+    const eventId = typeof event.eventId === "string" && event.eventId.trim() ? event.eventId.trim().slice(0, 180) : crypto.randomUUID();
+    const observedAt = typeof event.observedAt === "string" && Number.isFinite(Date.parse(event.observedAt)) ? new Date(event.observedAt).toISOString() : new Date().toISOString();
+    const safePayload = scrubSecrets(event.payload ?? event) as Record<string, unknown>;
+    const payload = JSON.stringify({ integrationId, collectorId: collector.id, observedAt, eventId, event: safePayload });
+    if (payload.length > 16000) continue;
+    const id = crypto.randomUUID();
+    statements.push(env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at")
+      .bind(id, collector.org_id, entityType, "collector_events", eventId, payload, observedAt, new Date().toISOString()));
+    accepted++;
+  }
+  if (statements.length) await env.DB.batch(statements);
+  await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), collector.id).run();
+  return json({ accepted, received: body.events.length, integrationId, collectorId: collector.id, organizationScoped: true });
+}
+
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config") return null;
+  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
+  if (path === "/api/collector/events" && req.method === "POST") return receiveEvents(req, env);
   if (path === "/api/collector/config" && req.method === "GET") return collectorConfig(req, env);
   const match = path.match(/^\/api\/collectors\/([0-9a-f-]+)$/);
   if (match && req.method === "DELETE") return revokeCollector(req, env, match[1]);
