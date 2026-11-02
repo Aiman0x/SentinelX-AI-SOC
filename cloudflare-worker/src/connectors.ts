@@ -18,6 +18,13 @@ const enc = new TextEncoder();
 const b64 = (v: Uint8Array) => btoa(String.fromCharCode(...v)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 const unb64 = (v: string) => Uint8Array.from(atob(v.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4-v.length%4)%4)), c => c.charCodeAt(0));
 function storageKey(actor: Actor, id: string) { return actor.organization_id + ":" + actor.id + ":" + id; }
+async function audit(context: AdapterContext, event: string, connectorId: string, outcome: string) {
+  try {
+    await context.env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(crypto.randomUUID(),context.actor.organization_id,context.actor.id,"Human Analyst",event,connectorId,"Connector operation: "+connectorId,outcome).run();
+  } catch { /* audit failures must not expose secrets or break provider checks */ }
+}
+
 async function cryptKey(secret: string, usage: KeyUsage[]) {
   if (!/^[0-9a-f]{64}$/i.test(secret)) throw new Error("Secure integration encryption key is not configured.");
   return crypto.subtle.importKey("raw", Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x,16)), {name:"AES-GCM"}, false, usage);
@@ -279,16 +286,17 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
       if(!allowed.has(k)||typeof v!=="string"||v.length>4096) return json({error:"Invalid connector field: "+k},400);
       if(v.trim()) values[k]=v.trim();
     }
-    try { const result=await adapter.connect({request,env,actor,values},values); return json({connected:result.saved,saved:true,configuredKeys:result.configuredKeys,secretsHidden:true}); }
+    try { const result=await adapter.connect({request,env,actor,values},values); await audit({request,env,actor,values},"integration_connected",adapter.id,"Success"); return json({connected:result.saved,saved:true,configuredKeys:result.configuredKeys,secretsHidden:true}); }
     catch(e) { return json({error:e instanceof Error?e.message:"Could not connect connector."},400); }
   }
   if(match[2]==="test"&&request.method==="POST") {
     const result=await adapter.test({request,env,actor,values:{}});
+    await audit({request,env,actor,values:{}},"integration_tested",adapter.id,result.ok?"Success":"Failure");
     return json(result);
   }
   if(match[2]==="query"&&request.method==="POST") {
     let input:any; try { input=await request.json(); } catch { return json({error:"Invalid JSON body"},400); }
-    try { const data=await adapter.query({request,env,actor,values:{}},input||{}); return json({data,queriedAt:now()}); }
+    try { const data=await adapter.query({request,env,actor,values:{}},input||{}); await audit({request,env,actor,values:{}},"integration_queried",adapter.id,"Success"); return json({data,queriedAt:now()}); }
     catch(e) { return json({error:e instanceof Error?e.message:"Connector query failed."},400); }
   }
   return json({error:"Method not allowed"},405);
