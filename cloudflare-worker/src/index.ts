@@ -1,5 +1,5 @@
 import { currentUser, handleAuthRoute } from "./auth";
-import { handleAIRoute, runScheduledAIReport } from "./ai";
+import { handleAIRoute, runScheduledAIReport, runScheduledMonitoring } from "./ai";
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
@@ -431,6 +431,6 @@ export default {
     }
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScheduledAIReport(controller.cron, env));
+    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env)]).then(() => undefined));
   },
 };
