@@ -253,9 +253,18 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:strin
     },
     async test(context) {
       const raw=await context.env.INTEGRATION_CONFIGS.get(context.actor.organization_id+":"+id+":health");
-      if(!raw) return {ok:false,message:"No recent host collector health report. Install/enroll the collector on the sensor first.",checkedAt:now()};
-      try { const h=JSON.parse(raw); const age=Date.now()-Date.parse(h.checkedAt||""); return {ok:h.ok===true&&h.status==="healthy"&&age<600000,message:age>=600000?"Collector health report is stale.":h.message||"Collector health report received.",checkedAt:now(),details:{collectorStatus:h.status,observedAt:h.checkedAt}}; }
-      catch { return {ok:false,message:"Collector health report is invalid.",checkedAt:now()}; }
+      if(!raw) {
+        const missing={ok:false,message:"No recent host collector health report. Install/enroll the collector on the sensor first.",checkedAt:now()};
+        await health(context,id,missing); return missing;
+      }
+      try {
+        const h=JSON.parse(raw); const age=Date.now()-Date.parse(h.checkedAt||"");
+        const result={ok:h.ok===true&&h.status==="healthy"&&age>=0&&age<600000,message:age>=600000?"Collector health report is stale.":h.message||"Collector health report received.",checkedAt:now(),details:{collectorStatus:h.status,observedAt:h.checkedAt}};
+        await health(context,id,result); return result;
+      } catch {
+        const invalid={ok:false,message:"Collector health report is invalid.",checkedAt:now()};
+        await health(context,id,invalid); return invalid;
+      }
     },
     async query(context,input) {
       const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
