@@ -28,7 +28,7 @@ export const demoIntegrations: Integration[] = [
     purpose: 'Detailed Windows process, network and registry telemetry.',
     state: 'demo', configured: false, verified: false,
     fields: [
-      { key: 'collector', label: 'Log collector (via Wazuh / WEF)', placeholder: 'wazuh | wef' },
+      { key: 'eventChannel', label: 'Sysmon event channel', placeholder: 'Microsoft-Windows-Sysmon/Operational' },
       { key: 'configVersion', label: 'Sysmon config version', placeholder: 'e.g. v14.16 + modular rules' },
     ],
   },
@@ -37,8 +37,7 @@ export const demoIntegrations: Integration[] = [
     purpose: 'Open-source antivirus scanning for files and attachments.',
     state: 'not_configured', configured: false, verified: false,
     fields: [
-      { key: 'host', label: 'clamd host', placeholder: '127.0.0.1' },
-      { key: 'port', label: 'clamd port', placeholder: '3310' },
+      { key: 'binaryPath', label: 'ClamAV executable path (optional)', placeholder: 'clamscan or /usr/bin/clamscan' },
     ],
   },
   {
