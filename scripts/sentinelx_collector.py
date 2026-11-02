@@ -23,7 +23,8 @@ def collect_sysmon():
     if platform.system() != "Windows": return result("sysmon", "unknown", [{"name":"platform","status":"warn","detail":"Sysmon adapter requires Windows."}])
     code, output = run(["powershell", "-NoProfile", "-Command", "Get-Service -Name Sysmon64,Sysmon -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Status"])
     installed = code == 0 and bool(output)
-    channel = run(["wevtutil", "qe", "Microsoft-Windows-Sysmon/Operational", "/c:1", "/rd:true", "/f:text"])[0] == 0 if installed else False
+    channel_name = CONFIG.get("sysmon", {}).get("eventChannel", "Microsoft-Windows-Sysmon/Operational")
+    channel = run(["wevtutil", "qe", channel_name, "/c:1", "/rd:true", "/f:text"])[0] == 0 if installed else False
     status = "healthy" if installed and channel else "unhealthy" if installed else "not_installed"
     return result("sysmon", status, [{"name":"service","status":"pass" if installed else "fail","detail":"Sysmon service detected." if installed else "Sysmon service not detected."},{"name":"event_channel","status":"pass" if channel else "fail","detail":"Sysmon event channel is readable." if channel else "Sysmon event channel unavailable."}])
 def collect_clamav():
