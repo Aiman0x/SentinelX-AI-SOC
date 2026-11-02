@@ -106,3 +106,16 @@ The Worker provides a provider-neutral LLM gateway for OpenAI, Anthropic, Gemini
 - Input size is capped by a configurable approximate token budget (500–12,000; default 6,000). The gateway estimates tokens from text length and truncates oversized prompts before sending them.
 - The AI test endpoint validates the configured chain; the analysis endpoint runs the bounded, masked SOC prompt. Provider billing remains with the user's provider account.
 - The current model adapter uses text chat APIs; it does not claim tool-calling or autonomous response execution.
+
+## Read-only autonomous agent loop
+
+The investigation workspace exposes a bounded agent endpoint at `POST /api/ai/agent`.
+
+1. The model creates a short investigation plan.
+2. The gateway supplies only query-capable connectors configured for the authenticated user.
+3. The model selects one connector and one schema-valid query at a time; the gateway validates the tool ID and every input field before execution.
+4. Tool results are treated as untrusted evidence, masked when masking is enabled, bounded before being sent back to the model, and used to re-plan until the model finishes or the hard limit is reached.
+5. The model returns a conclusion with evidence and uncertainty.
+
+Safety controls: maximum five tool calls (server-enforced; UI can request 1–5), read-only connector query allowlist, no shell/response/remediation tools, strict audit start and completion/failure records for every connector call, and a system-level prompt-injection guard that treats logs and tool results as untrusted data. Audit creation fails closed: a connector query is not run if its audit start record cannot be written. Agent output remains advisory and requires analyst review.
+
