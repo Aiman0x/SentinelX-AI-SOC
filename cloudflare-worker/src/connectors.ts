@@ -165,7 +165,7 @@ const wazuh: ToolAdapter = {
       const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
       const headers:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
       if(values.accessClientId&&values.accessClientSecret){headers["CF-Access-Client-Id"]=values.accessClientId;headers["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const result=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"@timestamp":{order:"desc"}}],query:{match_all:{}}})});
+      const result=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"timestamp":{order:"desc"}}],query:{match_all:{}}})});
       if(!result.response.ok) throw new Error("Wazuh alert search failed (HTTP "+result.response.status+").");
       return result.data;
     }
