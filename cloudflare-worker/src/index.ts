@@ -1,5 +1,6 @@
 import { currentUser, handleAuthRoute } from "./auth";
 import { handleAIRoute } from "./ai";
+import { handleCollectorRoute } from "./collectors";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -180,7 +181,7 @@ function corsHeaders(origin: string, env: Env): HeadersInit {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type, X-SentinelX-Bootstrap",
+    "Access-Control-Allow-Headers": "Accept, Content-Type, Authorization, X-SentinelX-Bootstrap",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
   };
@@ -296,6 +297,9 @@ export default {
         : reply({ error: "Origin not allowed" }, 403);
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
+
+    const collectorResponse = await handleCollectorRoute(request, env, url.pathname);
+    if (collectorResponse) return new Response(collectorResponse.body, { status: collectorResponse.status, headers: { ...Object.fromEntries(collectorResponse.headers), ...cors } });
 
     const aiResponse = await handleAIRoute(request, env, url.pathname);
     if (aiResponse) return new Response(aiResponse.body, { status: aiResponse.status, headers: { ...Object.fromEntries(aiResponse.headers), ...cors } });
