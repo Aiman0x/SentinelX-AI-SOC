@@ -107,15 +107,29 @@ async function wazuhAuth(context: AdapterContext, values: Record<string,string>)
 }
 const field = (key:string,label:string,placeholder:string,type:FieldSchema["type"]="text",required=false,help?:string):FieldSchema => ({key,label,placeholder,type,required,help});
 const wazuh: ToolAdapter = {
-  id:"wazuh",name:"Wazuh",category:"SIEM",description:"Authenticate to your Wazuh Manager API, inspect enrolled agents and retrieve security telemetry.",
-  schema:{version:"1.0",fields:[field("apiUrl","Wazuh API URL","https://wazuh.example.com:55000","url",true,"Expose only through a trusted HTTPS Cloudflare Tunnel / Access or private bridge. Never open port 55000 publicly."),field("apiUser","Read-only API username","sentinelx-readonly","text",true),field("apiPassword","API password","Enter your Wazuh password","password",true),field("accessClientId","Cloudflare Access Client ID","Service token ID","password"),field("accessClientSecret","Cloudflare Access Client Secret","Service token secret","password")],query:{supported:true,description:"List enrolled agents or inspect one agent by ID.",fields:[field("resource","Resource","agents or agent","text",true),field("agentId","Agent ID (for resource=agent)","001")]}},
+  id:"wazuh",name:"Wazuh",category:"SIEM",description:"Connect Wazuh Manager and Indexer: agent inventory plus actual security alert search.",
+  schema:{version:"1.0",fields:[
+    field("apiUrl","Wazuh Manager API URL","https://wazuh.example.com:55000","url",true,"Expose only through trusted HTTPS Cloudflare Tunnel / Access or a private bridge. Never open port 55000 publicly."),
+    field("apiUser","Read-only Manager API username","sentinelx-readonly","text",true),
+    field("apiPassword","Manager API password","Enter your Wazuh API password","password",true),
+    field("indexerUrl","Wazuh Indexer HTTPS URL","https://wazuh-indexer.example.com:9200","url",true,"Required for querying real Wazuh alert documents. Keep the indexer private behind Cloudflare Access."),
+    field("indexerUser","Read-only Indexer username","sentinelx-indexer-readonly","text",true),
+    field("indexerPassword","Indexer password","Enter your Indexer password","password",true),
+    field("accessClientId","Cloudflare Access Client ID","Service token ID","password"),
+    field("accessClientSecret","Cloudflare Access Client Secret","Service token secret","password")
+  ],query:{supported:true,description:"List agents, inspect an agent, retrieve Manager info, or search recent Wazuh alerts.",fields:[
+    field("resource","Resource","agents, agent, manager or alerts","text",true),
+    field("agentId","Agent ID (for resource=agent)","001"),
+    field("limit","Alert result limit (1–100)","25")
+  ]}},
   async connect(context,values) {
-    const allowed=["apiUrl","apiUser","apiPassword","accessClientId","accessClientSecret"];
+    const allowed=["apiUrl","apiUser","apiPassword","indexerUrl","indexerUser","indexerPassword","accessClientId","accessClientSecret"];
     for(const k of Object.keys(values)) if(!allowed.includes(k)) throw new Error("Unsupported Wazuh configuration field: "+k);
-    if(!publicHttps(values.apiUrl||"")) throw new Error("A public HTTPS Wazuh API URL is required. Use Cloudflare Tunnel/Access or a private bridge.");
-    if(!values.apiUser||!values.apiPassword) throw new Error("Wazuh API username and password are required.");
+    if(!publicHttps(values.apiUrl||"")) throw new Error("A public HTTPS Wazuh Manager API URL is required. Use Cloudflare Tunnel/Access or a private bridge.");
+    if(!values.apiUser||!values.apiPassword) throw new Error("Wazuh Manager API username and password are required.");
+    if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("A public HTTPS Wazuh Indexer URL and read-only username/password are required to query alerts.");
     if(Boolean(values.accessClientId)!==Boolean(values.accessClientSecret)) throw new Error("Provide both Cloudflare Access service token fields, or leave both blank.");
-    const key=storageKey(context.actor,this.id), old=await context.env.INTEGRATION_CONFIGS.get(key);
+    const key=storageKey(context.actor,this.id),old=await context.env.INTEGRATION_CONFIGS.get(key);
     const previous=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
     const merged={...previous,...values};
     await context.env.INTEGRATION_CONFIGS.put(key,await seal(merged,context.env.CONFIG_ENCRYPTION_KEY,key));
@@ -126,26 +140,43 @@ const wazuh: ToolAdapter = {
     try {
       const values=await saved(context,this.id);
       const auth=await wazuhAuth(context,values);
-      const result=await fetchJson(auth.root+"/agents?limit=1",{headers:auth.headers});
-      if(!result.response.ok) throw new Error("Wazuh authenticated, but the agents endpoint returned HTTP "+result.response.status+".");
-      const healthResult={ok:true,message:"Wazuh API authenticated; agent inventory is reachable.",checkedAt:at,details:{agentCount:result.data?.data?.total_affected_items ?? null}};
-      await health(context,this.id,healthResult); return healthResult;
+      const agents=await fetchJson(auth.root+"/agents?limit=1",{headers:auth.headers});
+      if(!agents.response.ok) throw new Error("Wazuh Manager authenticated, but agent inventory returned HTTP "+agents.response.status+".");
+      if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("Wazuh Manager works, but Indexer URL and read-only credentials are required to verify alert search.");
+      const indexer=new URL(values.indexerUrl);
+      const indexerHeaders:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
+      if(values.accessClientId&&values.accessClientSecret){indexerHeaders["CF-Access-Client-Id"]=values.accessClientId;indexerHeaders["CF-Access-Client-Secret"]=values.accessClientSecret;}
+      const alerts=await fetchJson(indexer.origin+indexer.pathname.replace(/\\/$/,"")+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"@timestamp":{order:"desc"}}]})});
+      if(!alerts.response.ok) throw new Error("Wazuh Manager works, but Indexer alert search failed (HTTP "+alerts.response.status+").");
+      const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,alertIndexReachable:true}};
+      await health(context,this.id,result); return result;
     } catch(e) {
-      const failed={ok:false,message:e instanceof Error?e.message:"Wazuh connection failed.",checkedAt:at};
-      await health(context,this.id,failed); return failed;
+      const result={ok:false,message:e instanceof Error?e.message:"Wazuh connection failed.",checkedAt:at};
+      await health(context,this.id,result); return result;
     }
   },
   async query(context,input) {
-    const values=await saved(context,this.id); const auth=await wazuhAuth(context,values);
+    const values=await saved(context,this.id);
+    const auth=await wazuhAuth(context,values);
     const resource=String(input.resource||"agents");
+    if(resource==="alerts") {
+      if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("Wazuh Indexer read-only credentials are required.");
+      const indexer=new URL(values.indexerUrl);
+      const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
+      const headers:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
+      if(values.accessClientId&&values.accessClientSecret){headers["CF-Access-Client-Id"]=values.accessClientId;headers["CF-Access-Client-Secret"]=values.accessClientSecret;}
+      const result=await fetchJson(indexer.origin+indexer.pathname.replace(/\\/$/,"")+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"@timestamp":{order:"desc"}}],query:{match_all:{}}})});
+      if(!result.response.ok) throw new Error("Wazuh alert search failed (HTTP "+result.response.status+").");
+      return result.data;
+    }
     let path="";
     if(resource==="agents") path="/agents?limit=100&select=id,name,status,ip,version,node_name";
     else if(resource==="agent") {
       const id=String(input.agentId||"");
-      if(!/^\d{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
+      if(!/^\\d{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
       path="/agents/"+id;
     } else if(resource==="manager") path="/manager/info";
-    else throw new Error("Supported Wazuh query resources are agents, agent and manager.");
+    else throw new Error("Supported Wazuh query resources are agents, agent, manager and alerts.");
     const result=await fetchJson(auth.root+path,{headers:auth.headers});
     if(!result.response.ok) throw new Error("Wazuh query failed (HTTP "+result.response.status+").");
     return result.data;
