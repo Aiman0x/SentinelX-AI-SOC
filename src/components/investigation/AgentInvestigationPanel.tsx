@@ -10,6 +10,9 @@ type AgentResult = {
   toolCalls: number;
   maxSteps: number;
   accessMode: string;
+  estimatedInputTokens?: number;
+  inputTokenBudget?: number;
+  inputTruncated?: boolean;
 };
 
 export function AgentInvestigationPanel() {
@@ -49,7 +52,7 @@ export function AgentInvestigationPanel() {
     </div>
     {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
     {result && <div className="space-y-3 border-t border-sx-line pt-3">
-      <div className="flex flex-wrap gap-2 text-[10px] text-sx-mute"><span>{result.provider} · {result.model}</span><span>{result.toolCalls}/{result.maxSteps} tool calls</span><span>{result.accessMode}</span></div>
+      <div className="flex flex-wrap gap-2 text-[10px] text-sx-mute"><span>{result.provider} · {result.model}</span><span>{result.toolCalls}/{result.maxSteps} tool calls</span><span>{result.accessMode}</span>{result.estimatedInputTokens !== undefined && <span>~{result.estimatedInputTokens} input tokens</span>}{result.inputTruncated && <span className="text-sx-warn">Evidence was truncated to budget</span>}</div>
       {result.plan.length>0 && <div><h3 className="label">Agent plan</h3><ol className="mt-1 list-decimal space-y-1 pl-4 text-xs">{result.plan.map((p,i)=><li key={i}>{p}</li>)}</ol></div>}
       {result.steps.length>0 && <div><h3 className="label">Collected evidence</h3><div className="mt-1 space-y-2">{result.steps.map(step=><details key={step.step} className="rounded border border-sx-line p-2"><summary className="cursor-pointer text-xs">{step.step}. {step.tool} — {step.rationale}</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[10px] text-sx-mute">{JSON.stringify(step.result,null,2)}</pre></details>)}</div></div>}
       <div><h3 className="label">Conclusion</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{result.conclusion}</p></div>
