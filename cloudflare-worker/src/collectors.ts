@@ -39,14 +39,14 @@ async function createCollector(req: Request, env: CollectorEnv) {
   if (name.length < 2 || !["windows", "linux", "macos", "other"].includes(platform)) return json({ error: "A collector name and supported platform are required." }, 400);
   const collectorId = id();
   const token = "sxcol_" + collectorId.replace(/-/g, "") + "_" + b64(crypto.getRandomValues(new Uint8Array(32)));
-  await env.DB.prepare("INSERT INTO host_collectors(id,organization_id,name,platform,token_hash) VALUES(?,?,?,?,?)")
+  await env.DB.prepare("INSERT INTO host_collectors(id,org_id,name,platform,token_hash) VALUES(?,?,?,?,?)")
     .bind(collectorId, actor.organization_id, name, platform, await sha(token)).run();
   return json({ created: true, collector: { id: collectorId, name, platform, createdAt: new Date().toISOString(), lastSeenAt: null, status: "pending" }, token, warning: "Copy this token now. It will not be shown again." }, 201);
 }
 async function listCollectors(req: Request, env: CollectorEnv) {
   const actor = await currentUser(req, env as Parameters<typeof currentUser>[1]);
   if (!actor) return json({ error: "Authentication required" }, 401);
-  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at FROM host_collectors WHERE organization_id=? ORDER BY created_at DESC")
+  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at FROM host_collectors WHERE org_id=? ORDER BY created_at DESC")
     .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null}>();
   return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
 }
@@ -74,13 +74,13 @@ async function collectorConfig(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const row = await env.DB.prepare("SELECT id,organization_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
     .bind(await sha(token)).first<{id:string;organization_id:string}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
   if (!env.CONFIG_ENCRYPTION_KEY) return json({ error: "Secure configuration is unavailable" }, 503);
   const config: Record<string, Record<string, string>> = {};
   for (const integrationId of supported) {
-    const storageKey = row.organization_id + ":" + integrationId;
+    const storageKey = row.org_id + ":" + integrationId;
     const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
     if (!encrypted) continue;
     try {
