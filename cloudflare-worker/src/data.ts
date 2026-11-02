@@ -67,12 +67,14 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const url = new URL(request.url);
     const source = text(url.searchParams.get("source"), 240);
     const sourceSchema = text(url.searchParams.get("source_schema"), 80);
-    const fieldName = text(url.searchParams.get("field_name"), 80);
-    const fieldValue = text(url.searchParams.get("field_value"), 500);
-    const fieldPath = /^[A-Za-z0-9 _-]{1,80}$/.test(fieldName) ? '$."' + fieldName + '"' : "";
-    if (fieldName && !fieldPath) return json({ error: "Invalid field_name" }, 400);
-    const rows = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND (?='' OR source=?) AND (?='' OR source_schema=?) AND (?='' OR json_extract(payload_json,?)=?) ORDER BY created_at DESC LIMIT 500")
-      .bind(org, source, source, sourceSchema, sourceSchema, fieldName, fieldPath, fieldValue).all<Record<string, unknown>>();
+    const fields = [1,2,3].map((n) => ({
+      name: text(url.searchParams.get(n === 1 ? "field_name" : "field_name" + n), 80),
+      value: text(url.searchParams.get(n === 1 ? "field_value" : "field_value" + n), 500)
+    }));
+    const paths = fields.map((f) => /^[A-Za-z0-9 _-]{1,80}$/.test(f.name) ? '$."' + f.name + '"' : "");
+    if (fields.some((f,i) => f.name && !paths[i])) return json({ error: "Invalid field_name" }, 400);
+    const rows = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND (?='' OR source=?) AND (?='' OR source_schema=?) AND (?='' OR json_extract(payload_json,?)=?) AND (?='' OR json_extract(payload_json,?)=?) AND (?='' OR json_extract(payload_json,?)=?) ORDER BY created_at DESC LIMIT 500")
+      .bind(org, source, source, sourceSchema, sourceSchema, fields[0].name, paths[0], fields[0].value, fields[1].name, paths[1], fields[1].value, fields[2].name, paths[2], fields[2].value).all<Record<string, unknown>>();
     return json({ data: rows.results.map(casePayload) });
   }
   if (path === "/api/cases" && request.method === "POST") {
