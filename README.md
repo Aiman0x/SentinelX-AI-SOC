@@ -81,3 +81,17 @@ For the existing Windows PowerShell collector, add the organization token to the
 - `validate-multitenant.yml` builds the frontend and bundles the Worker without deploying.
 - `deploy-worker.yml` applies the automatic D1 migration and deploys the Worker on updates to `main`.
 - The connected D1 schema/data changes have been applied. The updated Worker code is committed on the feature branch and the critical Activepieces flows validate successfully (zero invalid steps). The Worker code has not yet been deployed from this branch; merge/deploy is a separate release step.
+
+
+## Connect your tools — connector framework
+
+The feature branch includes a dynamic Connect your tools page backed by the Worker connector registry. Each adapter exposes connect(), test(), query() and a versioned schema. The UI renders the registry schema dynamically.
+
+- Per-user credentials are encrypted at rest with AES-GCM and scoped to the signed-in user + organization + connector. Secrets are never returned to the browser.
+- Wazuh adapter supports API authentication, agent inventory checks, agent lookup and manager info. Use a private/trusted HTTPS route such as Cloudflare Tunnel + Access; never expose port 55000 publicly.
+- Sysmon, Suricata and Zeek adapters use host-collector health and tenant-scoped D1 telemetry queries.
+- VirusTotal, AbuseIPDB and URLScan use each user's own API key and read-only reputation/search lookups.
+- ActivePieces remains gateway-managed and appears in the same registry.
+- Connector connect/test/query operations are audit logged without credentials or IOC values.
+
+Provider live status requires the user to add their own credentials and pass the real test. Sysmon/Suricata/Zeek require an enrolled collector on the endpoint or network sensor. VirusTotal lookups can contribute queried indicators to its shared dataset; do not submit sensitive or personal indicators, and review its API terms before product use.
