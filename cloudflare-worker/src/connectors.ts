@@ -300,6 +300,49 @@ const adapters: ToolAdapter[] = [
   hostAdapter("zeek","Zeek","Network connection, DNS, HTTP and TLS metadata via a network sensor collector."),
   threatAdapter("virustotal"),threatAdapter("abuseipdb"),threatAdapter("urlscan")
 ];
+
+export async function getAgentToolCatalog(request: Request, env: ConnectorEnv) {
+  const actor = await currentUser(request, env as Parameters<typeof currentUser>[1]);
+  if (!actor) throw new Error("Authentication required");
+  const tools = [];
+  for (const adapter of adapters) {
+    if (!adapter.schema.query.supported) continue;
+    const key = storageKey(actor, adapter.id);
+    const configured = Boolean(await env.INTEGRATION_CONFIGS.get(key));
+    if (!configured) continue;
+    const healthRaw = await env.INTEGRATION_CONFIGS.get(key + ":health");
+    let healthState: "verified" | "unverified" | "failed" = "unverified";
+    if (healthRaw) {
+      try { const h = JSON.parse(healthRaw); healthState = h.ok === true ? "verified" : "failed"; } catch { healthState = "failed"; }
+    }
+    tools.push({ id: adapter.id, name: adapter.name, description: adapter.description, query: adapter.schema.query, health: healthState, access: "read_only" });
+  }
+  return { actor, tools };
+}
+
+export async function runAgentTool(request: Request, env: ConnectorEnv, actor: Actor, connectorId: string, input: Record<string, unknown>) {
+  const adapter = adapters.find(x => x.id === connectorId && x.schema.query.supported);
+  if (!adapter) throw new Error("Tool is not in the read-only allowlist.");
+  const key = storageKey(actor, connectorId);
+  if (!(await env.INTEGRATION_CONFIGS.get(key))) throw new Error("This tool is not connected for your user account.");
+  const auditId = crypto.randomUUID();
+  // Fail closed: do not call a connector unless the audit start record is persisted.
+  await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+    .bind(auditId, actor.organization_id, actor.id, "AI Agent", "agent_tool_call", connectorId,
+      JSON.stringify({ connectorId, inputFields: Object.keys(input).slice(0, 12), mode: "read_only" }), "Started").run();
+  try {
+    const data = await adapter.query({ request, env, actor, values: {} }, input);
+    await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+      .bind("Success", JSON.stringify({ connectorId, inputFields: Object.keys(input).slice(0, 12), mode: "read_only", result: "returned" }), auditId, actor.organization_id).run();
+    return data;
+  } catch (error) {
+    const safeMessage = error instanceof Error ? error.message.slice(0, 240) : "Tool query failed";
+    await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+      .bind("Failure", JSON.stringify({ connectorId, inputFields: Object.keys(input).slice(0, 12), mode: "read_only", error: safeMessage }), auditId, actor.organization_id).run();
+    throw error;
+  }
+}
+
 export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path:string):Promise<Response|null> {
   if(!path.startsWith("/api/integrations")) return null;
   const actor=await currentUser(request,env as Parameters<typeof currentUser>[1]);
