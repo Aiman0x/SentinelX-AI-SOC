@@ -38,6 +38,10 @@ export function AgentInvestigationPanel() {
       <p className="mt-1 text-[11px] text-sx-mute">The agent plans an investigation, chooses only tools connected to your user account, collects read-only evidence and writes a conclusion. Every connector query is audited.</p>
     </div>
     {!isBackendConfigured && <p className="text-xs text-sx-warn">Connect the SentinelX backend to run the agent.</p>}
+    <div className="flex flex-wrap gap-2">
+      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setPrompt("Threat hunt: Form a testable hypothesis about suspicious activity in my connected telemetry. Query relevant logs and security tools, correlate timestamps, users, hosts and source IPs, then report evidence, alternative explanations, confidence and candidate MITRE ATT&CK mappings. Do not execute response actions.")}>Threat hunt</button>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setPrompt("Phishing triage: Analyze the suspicious email, URL or domain details I provide. Use my connected reputation and security tools for read-only checks. Examine domain/IP reputation, URL indicators and available telemetry, distinguish malicious indicators from inconclusive evidence, and recommend safe defensive next steps. Do not open links or execute files.")}>Phishing triage</button>
+    </div>
     <label className="block text-xs text-sx-mute">Investigation task
       <textarea className="input mt-1 min-h-24 w-full" value={prompt} onChange={e=>setPrompt(e.target.value)} maxLength={12000} placeholder="Investigate this alert or indicator. Identify suspicious activity, gather relevant evidence from my connected tools, and explain the likely cause and defensive next steps." disabled={busy}/>
     </label>
