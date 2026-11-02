@@ -326,6 +326,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
 
 export async function runScheduledAIReport(cron: string, env: AIEnv): Promise<void> {
   const cronParts = cron.trim().split(" ").filter(Boolean);
+  if (cronParts[1] !== "2" && cronParts[1] !== "3") return;
   const period = cronParts[4] === "1" ? "weekly" : "daily";
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return;
   const organizations = await env.DB.prepare("SELECT id FROM organizations WHERE is_active=1").all<{id:string}>();
