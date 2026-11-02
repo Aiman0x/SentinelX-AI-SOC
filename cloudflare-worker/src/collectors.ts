@@ -47,14 +47,14 @@ async function listCollectors(req: Request, env: CollectorEnv) {
   const actor = await currentUser(req, env as Parameters<typeof currentUser>[1]);
   if (!actor) return json({ error: "Authentication required" }, 401);
   const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at FROM host_collectors WHERE org_id=? ORDER BY created_at DESC")
-    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null}>();
+    .bind(actor.org_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null}>();
   return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
 }
 async function revokeCollector(req: Request, env: CollectorEnv, collectorId: string) {
   const actor = await admin(req, env);
   if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
-  const result = await env.DB.prepare("UPDATE host_collectors SET revoked_at=? WHERE id=? AND organization_id=? AND revoked_at IS NULL")
-    .bind(new Date().toISOString(), collectorId, actor.organization_id).run();
+  const result = await env.DB.prepare("UPDATE host_collectors SET revoked_at=? WHERE id=? AND org_id=? AND revoked_at IS NULL")
+    .bind(new Date().toISOString(), collectorId, actor.org_id).run();
   return result.meta.changes ? json({ revoked: true }) : json({ error: "Collector not found or already revoked" }, 404);
 }
 
@@ -75,7 +75,7 @@ async function collectorConfig(req: Request, env: CollectorEnv) {
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
   const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;organization_id:string}>();
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
   if (!env.CONFIG_ENCRYPTION_KEY) return json({ error: "Secure configuration is unavailable" }, 503);
   const config: Record<string, Record<string, string>> = {};
@@ -96,8 +96,8 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const row = await env.DB.prepare("SELECT id,organization_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;organization_id:string}>();
+  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
   const body = await readJson(req, 32768);
   if (!body || !Array.isArray(body.results) || body.results.length > 10) return json({ error: "Invalid heartbeat payload" }, 400);
@@ -114,7 +114,7 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
       return { name: String(c.name || "check").slice(0, 60), status: ["pass","fail","warn","unknown"].includes(String(c.status)) ? String(c.status) : "unknown", detail: String(c.detail || "").slice(0, 240) };
     }) : [];
     const health = { ok: status === "healthy", status, message: "Host collector reported " + status + ".", checkedAt: observedAt, sensorId: row.id, checks, version: typeof result.version === "string" ? result.version.slice(0, 80) : null, metrics: result.metrics && typeof result.metrics === "object" ? result.metrics : {} };
-    await env.INTEGRATION_CONFIGS.put(row.organization_id + ":" + integrationId + ":health", JSON.stringify(health));
+    await env.INTEGRATION_CONFIGS.put(row.org_id + ":" + integrationId + ":health", JSON.stringify(health));
     accepted.push(integrationId);
   }
   await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.id).run();
