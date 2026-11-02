@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS cases (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(org_id, source_schema, case_id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_org_case ON cases(org_id, case_id);
 CREATE INDEX IF NOT EXISTS idx_cases_org_created ON cases(org_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cases_org_status ON cases(org_id, status);
 
