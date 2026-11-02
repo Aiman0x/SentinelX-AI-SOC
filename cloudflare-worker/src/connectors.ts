@@ -3,7 +3,7 @@ import { currentUser } from "./auth";
 type Actor = { id: string; role: string; organization_id: string };
 type FieldSchema = { key: string; label: string; type: "text" | "password" | "url"; required?: boolean; placeholder: string; help?: string };
 type AdapterContext = { request: Request; env: ConnectorEnv; actor: Actor; values: Record<string, string> };
-type ConnectorEnv = { DB: D1Database; INTEGRATION_CONFIGS: KVNamespace; CONFIG_ENCRYPTION_KEY: string; ALLOWED_ORIGIN: string };
+type ConnectorEnv = { DB: D1Database; INTEGRATION_CONFIGS: KVNamespace; CONFIG_ENCRYPTION_KEY: string; ALLOWED_ORIGIN: string; AP_READ_SECURITY_INTEGRATIONS_URL?: string; AP_BRIDGE_KEY?: string };
 type AdapterResult = { ok: boolean; message: string; checkedAt: string; details?: unknown };
 interface ToolAdapter {
   id: string; name: string; category: string; description: string;
@@ -221,8 +221,27 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:strin
     }
   };
 }
+const activepieces: ToolAdapter = {
+  id:"activepieces",name:"ActivePieces",category:"Orchestration",description:"Connect the SentinelX workflow bridge for event ingestion, triage and automation.",
+  schema:{version:"1.0",fields:[],query:{supported:false,description:"Workflow execution remains controlled by SentinelX gateway routes."}},
+  async connect() { return {saved:true,configuredKeys:[]}; },
+  async test(context) {
+    const at=now();
+    try {
+      if(!context.env.AP_READ_SECURITY_INTEGRATIONS_URL||!context.env.AP_BRIDGE_KEY) throw new Error("ActivePieces read webhook or bridge key is not configured on the SentinelX gateway.");
+      const r=await fetchJson(context.env.AP_READ_SECURITY_INTEGRATIONS_URL,{headers:{Accept:"application/json","X-SentinelX-Bridge-Key":context.env.AP_BRIDGE_KEY}});
+      if(!r.response.ok) throw new Error("ActivePieces webhook returned HTTP "+r.response.status+".");
+      const result={ok:true,message:"ActivePieces bridge webhook is reachable.",checkedAt:at};
+      await health(context,this.id,result); return result;
+    } catch(e) {
+      const result={ok:false,message:e instanceof Error?e.message:"ActivePieces health check failed.",checkedAt:at};
+      await health(context,this.id,result); return result;
+    }
+  },
+  async query() { throw new Error("Use SentinelX workflow and SOC data routes for ActivePieces-backed data."); }
+};
 const adapters: ToolAdapter[] = [
-  wazuh,
+  activepieces,wazuh,
   hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry and driver events delivered by the SentinelX host collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
   hostAdapter("zeek","Zeek","Network connection, DNS, HTTP and TLS metadata via a network sensor collector."),
