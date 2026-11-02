@@ -4,6 +4,7 @@ interface CollectorEnv {
   DB: D1Database;
   INTEGRATION_CONFIGS: KVNamespace;
   ALLOWED_ORIGIN: string;
+  CONFIG_ENCRYPTION_KEY: string;
 }
 type CollectorActor = { id: string; role: string; organization_id: string };
 const supported = new Set(["sysmon", "clamav", "yara", "suricata", "zeek"]);
@@ -56,6 +57,41 @@ async function revokeCollector(req: Request, env: CollectorEnv, collectorId: str
     .bind(new Date().toISOString(), collectorId, actor.organization_id).run();
   return result.meta.changes ? json({ revoked: true }) : json({ error: "Collector not found or already revoked" }, 404);
 }
+
+function decode64(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(normalized + "=".repeat((4 - normalized.length % 4) % 4)), c => c.charCodeAt(0));
+}
+async function decryptValues(envelopeText: string, secret: string, aad: string): Promise<Record<string, string>> {
+  if (!/^[0-9a-fA-F]{64}$/.test(secret)) throw new Error("Encryption key unavailable");
+  const keyBytes = Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x, 16));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const envelope = JSON.parse(envelopeText) as { iv: string; data: string };
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode64(envelope.iv), additionalData: new TextEncoder().encode(aad) }, key, decode64(envelope.data));
+  return JSON.parse(new TextDecoder().decode(plain)) as Record<string, string>;
+}
+async function collectorConfig(req: Request, env: CollectorEnv) {
+  const authorization = req.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
+  const row = await env.DB.prepare("SELECT id,organization_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;organization_id:string}>();
+  if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
+  if (!env.CONFIG_ENCRYPTION_KEY) return json({ error: "Secure configuration is unavailable" }, 503);
+  const config: Record<string, Record<string, string>> = {};
+  for (const integrationId of supported) {
+    const storageKey = row.organization_id + ":" + integrationId;
+    const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
+    if (!encrypted) continue;
+    try {
+      const values = await decryptValues(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
+      const safe = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
+      config[integrationId] = safe;
+    } catch { /* Ignore an unreadable config; do not leak its contents. */ }
+  }
+  return json({ config, fetchedAt: new Date().toISOString() });
+}
+
 async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -90,6 +126,7 @@ export async function handleCollectorRoute(req: Request, env: CollectorEnv, path
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
+  if (path === "/api/collector/config" && req.method === "GET") return collectorConfig(req, env);
   const match = path.match(/^\/api\/collectors\/([0-9a-f-]+)$/);
   if (match && req.method === "DELETE") return revokeCollector(req, env, match[1]);
   return json({ error: "Not found" }, 404);
