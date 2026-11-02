@@ -192,24 +192,33 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (path === "/api/records" && request.method === "POST") {
     if (actor.role !== "service") return json({ error: "Service-to-service authentication required" }, 403);
     const body = parseBody(await request.json().catch(() => null));
-    const entity = text(body?.entity_type, 80);
-    const sourceTable = text(body?.source_table, 80) || entity;
-    const sourceRecordId = text(body?.source_record_id, 180) || uid();
-    const caseId = text(body?.case_id, 120);
-    const payload = body?.payload;
-    if (!entity || !payload || typeof payload !== "object" || Array.isArray(payload)) return json({ error: "entity_type and object payload are required" }, 400);
-    const serialized = JSON.stringify(payload);
-    if (serialized.length > 100000) return json({ error: "Record payload is too large" }, 413);
-    if (caseId) {
-      const parent = await env.DB.prepare("SELECT 1 AS ok FROM cases WHERE org_id=? AND case_id=? LIMIT 1").bind(org, caseId).first();
-      if (!parent) return json({ error: "Case not found in this organization" }, 404);
+    if (!body) return json({ error: "JSON object required" }, 400);
+    const entity = text(body.entity_type, 80);
+    const sourceTable = text(body.source_table, 80) || entity;
+    if (!entity) return json({ error: "entity_type is required" }, 400);
+    const items = Array.isArray(body.records) ? body.records : [body];
+    if (!items.length || items.length > 200) return json({ error: "records must contain 1-200 items" }, 400);
+    const statements: D1PreparedStatement[] = [];
+    for (const raw of items) {
+      const item = parseBody(raw);
+      if (!item) return json({ error: "Each record must be a JSON object" }, 400);
+      const sourceRecordId = text(item.source_record_id ?? item.finding_id ?? item.correlation_id ?? item.timeline_id ?? item.evidence_id ?? item.event_id ?? item.id, 180) || uid();
+      const caseId = text(item.case_id ?? body.case_id, 120);
+      const payload = item.payload && typeof item.payload === "object" && !Array.isArray(item.payload) ? item.payload : item;
+      const serialized = JSON.stringify(payload);
+      if (serialized.length > 100000) return json({ error: "Record payload is too large" }, 413);
+      if (caseId) {
+        const parent = await env.DB.prepare("SELECT 1 AS ok FROM cases WHERE org_id=? AND case_id=? LIMIT 1").bind(org, caseId).first();
+        if (!parent) return json({ error: "Case not found in this organization" }, 404);
+      }
+      statements.push(env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET case_id=excluded.case_id,payload_json=excluded.payload_json,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+        .bind(uid(), org, entity, sourceTable, sourceRecordId, caseId || null, serialized));
     }
-    const id = uid();
-    await env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET case_id=excluded.case_id,payload_json=excluded.payload_json,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
-      .bind(id, org, entity, sourceTable, sourceRecordId, caseId || null, serialized).run();
-    await audit(env, actor, "soc_record_upserted", sourceRecordId, "Stored " + entity + " record in D1");
-    return json({ stored: true, entity_type: entity, source_record_id: sourceRecordId }, 201);
+    await env.DB.batch(statements);
+    await audit(env, actor, "soc_records_upserted", sourceTable, "Stored " + items.length + " " + entity + " record(s) in D1");
+    return json({ stored: true, count: items.length, entity_type: entity }, 201);
   }
+
 
   const entityMap: Record<string,string> = {
     "/api/alerts":"findings", "/api/investigations":"correlation_investigations", "/api/evidence":"evidence",
