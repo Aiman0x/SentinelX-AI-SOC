@@ -114,6 +114,7 @@ const wazuh: ToolAdapter = {
     for(const k of Object.keys(values)) if(!allowed.includes(k)) throw new Error("Unsupported Wazuh configuration field: "+k);
     if(!publicHttps(values.apiUrl||"")) throw new Error("A public HTTPS Wazuh API URL is required. Use Cloudflare Tunnel/Access or a private bridge.");
     if(!values.apiUser||!values.apiPassword) throw new Error("Wazuh API username and password are required.");
+    if(Boolean(values.accessClientId)!==Boolean(values.accessClientSecret)) throw new Error("Provide both Cloudflare Access service token fields, or leave both blank.");
     const key=storageKey(context.actor,this.id), old=await context.env.INTEGRATION_CONFIGS.get(key);
     const previous=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
     const merged={...previous,...values};
@@ -211,8 +212,13 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:strin
       if(Object.keys(values).some(k=>!["sensor","source"].includes(k))) throw new Error("Unsupported configuration field.");
       const key=storageKey(context.actor,id),old=await context.env.INTEGRATION_CONFIGS.get(key);
       const prev=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
-      await context.env.INTEGRATION_CONFIGS.put(key,await seal({...prev,...values},context.env.CONFIG_ENCRYPTION_KEY,key));
-      return {saved:true,configuredKeys:Object.keys({...prev,...values})};
+      const merged={...prev,...values};
+      await context.env.INTEGRATION_CONFIGS.put(key,await seal(merged,context.env.CONFIG_ENCRYPTION_KEY,key));
+      // Host-side settings are non-secret metadata; mirror only these to the organization collector scope.
+      const orgKey=context.actor.organization_id+":"+id,orgOld=await context.env.INTEGRATION_CONFIGS.get(orgKey);
+      const orgPrev=orgOld?await unseal(orgOld,context.env.CONFIG_ENCRYPTION_KEY,orgKey):{};
+      await context.env.INTEGRATION_CONFIGS.put(orgKey,await seal({...orgPrev,...values},context.env.CONFIG_ENCRYPTION_KEY,orgKey));
+      return {saved:true,configuredKeys:Object.keys(merged)};
     },
     async test(context) {
       const raw=await context.env.INTEGRATION_CONFIGS.get(context.actor.organization_id+":"+id+":health");
