@@ -13,7 +13,7 @@ export async function loadIntegrations(): Promise<Integration[]> {
 }
 export async function saveIntegrationConfig(integration: Integration, values: Record<string, string>) {
   if (isBackendConfigured) {
-    const result = await apiPost<{ saved: boolean }>(`/api/integrations/${integration.id}/config`, { values });
+    const result = await apiPost<{ saved: boolean }>(`/api/integrations/${integration.id}/connect`, { values });
     if (!result.saved) throw new Error('Backend did not confirm configuration save.');
     return;
   }
@@ -37,4 +37,10 @@ export async function testConnection(integration: Integration): Promise<TestResu
   const all = integrationConfigStore.getSnapshot();
   integrationConfigStore.set({ ...all, [integration.id]: { values: all[integration.id]?.values ?? {}, savedAt: all[integration.id]?.savedAt ?? '', lastTest: result } });
   return result;
+}
+
+export async function queryIntegration(integration: Integration, input: Record<string, unknown>): Promise<unknown> {
+  if (!isBackendConfigured) throw new Error('Connect the SentinelX backend before querying external tools.');
+  const result = await apiPost<{ data: unknown }>(`/api/integrations/${integration.id}/query`, input);
+  return result.data;
 }
