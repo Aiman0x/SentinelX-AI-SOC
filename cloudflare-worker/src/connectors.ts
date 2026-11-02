@@ -223,7 +223,7 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:strin
     async query(context,input) {
       const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
       const pattern="%"+id+"%";
-      const rows=await context.env.DB.prepare("SELECT entity_type,source_table,source_record_id,payload_json,created_at FROM soc_records WHERE org_id=? AND (lower(entity_type) LIKE ? OR lower(source_table) LIKE ?) ORDER BY created_at DESC LIMIT ?").bind(context.actor.organization_id,pattern,pattern,limit).all();
+      const rows=await context.env.DB.prepare("SELECT entity_type,source_table,source_record_id,payload_json,created_at FROM soc_records WHERE org_id=? AND (lower(entity_type) LIKE ? OR lower(source_table) LIKE ? OR lower(payload_json) LIKE ?) ORDER BY created_at DESC LIMIT ?").bind(context.actor.organization_id,pattern,pattern,pattern,limit).all();
       return {data:rows.results};
     }
   };
@@ -275,7 +275,7 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
   if(!match) return json({error:"Unknown integration route"},404);
   const adapter=adapters.find(x=>x.id===match[1]);
   if(!adapter) return json({error:"Unknown connector"},404);
-  if(actor.role!=="owner"&&actor.role!=="admin") return json({error:"Owner/admin permission required"},403);
+  if(match[2]==="connect" && actor.role==="viewer") return json({error:"Viewer role cannot save connector credentials."},403);
   if(match[2]==="schema"&&request.method==="GET") return json({id:adapter.id,schema:adapter.schema});
   if(match[2]==="connect"&&request.method==="POST") {
     let body:any; try { body=await request.json(); } catch { return json({error:"Invalid JSON body"},400); }
