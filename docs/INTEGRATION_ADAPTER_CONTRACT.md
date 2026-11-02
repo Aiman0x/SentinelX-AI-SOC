@@ -113,7 +113,7 @@ Every adapter implements connect(), test(), query() and exposes schema. Credenti
 
 | Adapter | Connect | Test | Query |
 |---|---|---|---|
-| Wazuh | User-owned API username/password and optional Cloudflare Access service token | Authenticate to API and retrieve agent inventory | List agents, get one agent, manager info |
+| Wazuh | User-owned Manager API + Indexer read-only usernames/passwords and optional Cloudflare Access service token | Authenticate to Manager, retrieve agent inventory, and search the Wazuh alert index | List agents, get one agent, manager info, recent alerts |
 | Windows Sysmon | Sensor/channel metadata | Fresh collector health report | Tenant-scoped Sysmon records from D1 |
 | Suricata | Sensor / eve.json source metadata | Fresh collector health report | Tenant-scoped Suricata records from D1 |
 | Zeek | Sensor / log source metadata | Fresh collector health report | Tenant-scoped Zeek records from D1 |
