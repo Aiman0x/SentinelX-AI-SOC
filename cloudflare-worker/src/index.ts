@@ -1,6 +1,7 @@
 import { currentUser, handleAuthRoute } from "./auth";
 import { handleAIRoute } from "./ai";
 import { handleCollectorRoute } from "./collectors";
+import { handleDataRoute } from "./data";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -306,6 +307,9 @@ export default {
 
     const authResponse = await handleAuthRoute(request, env, url.pathname);
     if (authResponse) return new Response(authResponse.body, { status: authResponse.status, headers: { ...Object.fromEntries(authResponse.headers), ...cors } });
+
+    const dataResponse = await handleDataRoute(request, env, url.pathname);
+    if (dataResponse) return new Response(dataResponse.body, { status: dataResponse.status, headers: { ...Object.fromEntries(dataResponse.headers), ...cors } });
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       return handleLogin(request, env, cors);
