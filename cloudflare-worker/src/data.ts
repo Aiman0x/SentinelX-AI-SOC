@@ -110,13 +110,15 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const reason = text(body?.reasonEvidence, 4000); const risk = text(body?.riskLevel, 24);
     if (!actionType || !proposed || !reason || !["Critical","High","Medium","Low"].includes(risk)) return json({ error: "Action, proposedAction, reasonEvidence and a valid riskLevel are required" }, 400);
     const caseId = text(body?.caseId, 120);
+    let canonicalCaseId: string | null = null;
     if (caseId) {
       const parent = await env.DB.prepare("SELECT case_id FROM cases WHERE org_id=? AND (case_id=? OR id=?) LIMIT 1").bind(org, caseId, caseId).first<{case_id:string}>();
       if (!parent) return json({ error: "Case not found in this organization" }, 404);
+      canonicalCaseId = parent.case_id;
     }
     const id = uid(); const approvalId = "SX-APR-" + id.slice(0, 12).toUpperCase();
     await env.DB.prepare("INSERT INTO approvals(id,org_id,approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,execution_status,execution_mode) VALUES(?,?,?,?,?,?,?,?,?,?, 'Pending Approval','Not Executed','SIMULATED - no real containment')")
-      .bind(id, org, approvalId, caseId || null, actionType, text(body?.targetAsset, 240), proposed, reason, risk, actor.display_name || actor.email).run();
+      .bind(id, org, approvalId, canonicalCaseId, actionType, text(body?.targetAsset, 240), proposed, reason, risk, actor.display_name || actor.email).run();
     await audit(env, actor, "approval_requested", approvalId, "Defensive action approval requested; no action executed");
     return json({ created: true, approval: { id, approvalId, status: "Pending Approval", executionStatus: "Not Executed" } }, 201);
   }
