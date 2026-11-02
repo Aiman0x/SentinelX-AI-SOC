@@ -94,7 +94,7 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     if (!parent) return json({ error: "Case not found in this organization" }, 404);
     const id = uid();
     await env.DB.prepare("INSERT INTO notes(id,org_id,case_id,note_type,body,author,related_evidence_reference,visibility) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id, org, parent.case_id, text(body?.noteType, 64) || "Observation", note, text(body?.author, 240) || actor.display_name || actor.email, text(body?.relatedEvidenceReference, 500) || null, text(body?.visibility, 32) || "Case Team").run();
+      .bind(id, org, parent.case_id, text(body?.noteType, 64) || "Observation", note, actor.display_name || actor.email, text(body?.relatedEvidenceReference, 500) || null, text(body?.visibility, 32) || "Case Team").run();
     await audit(env, actor, "case_note_added", parent.case_id, "Analyst note added");
     return json({ created: true, note: { id, caseId: parent.case_id, text: note, author: actor.display_name || actor.email, createdAt: iso() } }, 201);
   }
