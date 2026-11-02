@@ -94,7 +94,7 @@ A tool is not a generic plugin merely because a user can type its URL. Every con
 
 ## Tenant isolation and data model
 
-Every workspace-owned record must carry an immutable `workspace_id`: integration configs, provider profiles, sensors, events, alerts, cases, investigations, evidence, playbooks, and audit entries. Every read/write query and webhook lookup must enforce the authenticated workspace scope server-side. Never trust a workspace ID supplied only by the browser.
+Every workspace-owned record must carry an immutable `org_id`: integration configs, provider profiles, sensors, events, alerts, cases, investigations, evidence, playbooks, and audit entries. Every read/write query and webhook lookup must enforce the authenticated workspace scope server-side. Never trust a workspace ID supplied only by the browser.
 
 Secret encryption must use authenticated encryption with key versioning and tenant-bound associated data. Store ciphertext and a secret reference; never store plaintext secrets in KV, logs, workflow payloads, or frontend responses. Rotate encryption keys with a migration path. Audit create/update/test/disable/delete events without recording secret values.
 
