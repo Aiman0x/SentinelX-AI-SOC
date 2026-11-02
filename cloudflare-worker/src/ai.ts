@@ -185,8 +185,10 @@ async function runFailover(settings: AISettings, prompt: string): Promise<{ answ
     if (!raw) return json({ error: "Configure an AI provider in Settings first." }, 400);
     try {
       const config = await unseal(raw, env.CONFIG_ENCRYPTION_KEY, actor.organization_id);
-      const answer = await callModel(config, "You are SentinelX, a defensive SOC analyst. Analyze only the supplied evidence. Separate observed facts from hypotheses, state uncertainty, recommend read-only investigation first, and never claim an action was executed.\n\n" + body.prompt);
-      return json({ answer, provider: config.provider, model: config.model, generatedAt: new Date().toISOString() });
+      const prompt = config.maskSensitiveData ? maskSensitive(body.prompt) : body.prompt;
+      const bounded = fitPrompt(prompt, config.maxInputTokens);
+      const result = await runFailover(config, "You are SentinelX, a defensive SOC analyst. Analyze only supplied evidence; separate facts from hypotheses and never claim an action was executed.\\n\\n" + bounded.text);
+      return json({ answer: result.answer, provider: result.provider, model: result.model, attemptedFallbacks: result.attempts.length, estimatedInputTokens: bounded.estimatedTokens, inputTokenBudget: config.maxInputTokens, truncated: bounded.truncated, dataMasking: config.maskSensitiveData, generatedAt: new Date().toISOString() });
     } catch (error) { return json({ error: error instanceof Error ? error.message : "AI analysis failed." }, 502); }
   }
   return json({ error: "Method not allowed." }, 405);
