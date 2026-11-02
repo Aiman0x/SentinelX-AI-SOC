@@ -112,7 +112,7 @@ export default function Integrations() {
                         <FieldControl field={f} value={queryValues[i.id]?.[f.key] ?? ''} onChange={v => setQueryField(i.id,f.key,v)} />
                       </Field>
                     ))}
-                    <button className="btn btn-gold w-full" onClick={() => runQuery(i)} disabled={querying === i.id || !i.configured}>{querying === i.id ? 'Querying…' : 'Run read-only query'}</button>
+                    <button className="btn btn-gold w-full" onClick={() => runQuery(i)} disabled={querying === i.id || (!i.configured && !i.verified)}>{querying === i.id ? 'Querying…' : 'Run read-only query'}</button>
                     {queryResults[i.id] && <pre className="max-h-64 overflow-auto rounded border border-sx-line bg-sx-bg p-2 text-[10px] text-sx-text whitespace-pre-wrap break-all">{queryResults[i.id]}</pre>}
                     {i.id === 'virustotal' && <p className="text-[10px] text-sx-warn">Privacy: VirusTotal notes that queried indicators can be added to its shared dataset. Do not submit confidential or personal indicators. Check its terms before using the Community API in a product.</p>}
                   </div>
