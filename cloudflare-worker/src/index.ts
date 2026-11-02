@@ -433,4 +433,4 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(runScheduledAIReport(controller.cron, env));
   },
-};;
+};
