@@ -24,7 +24,7 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
     const orgToken = request.headers.get("X-SentinelX-Org-Key") || "";
     if (orgToken.length < 40 || orgToken.length > 256) return null;
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(orgToken)));
-    const tokenHash = btoa(String.fromCharCode(...digest)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+    const tokenHash = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
     const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL").bind(tokenHash).first<{id:string;org_id:string}>();
     if (!row) return null;
     return { id: row.id, role: "service", organization_id: row.org_id, email: "collector@sentinelx.internal", display_name: "Authenticated Collector" };
