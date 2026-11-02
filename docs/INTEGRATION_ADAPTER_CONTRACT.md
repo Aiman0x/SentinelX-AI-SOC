@@ -136,3 +136,11 @@ The connector code and API contract are implemented. Wazuh cannot be marked live
 ### Host collector event ingestion
 
 Sysmon, Suricata and Zeek adapters use the authenticated collector pipeline. After creating a host collector, send health reports to POST /api/collector/heartbeat and normalized event batches to POST /api/collector/events with Authorization: Bearer <collector-token>. The event body is { integrationId: 'sysmon' | 'suricata' | 'zeek', events: [{ eventId, observedAt, payload }] }. Batches accept 1–100 events and are stored in D1 soc_records using the organization resolved from the collector token, never from caller-supplied org_id. The ingestion layer strips common credential fields before storage and deduplicates per collector + event ID. The connector query adapters then read only that organization's matching records.
+
+## LLM gateway contract
+
+The Worker LLM gateway supports a primary provider plus up to three fallback provider configurations. Every provider entry has a provider ID, model, BYO API key and optional HTTPS base URL for OpenAI-compatible endpoints. Keys are encrypted in KV with AES-GCM and are never returned to the browser.
+
+Before analysis, the gateway optionally masks common secret-value pairs, bearer tokens, email addresses and phone numbers. It then applies a configurable approximate input budget (500–12,000 tokens; default 6,000; ~4 characters/token) and truncates excess evidence. Responses include the selected provider/model, fallback count, estimated input tokens, configured budget, masking status and truncation status.
+
+Masking is best-effort and not a guarantee of anonymization. Provider requests can still disclose submitted evidence to the selected third-party provider. Do not send credentials, regulated personal data or confidential telemetry unless the organization has approved that provider and its data terms.
