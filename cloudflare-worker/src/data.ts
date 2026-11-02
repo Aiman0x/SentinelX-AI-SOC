@@ -44,6 +44,7 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   const actor = await actorFor(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
   const org = actor.organization_id;
+  if (actor.role === "viewer" && request.method !== "GET") return json({ error: "Viewer role is read-only" }, 403);
 
   if (path === "/api/cases" && request.method === "GET") {
     const rows = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? ORDER BY created_at DESC LIMIT 500").bind(org).all<Record<string, unknown>>();
@@ -102,6 +103,11 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const caseId = text(new URL(request.url).searchParams.get("caseId"), 120);
     if (!caseId) return json({ error: "caseId query parameter is required" }, 400);
     const rows = await env.DB.prepare("SELECT id,case_id,note_type,body,author,related_evidence_reference,visibility,created_at FROM notes WHERE org_id=? AND case_id=? ORDER BY created_at DESC LIMIT 200").bind(org, caseId).all();
+    return json({ data: rows.results });
+  }
+
+  if (path === "/api/approvals" && request.method === "GET") {
+    const rows = await env.DB.prepare("SELECT approval_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,requested_by,status,approved_by,requested_at,decision_at,execution_status,execution_result,audit_reference,lifecycle_state,expires_at,execution_mode,verification_result FROM approvals WHERE org_id=? ORDER BY requested_at DESC LIMIT 200").bind(org).all();
     return json({ data: rows.results });
   }
 
