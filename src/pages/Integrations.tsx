@@ -20,7 +20,7 @@ const icons: Record<string, LucideIcon> = {
 const initialQuery = (fields: IntegrationField[] = []) => Object.fromEntries(fields.map(f => [f.key, f.key === 'limit' ? '25' : f.key === 'resource' ? 'agents' : f.key === 'type' ? 'ip' : '']));
 const FieldControl = ({ field, value, onChange, disabled = false }: { field: IntegrationField; value: string; onChange: (v: string) => void; disabled?: boolean }) => {
   if (field.key === 'type') return <select className="input mono" value={value || 'ip'} onChange={e => onChange(e.target.value)}><option value="ip">IP address</option><option value="domain">Domain</option><option value="url">URL</option><option value="hash">File hash</option></select>;
-  if (field.key === 'resource') return <select className="input mono" value={value || 'agents'} onChange={e => onChange(e.target.value)}><option value="agents">List agents</option><option value="agent">Get one agent</option><option value="manager">Manager info</option></select>;
+  if (field.key === 'resource') return <select className="input mono" value={value || 'agents'} onChange={e => onChange(e.target.value)}><option value="agents">List agents</option><option value="agent">Get one agent</option><option value="manager">Manager info</option><option value="alerts">Recent Wazuh alerts</option></select>;
   return <input className="input mono" type={field.type === 'password' || field.secret ? 'password' : field.type === 'url' ? 'url' : 'text'} value={value ?? ''} placeholder={field.placeholder} onChange={e => onChange(e.target.value)} autoComplete="off" disabled={disabled} />;
 };
 
