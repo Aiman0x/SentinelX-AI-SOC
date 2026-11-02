@@ -50,15 +50,15 @@ export async function currentUser(req:Request, env:AuthEnv):Promise<User|null> {
   const tokenHash=await sha(token);
   const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active,m.organization_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
-    JOIN organization_memberships m ON m.user_id=u.id
-    JOIN organizations o ON o.id=m.organization_id AND o.is_active=1
+    JOIN organization_memberships m ON m.user_id=u.id AND m.org_id=s.org_id
+    JOIN organizations o ON o.id=m.org_id AND o.is_active=1
     WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?
-    ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END LIMIT 1`)
+    LIMIT 1`)
     .bind(tokenHash,new Date().toISOString()).first<User>();
   return row && row.is_active===1 ? row : null;
 }
-async function log(env:AuthEnv,userId:string|null,event:string) {
-  await env.DB.prepare("INSERT INTO auth_audit_log(id,user_id,event) VALUES(?,?,?)").bind(id(),userId,event).run();
+async function log(env:AuthEnv,userId:string|null,event:string,orgId:string|null=null) {
+  await env.DB.prepare("INSERT INTO auth_audit_log(id,user_id,org_id,event) VALUES(?,?,?,?)").bind(id(),userId,orgId,event).run();
 }
 export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promise<Response|null> {
   if(path==="/api/auth/bootstrap-status" && req.method==="GET") {
@@ -94,10 +94,10 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
       await env.DB.batch([
         env.DB.prepare("INSERT INTO organizations(id,name,slug) VALUES(?,?,?)").bind(orgId,org,slug),
         env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,role) VALUES(?,?,?,?,?)").bind(userId,email,name,hashedPassword,"admin"),
-        env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(orgId,userId,"owner")
+        env.DB.prepare("INSERT INTO organization_memberships(org_id,user_id,role) VALUES(?,?,?)").bind(orgId,userId,"owner")
       ]);
       stage = "write_audit_log";
-      await log(env,userId,"bootstrap_admin_created");
+      await log(env,userId,"bootstrap_admin_created",orgId);
       return response({created:true,message:"Initial organization administrator created"},201);
     } catch (error) {
       console.error("SentinelX bootstrap failed", {stage, error: error instanceof Error ? error.message : String(error)});
@@ -115,16 +115,18 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     try { body=await req.json() as typeof body; } catch { return response({error:"Invalid JSON"},400); }
     const email=body.email?.trim().toLowerCase()||"", password=body.password||"";
     if(email.length>254||password.length>256) return response({error:"Invalid credentials"},401);
-    const row=await env.DB.prepare("SELECT id,email,display_name,password_hash,is_active FROM users WHERE email=?").bind(email).first<User&{password_hash:string}>();
+    const row=await env.DB.prepare("SELECT id,email,display_name,password_hash,is_active FROM users WHERE email=?").bind(email).first<{id:string;email:string;display_name:string;password_hash:string;is_active:number}>();
     if(!row||row.is_active!==1||!(await passwordVerify(password,row.password_hash))) {
       await log(env,row?.id||null,"login_failed"); return response({error:"Invalid credentials"},401);
     }
+    const membership=await env.DB.prepare("SELECT org_id,role FROM organization_memberships WHERE user_id=? ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END LIMIT 1").bind(row.id).first<{org_id:string;role:string}>();
+    if (!membership) { await log(env,row.id,"login_failed_no_organization"); return response({error:"No organization membership is assigned to this account"},403); }
     const token=b64(crypto.getRandomValues(new Uint8Array(32))), tokenHash=await sha(token), sessionId=id();
     const expires=new Date(Date.now()+TTL*1000).toISOString();
-    await env.DB.prepare("INSERT INTO auth_sessions(id,user_id,token_hash,expires_at,user_agent) VALUES(?,?,?,?,?)")
-      .bind(sessionId,row.id,tokenHash,expires,(req.headers.get("User-Agent")||"").slice(0,300)).run();
+    await env.DB.prepare("INSERT INTO auth_sessions(id,user_id,org_id,token_hash,expires_at,user_agent) VALUES(?,?,?,?,?,?)")
+      .bind(sessionId,row.id,membership.org_id,tokenHash,expires,(req.headers.get("User-Agent")||"").slice(0,300)).run();
     await env.DB.prepare("UPDATE users SET last_login_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();
-    await log(env,row.id,"login_success");
+    await log(env,row.id,"login_success",membership.org_id);
     return response({authenticated:true,user:{id:row.id,email:row.email,name:row.display_name}},200,{"Set-Cookie":cookie(token,TTL)});
   }
   if(path==="/api/auth/password" && req.method==="POST") {
@@ -144,7 +146,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
       env.DB.prepare("UPDATE users SET password_hash=?,updated_at=? WHERE id=?").bind(await passwordHash(next),new Date().toISOString(),actor.id),
       env.DB.prepare("UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND token_hash<>? AND revoked_at IS NULL").bind(new Date().toISOString(),actor.id,tokenHash)
     ]);
-    await log(env,actor.id,"password_changed");
+    await log(env,actor.id,"password_changed",actor.organization_id);
     return response({changed:true,message:"Password updated. Other active sessions were signed out."});
   }
   if(path==="/api/auth/logout" && req.method==="POST") {
@@ -158,21 +160,21 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
     if(actor.role!=="owner"&&actor.role!=="admin") return response({error:"Admin permission required"},403);
     if(req.method==="GET") {
-      const users=await env.DB.prepare("SELECT u.id,u.email,u.display_name,m.role,u.is_active,u.created_at,u.last_login_at FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE m.organization_id=? ORDER BY u.created_at DESC").bind(actor.organization_id).all();
+      const users=await env.DB.prepare("SELECT u.id,u.email,u.display_name,m.role,u.is_active,u.created_at,u.last_login_at FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE m.org_id=? ORDER BY u.created_at DESC").bind(actor.organization_id).all();
       return response({users:users.results});
     }
     const body=await req.json() as {email?:string;name?:string;password?:string;role?:string};
     const email=body.email?.trim().toLowerCase()||"", name=body.name?.trim()||"", password=body.password||"", role=body.role||"analyst";
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||password.length<14||password.length>256||!["admin","analyst","viewer"].includes(role)) return response({error:"Invalid user details"},400);
     if(actor.role!=="owner" && role==="admin") return response({error:"Only the organization owner can create administrators"},403);
-    const membership={organization_id:actor.organization_id};
+    const membership={org_id:actor.organization_id};
     const userId=id();
     try {
       await env.DB.batch([
         env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,role) VALUES(?,?,?,?,?)").bind(userId,email,name,await passwordHash(password),role),
-        env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(membership.organization_id,userId,role)
+        env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(membership.org_id,userId,role)
       ]);
-      await log(env,actor.id,"admin_created_user");
+      await log(env,actor.id,"admin_created_user",actor.organization_id);
       return response({created:true,user:{id:userId,email,name,role}},201);
     } catch { return response({error:"Could not create user; email may already exist"},409); }
   }
@@ -181,7 +183,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     const actor=await currentUser(req,env); if(!actor) return response({error:"Authentication required"},401);
     if(actor.role!=="owner"&&actor.role!=="admin") return response({error:"Admin permission required"},403);
     if(disableMatch[1]===actor.id) return response({error:"You cannot disable your own account"},400);
-    const target=await env.DB.prepare("SELECT u.id,m.role FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE u.id=? AND m.organization_id=?").bind(disableMatch[1],actor.organization_id).first<{id:string;role:string}>();
+    const target=await env.DB.prepare("SELECT u.id,m.role FROM users u JOIN organization_memberships m ON m.user_id=u.id WHERE u.id=? AND m.org_id=?").bind(disableMatch[1],actor.organization_id).first<{id:string;role:string}>();
     if(!target) return response({error:"User not found in your organization"},404);
     if(target.role==="owner") return response({error:"The organization owner cannot be disabled"},403);
     if(actor.role!=="owner" && target.role==="admin") return response({error:"Only the organization owner can disable administrators"},403);
@@ -189,7 +191,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
       env.DB.prepare("UPDATE users SET is_active=0,updated_at=? WHERE id=?").bind(new Date().toISOString(),disableMatch[1]),
       env.DB.prepare("UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL").bind(new Date().toISOString(),disableMatch[1])
     ]);
-    await log(env,actor.id,"admin_disabled_user");
+    await log(env,actor.id,"admin_disabled_user",actor.organization_id);
     return response({disabled:true});
   }
   return null;
