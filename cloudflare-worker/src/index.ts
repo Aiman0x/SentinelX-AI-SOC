@@ -41,8 +41,8 @@ const ROUTES: Record<string, keyof Env> = {
 
 const INTEGRATION_FIELDS: Record<string, string[]> = {
   wazuh: ["apiUrl", "apiUser", "apiPassword", "accessClientId", "accessClientSecret"],
-  sysmon: ["collector", "configVersion"],
-  clamav: ["host", "port"],
+  sysmon: ["eventChannel", "configVersion"],
+  clamav: ["binaryPath"],
   yara: ["rulesPath"],
   suricata: ["eveLog", "sensor"],
   zeek: ["logPath", "sensor"],
