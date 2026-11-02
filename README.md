@@ -1,101 +1,83 @@
-# SentinelX — AI-Assisted Security Operations Center
+# SentinelX — Activepieces-first AI SOC
 
-SentinelX is a multi-tenant, BYO-integrations AI SOC platform focused on authorized telemetry ingestion, detection, investigation, evidence handling, and analyst-guided response. Each workspace can connect its own supported security tools and configure its own LLM provider; no single Wazuh server or model provider is mandatory.
+SentinelX is a defensive SOC investigation platform. Activepieces orchestrates ingestion, detection, investigation and response workflows; Cloudflare Worker + D1 provide the authenticated multi-tenant API and durable data plane.
 
-The intended design uses a **Cloudflare Worker** as the authenticated control plane and a **React GUI** for workspace management. **ActivePieces** remains an optional/reusable workflow orchestration layer. Tool and model credentials are workspace-scoped and stored server-side.
+## Current architecture
 
-## Architecture
+- **Frontend:** React/Vite SOC console.
+- **Gateway:** Cloudflare Worker with session authentication, role checks, CORS, collector enrollment and tenant-scoped data routes.
+- **Database:** Cloudflare D1. Tenant-owned records are scoped by `org_id`; the organization ID is derived from the authenticated analyst session or an organization-specific collector token.
+- **Automation:** Activepieces workflows for telemetry intake, Windows security events, detections, correlation, and verification.
+- **Collector enrollment:** Integrations → Host Collectors. Each collector receives a unique token shown once.
 
-```text
-Authorized security telemetry
-        |
-        v
-ActivePieces intake, validation and detection workflows
-        |
-        v
-SentinelX tables: findings, cases, investigations, evidence, assets, rules, audit
-        ^
-        |
-Cloudflare Worker (single public origin)
-  - serves React GUI static assets
-  - analyst password login and signed session
-  - authenticated read routes to ActivePieces
-  - encrypted integration configuration storage
-        ^
-        |
-Browser — SentinelX SOC GUI
-```
+## Multi-tenant data model
 
-The intended public origin is `https://sentinelx-api-gateway.aiman132046.workers.dev`. GitHub remains the source repository; GitHub Actions builds the frontend and deploys the GUI assets and API gateway together.
+The D1 migration `cloudflare-worker/migrations/0002_soc_data.sql` creates the SOC data plane. The connected D1 database has these tenant-scoped tables:
 
-## Implemented
+- `cases`
+- `notes`
+- `approvals`
+- `soc_records` (findings, telemetry, incoming events, evidence, integrations, assets, rules, investigations, timeline and other extensible records)
+- `audit_logs`
+- `host_collectors`
+- `organization_memberships`
+- `auth_sessions`
+- `auth_audit_log` (nullable `org_id` only for pre-authentication events)
 
-- Dark black/red/gold SOC GUI with alerts, cases, investigations, assets, integrations, detection rules, playbooks, audit logs, and settings.
-- Backend-aware GUI data loaders and mappers for alerts, cases, investigations, evidence references, assets, rules, audit logs, and integrations.
-- Cloudflare Worker source with PBKDF2 analyst-password verification, signed HttpOnly session cookies, login rate limiting, and origin restriction.
-- Cloudflare D1 SOC data plane with tenant-scoped `org_id` on every workspace-owned data table; tenant scope is taken from the authenticated session, never trusted from browser input.
-- D1-backed case, finding, investigation, evidence, audit, asset, rule, and telemetry read routes; case, note, and approval write routes with tenant checks and audit events.
-- Authenticated read routes from the GUI through D1; ActivePieces remains the workflow/orchestration layer while legacy table writers are being retired.
-- Encrypted workspace-scoped integration configuration using AES-256-GCM and Workers KV.\n- BYO-LLM settings and encrypted per-workspace provider credentials for OpenAI, Anthropic, Gemini, and OpenAI-compatible HTTPS endpoints.\n- Server-side provider connection tests and an authenticated AI investigation endpoint; analyst role can run investigations while workspace admins manage provider credentials.
-- Workers Static Assets configuration to serve the GUI and route `/api/*` requests through the same Worker origin.
+`users` remains a global identity table because one person may belong to multiple organizations. `organizations.id` is the organization identifier. Memberships and sessions bind a user to one active organization; new sessions require `org_id`.
 
-## Data migration and ActivePieces status
-
-- Existing Activepieces table data was imported into D1: 69 case records from both legacy case schemas, 167 other SOC records, and 1 approval record (237 total). Legacy organization labels, including `ORG-DEFAULT`, were normalized to the owning D1 organization ID during import.
-- The two legacy case schemas are now represented in one D1 `cases` table with `source_schema` retained for traceability.
-- Eight obsolete `ARCHIVE v0` flows were deleted from the ActivePieces project. Current enabled flows were preserved.
-- The old ActivePieces case tables and active flows are retained temporarily because enabled workflows still reference them. They must not be deleted until those writers/readers are migrated to the D1 gateway and validated.
-- One enabled callable flow (`SentinelX - SOC Alert Triage`) still contains the legacy `ORG-DEFAULT` value. It must be changed to accept only a trusted, authenticated `org_id` from its upstream caller before that flow can safely write tenant data; simply replacing the literal with caller-controlled JSON would not provide tenant isolation.
-- A D1 migration file is stored at `cloudflare-worker/migrations/0002_soc_data.sql`.
-
-## Deployment prerequisites
-
-- Add `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret with permission to deploy Workers Scripts.
-- Generate the analyst password hash, session HMAC secret, and AES encryption key locally.
-- Rotate the shared GUI bridge credential on all eight ActivePieces read workflows.
-- Configure the eight published ActivePieces webhook URLs as Worker Secrets.
-
-See `cloudflare-worker/README.md` for the exact runtime secret names and setup instructions. See `docs/BYO_LLM_AND_MULTI_TENANT_ARCHITECTURE.md` for the target BYO-LLM and multi-tenant connector design.
-
-## Still pending
-
-- Deploy and verify the combined Cloudflare Worker.
-- Configure Worker secrets and ActivePieces webhook URLs.
-- Migrate enabled ActivePieces ingestion/detection workflows from legacy Tables writes to tenant-bound D1 gateway writes; remove the remaining `ORG-DEFAULT` flow dependency; then remove the two legacy ActivePieces case tables.
-- Wire GUI case creation/status changes and analyst notes to the new gateway write routes.
-- Add asset and detection-rule write APIs.
-- Build tool-specific adapters and health checks for Wazuh, Sysmon, Suricata, Zeek, ClamAV, and YARA.
-- Add a workspace provider API key in Settings and run a live connection test (requires a customer-owned provider key).
-- Validate real Windows and authorized remote telemetry.
-- Add audited, human-approved defensive response workflows.
-
-## Run locally
-
-Requirements: Node.js 18+ and npm.
-
-```bash
-npm install
-npm run dev
-npm run build
-npm run preview
-```
-
-Without `VITE_API_BASE_URL`, the GUI uses demo data. Never put secrets in `VITE_*` variables or frontend source.
+The auth-scope SQL already applied to the connected D1 database is documented in `cloudflare-worker/manual-migrations/0003_auth_org_scope.sql`. It is outside Wrangler's automatic migrations directory because it has already been applied manually to the existing database.
 
 ## D1 gateway routes
 
-- `GET /api/cases`, `POST /api/cases`, and `POST /api/cases/{caseId}`
-- `POST /api/notes` and `GET /api/notes?caseId=...`
-- `GET /api/approvals`, `POST /api/approvals`, and `POST /api/approvals/{approvalId}/decision`
-- Read routes for alerts, investigations, evidence, audit logs, assets, rules, and telemetry now query D1 by the authenticated `org_id`.
-- Viewer accounts are read-only. Approval decisions require owner/admin role. Approval decisions never execute the requested response action; execution remains `Not Executed`.
+- `GET /api/cases`, `GET /api/cases/:caseId`, `POST /api/cases`, `POST /api/cases/:caseId`
+- `GET /api/notes?caseId=...`, `POST /api/notes`
+- `GET /api/approvals`, `POST /api/approvals`, `POST /api/approvals/:approvalId/decision`
+- `GET /api/records?entity_type=...`, `POST /api/records` for tenant-scoped SOC record types
+- `GET /api/collectors`, `POST /api/collectors`, `DELETE /api/collectors/:id`
 
-## Security principles
+The browser cannot choose its tenant by sending `org_id`. Analyst requests use the organization bound to the signed session. Activepieces-to-D1 requests use `X-SentinelX-Org-Key`; the Worker hashes the token and resolves its organization through `host_collectors`. The token is never accepted from a record's JSON payload.
 
-- Use SentinelX only with systems and data you are authorized to monitor.
-- Never commit API keys, webhook URLs, bridge keys, passwords, or encryption keys.
-- Keep credentials in server-side secret storage and encrypt integration secrets before persistence.
-- Do not describe demo data, saved configurations, or structurally valid workflows as verified telemetry or connected tools.
-- Keep disruptive response actions disabled until authentication, approval, and audit controls are implemented.
+## Activepieces migration
 
-**Status: In Development — D1 schema and tenant-scoped gateway routes are implemented on the feature branch; existing ActivePieces workflows still require migration, and deployment/live verification remain pending.**
+The following workflows now use D1 for their primary SOC data writes/reads:
+
+- Phase 3 telemetry intake
+- Windows failed-login case intake
+- SOC alert triage (cases, incoming events, audit records, tool registry and telemetry context)
+- Repeated-authentication, failed-then-success, endpoint-security and network/posture findings
+- Correlation investigations and timeline entries
+- Post-action verification audit
+- Asset coverage audit
+
+The legacy case records were copied to D1 before cleanup: **69 cases** across both old case schemas, plus **167 other SOC records** and **1 approval** (237 migrated records total). The two legacy Activepieces case tables were then deleted. Their `source_schema` values remain in D1 for traceability.
+
+The two obsolete Activepieces approval intake/decision flows and the obsolete incident-record read proxy were removed because the Worker now owns those gateway routes. The eight `ARCHIVE` flows were already absent from the Activepieces project when checked; no active flow was deleted under that label.
+
+Other Activepieces tables remain as legacy/reference data during the wider transition. D1 is the source of truth for the migrated case, telemetry, event, finding, investigation, timeline, asset, audit and approval paths.
+
+## Collector setup
+
+1. In the SentinelX console, open **Integrations → Host Collectors**.
+2. Create a collector for the target Windows/Linux/macOS host and copy its token. It is shown only once.
+3. Configure the collector with `SENTINELX_ORG_TOKEN`.
+4. In addition to the existing Activepieces webhook header `X-SentinelX-Key`, send `X-SentinelX-Org-Key: <collector-token>`.
+5. Do not put an organization ID or `ORG-DEFAULT` into the event payload to select a tenant. The Worker resolves the tenant from the token.
+
+For the existing Windows PowerShell collector, add the organization token to the request headers alongside the current webhook key. The collector's local script is not changed by this repository update.
+
+## Security notes
+
+- Read-only viewer accounts cannot write.
+- Case, note and approval writes are tenant-scoped.
+- Approval decisions require an owner/admin session.
+- Approval decisions do not execute containment actions; response execution remains separately gated.
+- Collector tokens are hashed in D1 and can be revoked from Host Collectors.
+- D1 queries always bind `org_id` from the authenticated context.
+
+## Deployment and validation
+
+- The implementation is on `feat/byo-llm-multi-tenant-integrations`.
+- `validate-multitenant.yml` builds the frontend and bundles the Worker without deploying.
+- `deploy-worker.yml` applies the automatic D1 migration and deploys the Worker on updates to `main`.
+- The connected D1 schema/data changes have been applied. The updated Worker code and Activepieces draft changes still require CI validation, deployment and flow publication before live traffic uses them.
