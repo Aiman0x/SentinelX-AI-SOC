@@ -89,7 +89,7 @@ The feature branch includes a dynamic Connect your tools page backed by the Work
 
 - Per-user credentials are encrypted at rest with AES-GCM and scoped to the signed-in user + organization + connector. Secrets are never returned to the browser.
 - Wazuh adapter connects both Manager API and Indexer: agent inventory, agent lookup, manager info and recent alert search. Use a private/trusted HTTPS route such as Cloudflare Tunnel + Access; never expose port 55000 publicly.
-- Sysmon, Suricata and Zeek adapters use host-collector health and tenant-scoped D1 telemetry queries.
+- Sysmon, Suricata and Zeek adapters use host-collector health, authenticated event ingestion at /api/collector/events, and tenant-scoped D1 telemetry queries.
 - VirusTotal, AbuseIPDB and URLScan use each user's own API key and read-only reputation/search lookups.
 - ActivePieces remains gateway-managed and appears in the same registry.
 - Connector connect/test/query operations are audit logged without credentials or IOC values.
