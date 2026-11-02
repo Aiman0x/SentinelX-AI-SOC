@@ -1,6 +1,6 @@
 import { currentUser } from "./auth";
 
-interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; }
+interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; AP_BRIDGE_KEY: string; }
 type Actor = { id: string; role: string; organization_id: string; email: string; display_name: string };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
@@ -11,12 +11,28 @@ const allowedOrigin = (request: Request, env: DataEnv) => {
   const origin = request.headers.get("Origin") || "";
   return !origin || env.ALLOWED_ORIGIN.split(",").map(x => x.trim()).includes(origin);
 };
+function secretEqual(a: string, b: string): boolean {
+  if (!a || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
+  const bridge = request.headers.get("X-SentinelX-Bridge-Key");
+  if (bridge !== null) {
+    if (!env.AP_BRIDGE_KEY || !secretEqual(bridge, env.AP_BRIDGE_KEY)) return null;
+    const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
+    const orgId = text(body?.org_id, 120) || text(new URL(request.url).searchParams.get("org_id"), 120);
+    if (!orgId) return null;
+    const org = await env.DB.prepare("SELECT id FROM organizations WHERE id=? AND is_active=1").bind(orgId).first<{id:string}>();
+    if (!org) return null;
+    return { id: "activepieces", role: "service", organization_id: orgId, email: "activepieces@sentinelx.internal", display_name: "Activepieces" };
+  }
   return await currentUser(request, env as Parameters<typeof currentUser>[1]) as Actor | null;
 }
 async function audit(env: DataEnv, actor: Actor, event: string, target: string, details: string, outcome = "Success") {
   await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
-    .bind(uid(), actor.organization_id, actor.id, "Human Analyst", event, target, details.slice(0, 2000), outcome).run();
+    .bind(uid(), actor.organization_id, actor.id, actor.role === "service" ? "Automation" : "Human Analyst", event, target, details.slice(0, 2000), outcome).run();
 }
 function parseBody(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -38,7 +54,7 @@ function casePayload(row: Record<string, unknown>) {
   return { id: row.id, cells };
 }
 export async function handleDataRoute(request: Request, env: DataEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/cases") && !path.startsWith("/api/notes") && !path.startsWith("/api/approvals") &&
+  if (!path.startsWith("/api/cases") && !path.startsWith("/api/notes") && !path.startsWith("/api/approvals") && path !== "/api/records" &&
       !["/api/alerts","/api/investigations","/api/evidence","/api/audit","/api/assets","/api/rules","/api/telemetry","/api/approvals"].includes(path)) return null;
   if (!allowedOrigin(request, env)) return json({ error: "Origin not allowed" }, 403);
   const actor = await actorFor(request, env);
@@ -47,7 +63,10 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (actor.role === "viewer" && request.method !== "GET") return json({ error: "Viewer role is read-only" }, 403);
 
   if (path === "/api/cases" && request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT * FROM cases WHERE org_id=? ORDER BY created_at DESC LIMIT 500").bind(org).all<Record<string, unknown>>();
+    const source = text(new URL(request.url).searchParams.get("source"), 240);
+    const rows = source
+      ? await env.DB.prepare("SELECT * FROM cases WHERE org_id=? AND source=? ORDER BY created_at DESC LIMIT 500").bind(org, source).all<Record<string, unknown>>()
+      : await env.DB.prepare("SELECT * FROM cases WHERE org_id=? ORDER BY created_at DESC LIMIT 500").bind(org).all<Record<string, unknown>>();
     return json({ data: rows.results.map(casePayload) });
   }
   if (path === "/api/cases" && request.method === "POST") {
@@ -60,7 +79,8 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const source = text(body?.source, 240);
     const overview = text(body?.overview, 8000);
     const assignee = text(body?.assignee, 240);
-    const payload = JSON.stringify({ assets: Array.isArray(body?.assets) ? body!.assets : [], alertIds: Array.isArray(body?.alertIds) ? body!.alertIds : [] });
+    const extra = body?.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? body.payload as Record<string, unknown> : {};
+    const payload = JSON.stringify({ ...extra, assets: Array.isArray(body?.assets) ? body!.assets : (extra.assets || []), alertIds: Array.isArray(body?.alertIds) ? body!.alertIds : (extra.alertIds || []) });
     const id = uid();
     try {
       await env.DB.prepare("INSERT INTO cases(id,org_id,case_id,source_schema,title,source,severity,status,assignee,overview,payload_json) VALUES(?,?,?,'gateway',?,?,?,?,?,?,?)")
@@ -142,6 +162,40 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     if (!result.meta.changes) return json({ error: "Pending approval not found in this organization" }, 404);
     await audit(env, actor, "approval_decided", approvalId, "Approval decision: " + decision + ". Execution remains disabled.");
     return json({ updated: true, decision, executionStatus: "Not Executed" });
+  }
+
+  if (path === "/api/records" && request.method === "GET") {
+    const url = new URL(request.url);
+    const entity = text(url.searchParams.get("entity_type"), 80);
+    const sourceTable = text(url.searchParams.get("source_table"), 80);
+    const caseId = text(url.searchParams.get("case_id"), 120);
+    if (!entity) return json({ error: "entity_type query parameter is required" }, 400);
+    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 200) || 200));
+    const rows = sourceTable
+      ? await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND source_table=? AND (?='' OR case_id=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, sourceTable, caseId, caseId, limit).all<{id:string;payload_json:string}>()
+      : await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? AND (?='' OR case_id=?) ORDER BY created_at DESC LIMIT ?").bind(org, entity, caseId, caseId, limit).all<{id:string;payload_json:string}>();
+    return json({ data: rows.results.map(row => { try { return { id: row.id, cells: JSON.parse(row.payload_json) }; } catch { return { id: row.id, cells: {} }; } }) });
+  }
+  if (path === "/api/records" && request.method === "POST") {
+    if (actor.role !== "service") return json({ error: "Service-to-service authentication required" }, 403);
+    const body = parseBody(await request.json().catch(() => null));
+    const entity = text(body?.entity_type, 80);
+    const sourceTable = text(body?.source_table, 80) || entity;
+    const sourceRecordId = text(body?.source_record_id, 180) || uid();
+    const caseId = text(body?.case_id, 120);
+    const payload = body?.payload;
+    if (!entity || !payload || typeof payload !== "object" || Array.isArray(payload)) return json({ error: "entity_type and object payload are required" }, 400);
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > 100000) return json({ error: "Record payload is too large" }, 413);
+    if (caseId) {
+      const parent = await env.DB.prepare("SELECT 1 AS ok FROM cases WHERE org_id=? AND case_id=? LIMIT 1").bind(org, caseId).first();
+      if (!parent) return json({ error: "Case not found in this organization" }, 404);
+    }
+    const id = uid();
+    await env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET case_id=excluded.case_id,payload_json=excluded.payload_json,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+      .bind(id, org, entity, sourceTable, sourceRecordId, caseId || null, serialized).run();
+    await audit(env, actor, "soc_record_upserted", sourceRecordId, "Stored " + entity + " record in D1");
+    return json({ stored: true, entity_type: entity, source_record_id: sourceRecordId }, 201);
   }
 
   const entityMap: Record<string,string> = {
