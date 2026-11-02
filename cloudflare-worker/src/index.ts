@@ -13,7 +13,6 @@ export interface Env {
   INTEGRATION_CONFIGS: KVNamespace;
   LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
-  AP_READ_INCIDENT_RECORDS_URL: string;
   AP_READ_INVESTIGATIONS_URL: string;
   AP_READ_EVIDENCE_REFERENCES_URL: string;
   AP_READ_AUDIT_LOGS_URL: string;
@@ -30,7 +29,6 @@ const PBKDF2_ITERATIONS_MAX = 1_000_000;
 
 const ROUTES: Record<string, keyof Env> = {
   "/api/alerts": "AP_READ_DETECTION_FINDINGS_URL",
-  "/api/cases": "AP_READ_INCIDENT_RECORDS_URL",
   "/api/investigations": "AP_READ_INVESTIGATIONS_URL",
   "/api/evidence": "AP_READ_EVIDENCE_REFERENCES_URL",
   "/api/audit": "AP_READ_AUDIT_LOGS_URL",
