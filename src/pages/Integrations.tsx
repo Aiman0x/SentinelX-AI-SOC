@@ -12,6 +12,7 @@ import { integrationConfigStore, loadIntegrations, saveIntegrationConfig, testCo
 import type { Integration } from '../types/integration';
 import { formatDateTime } from '../utils/formatDate';
 import { isBackendConfigured } from '../services/apiClient';
+import { HostCollectors } from '../components/integrations/HostCollectors';
 
 const icons: Record<string, LucideIcon> = { activepieces: Workflow, wazuh: Shield, sysmon: Radar, clamav: Bug, yara: ScanSearch, suricata: Network, zeek: Network };
 
@@ -45,6 +46,7 @@ export default function Integrations() {
   return (
     <>
       <PageHeader title="Integrations" subtitle="Planned and optional defensive tool connections." />
+      <HostCollectors />
       <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
         {isBackendConfigured ? 'Backend status is based on the integration registry and successful API reachability. Tool configurations are stored securely, but a saved configuration is not a verified tool connection.' : 'These tools are planned or optional — none is assumed to be installed. States shown are sample values. Saving a configuration is not the same as a verified connection.'}
       </div>
