@@ -146,7 +146,7 @@ const wazuh: ToolAdapter = {
       const indexer=new URL(values.indexerUrl);
       const indexerHeaders:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
       if(values.accessClientId&&values.accessClientSecret){indexerHeaders["CF-Access-Client-Id"]=values.accessClientId;indexerHeaders["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const alerts=await fetchJson(indexer.origin+indexer.pathname.replace(/\\/$/,"")+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"@timestamp":{order:"desc"}}]})});
+      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"@timestamp":{order:"desc"}}]})});
       if(!alerts.response.ok) throw new Error("Wazuh Manager works, but Indexer alert search failed (HTTP "+alerts.response.status+").");
       const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,alertIndexReachable:true}};
       await health(context,this.id,result); return result;
@@ -165,7 +165,7 @@ const wazuh: ToolAdapter = {
       const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
       const headers:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
       if(values.accessClientId&&values.accessClientSecret){headers["CF-Access-Client-Id"]=values.accessClientId;headers["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const result=await fetchJson(indexer.origin+indexer.pathname.replace(/\\/$/,"")+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"@timestamp":{order:"desc"}}],query:{match_all:{}}})});
+      const result=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"@timestamp":{order:"desc"}}],query:{match_all:{}}})});
       if(!result.response.ok) throw new Error("Wazuh alert search failed (HTTP "+result.response.status+").");
       return result.data;
     }
@@ -173,7 +173,7 @@ const wazuh: ToolAdapter = {
     if(resource==="agents") path="/agents?limit=100&select=id,name,status,ip,version,node_name";
     else if(resource==="agent") {
       const id=String(input.agentId||"");
-      if(!/^\\d{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
+      if(!/^[0-9]{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
       path="/agents/"+id;
     } else if(resource==="manager") path="/manager/info";
     else throw new Error("Supported Wazuh query resources are agents, agent, manager and alerts.");
