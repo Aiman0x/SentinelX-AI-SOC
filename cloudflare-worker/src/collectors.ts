@@ -141,11 +141,12 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
   const body = await readJson(req, 262144);
   const integrationId = typeof body?.integrationId === "string" ? body.integrationId : "";
   if (!["sysmon", "suricata", "zeek"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata or zeek" }, 400);
-  if (!Array.isArray(body?.events) || body.events.length < 1 || body.events.length > 100) return json({ error: "Provide between 1 and 100 normalized events" }, 400);
+  const events = Array.isArray(body?.events) ? body.events : [];
+  if (events.length < 1 || events.length > 100) return json({ error: "Provide between 1 and 100 normalized events" }, 400);
   const entityType = integrationId + "_event";
   const statements: D1PreparedStatement[] = [];
   let accepted = 0;
-  for (const raw of body.events) {
+  for (const raw of events) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const event = raw as Record<string, unknown>;
     const eventId = typeof event.eventId === "string" && event.eventId.trim() ? event.eventId.trim().slice(0, 180) : crypto.randomUUID();
@@ -155,12 +156,12 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
     if (payload.length > 16000) continue;
     const id = crypto.randomUUID();
     statements.push(env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at")
-      .bind(id, collector.org_id, entityType, "collector_events", eventId, payload, observedAt, new Date().toISOString()));
+      .bind(id, collector.org_id, entityType, "collector_events", collector.id + ":" + eventId, payload, observedAt, new Date().toISOString()));
     accepted++;
   }
   if (statements.length) await env.DB.batch(statements);
   await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), collector.id).run();
-  return json({ accepted, received: body.events.length, integrationId, collectorId: collector.id, organizationScoped: true });
+  return json({ accepted, received: events.length, integrationId, collectorId: collector.id, organizationScoped: true });
 }
 
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
