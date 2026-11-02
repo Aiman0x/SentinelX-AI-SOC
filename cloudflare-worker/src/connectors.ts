@@ -146,7 +146,7 @@ const wazuh: ToolAdapter = {
       const indexer=new URL(values.indexerUrl);
       const indexerHeaders:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
       if(values.accessClientId&&values.accessClientSecret){indexerHeaders["CF-Access-Client-Id"]=values.accessClientId;indexerHeaders["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"@timestamp":{order:"desc"}}]})});
+      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"timestamp":{order:"desc"}}]})});
       if(!alerts.response.ok) throw new Error("Wazuh Manager works, but Indexer alert search failed (HTTP "+alerts.response.status+").");
       const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,alertIndexReachable:true}};
       await health(context,this.id,result); return result;
@@ -323,7 +323,7 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
       if(!allowed.has(k)||typeof v!=="string"||v.length>4096) return json({error:"Invalid connector field: "+k},400);
       if(v.trim()) values[k]=v.trim();
     }
-    try { const result=await adapter.connect({request,env,actor,values},values); await audit({request,env,actor,values},"integration_connected",adapter.id,"Success"); return json({connected:result.saved,saved:true,configuredKeys:result.configuredKeys,secretsHidden:true}); }
+    try { const result=await adapter.connect({request,env,actor,values},values); await audit({request,env,actor,values},"integration_connected",adapter.id,"Success"); return json({saved:result.saved,connectionState:"saved_not_verified",configuredKeys:result.configuredKeys,secretsHidden:true}); }
     catch(e) { return json({error:e instanceof Error?e.message:"Could not connect connector."},400); }
   }
   if(match[2]==="test"&&request.method==="POST") {
