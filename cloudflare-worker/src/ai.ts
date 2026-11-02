@@ -102,16 +102,16 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
 // Mask common secrets and direct identifiers before evidence leaves the SentinelX gateway.
 function maskSensitive(text: string): string {
   return text
-    .replace(/(api[_ -]?key|password|passwd|secret|access[_ -]?token|authorization)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
-    .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/gi, "Bearer [REDACTED]")
-    .replace(/\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b/gi, "[EMAIL]")
-    .replace(/\\b(?:\\+?\\d[\\d .()\\-]{7,}\\d)\\b/g, "[PHONE]");
+    .replace(/(api[_ -]?key|password|passwd|secret|access[_ -]?token|authorization)(\s*[:=]\s*)[^\s,;]+/gi, "$1$2[REDACTED]")
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
+    .replace(/\b(?:\+?\d[\d .()\-]{7,}\d)\b/g, "[PHONE]");
 }
 function estimateTokens(text: string): number { return Math.ceil(text.length / 4); }
 function fitPrompt(text: string, budget: number): { text: string; estimatedTokens: number; truncated: boolean } {
   const maxChars = Math.max(400, Math.min(24000, budget * 4));
   const truncated = text.length > maxChars;
-  const fitted = truncated ? text.slice(0, maxChars) + "\\n[Evidence truncated to the configured input-token budget.]" : text;
+  const fitted = truncated ? text.slice(0, maxChars) + "\n[Evidence truncated to the configured input-token budget.]" : text;
   return { text: fitted, estimatedTokens: estimateTokens(fitted), truncated };
 }
 async function runFailover(settings: AISettings, prompt: string): Promise<{ answer: string; provider: string; model: string; attempts: string[] }> {
@@ -173,7 +173,8 @@ async function runFailover(settings: AISettings, prompt: string): Promise<{ answ
     if (!raw) return json({ ok: false, message: "Save an AI provider configuration first." }, 400);
     try {
       const config = await unseal(raw, env.CONFIG_ENCRYPTION_KEY, actor.organization_id);
-      const result = await runFailover(config, "Reply with exactly: SentinelX provider connection successful.");\n      const answer = result.answer;
+      const result = await runFailover(config, "Reply with exactly: SentinelX provider connection successful.");
+      const answer = result.answer;
       return json({ ok: true, message: "Provider authenticated and generated a response.", preview: answer.slice(0, 180), checkedAt: new Date().toISOString() });
     } catch (error) { return json({ ok: false, message: error instanceof Error ? error.message : "Provider test failed." }); }
   }
