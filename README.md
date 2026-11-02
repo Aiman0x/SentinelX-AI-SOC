@@ -95,3 +95,14 @@ The feature branch includes a dynamic Connect your tools page backed by the Work
 - Connector connect/test/query operations are audit logged without credentials or IOC values.
 
 Provider live status requires the user to add their own credentials and pass the real test. Sysmon/Suricata/Zeek require an enrolled collector on the endpoint or network sensor. VirusTotal lookups can contribute queried indicators to its shared dataset; do not submit sensitive or personal indicators, and review its API terms before product use.
+
+## BYO-LLM layer
+
+The Worker provides a provider-neutral LLM gateway for OpenAI, Anthropic, Gemini and OpenAI-compatible HTTPS endpoints.
+
+- Workspace administrators configure the primary provider and optional fallback provider in **Settings → Integration settings → Bring Your Own LLM**. Provider keys are encrypted at rest in Cloudflare KV; the browser receives only a masked key hint.
+- The gateway tries the primary model first, then configured fallbacks on provider errors/timeouts/quota failures. The response reports which provider succeeded and whether fallback was used.
+- Evidence masking is enabled by default for common credential labels, bearer tokens, email addresses and phone numbers. Masking is best-effort; analysts must still avoid sending highly sensitive data.
+- Input size is capped by a configurable approximate token budget (500–12,000; default 6,000). The gateway estimates tokens from text length and truncates oversized prompts before sending them.
+- The AI test endpoint validates the configured chain; the analysis endpoint runs the bounded, masked SOC prompt. Provider billing remains with the user's provider account.
+- The current model adapter uses text chat APIs; it does not claim tool-calling or autonomous response execution.
