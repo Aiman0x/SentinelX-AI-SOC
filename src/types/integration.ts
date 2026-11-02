@@ -7,13 +7,16 @@ export interface IntegrationField {
   /** Secret fields are NEVER stored in the browser. A backend / secrets store is required. */
   secret?: boolean;
   help?: string;
+  type?: 'text' | 'password' | 'url';
+  required?: boolean;
 }
 
 export interface Integration {
   id: string;
   name: string;
   purpose: string;
-  category: 'Orchestration' | 'Endpoint' | 'Malware' | 'Network' | 'SIEM';
+  category: 'Orchestration' | 'Endpoint' | 'Malware' | 'Network' | 'SIEM' | 'Threat Intelligence';
+  schema?: { version: string; query: { supported: boolean; description: string; fields?: IntegrationField[] } };
   /** Sample state for the demo UI. Never "connected" unless a real health check passed. */
   state: IntegrationState;
   /** Non-secret configuration has been saved (not the same as verified). */
@@ -32,4 +35,5 @@ export interface TestResult {
   unavailable?: boolean;
   message: string;
   at: string;
+  details?: unknown;
 }
