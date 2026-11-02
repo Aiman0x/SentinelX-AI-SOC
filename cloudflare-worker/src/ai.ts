@@ -208,6 +208,8 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       let selectedProvider = config.primary.provider;
       let selectedModel = config.primary.model;
       let attemptedFallbacks = 0;
+      let estimatedInputTokens = 0;
+      let inputTruncated = false;
       for (let step = 1; step <= maxSteps; step++) {
         const plannerInput = JSON.stringify({
           task: safeTask,
@@ -215,7 +217,10 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
           completedEvidence: evidence.map(x => ({ step: x.step, tool: x.tool, rationale: x.rationale, result: x.result })),
           remainingToolCalls: maxSteps - step + 1
         });
-        const planned = await runFailover(config, plannerInput, system, 900);
+        const boundedPlanner = fitPrompt(plannerInput, config.maxInputTokens);
+        estimatedInputTokens += boundedPlanner.estimatedTokens;
+        inputTruncated = inputTruncated || boundedPlanner.truncated;
+        const planned = await runFailover(config, boundedPlanner.text, system, 900);
         selectedProvider = planned.provider; selectedModel = planned.model; attemptedFallbacks += planned.attempts.length;
         let decision: any;
         try {
@@ -249,11 +254,14 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       if (!conclusion) {
         const finalInput = JSON.stringify({ task: safeTask, plan, evidence, limitReached: evidence.length >= maxSteps });
         const finalSystem = system + " Do not request more tools in this final step. Produce a concise SOC conclusion with observed facts, hypotheses, confidence, evidence gaps and defensive next steps. No remediation execution.";
-        const final = await runFailover(config, finalInput, finalSystem, 1400);
+        const boundedFinal = fitPrompt(finalInput, config.maxInputTokens);
+        estimatedInputTokens += boundedFinal.estimatedTokens;
+        inputTruncated = inputTruncated || boundedFinal.truncated;
+        const final = await runFailover(config, boundedFinal.text, finalSystem, 1400);
         selectedProvider = final.provider; selectedModel = final.model; attemptedFallbacks += final.attempts.length;
         conclusion = final.answer;
       }
-      return json({ plan, steps: evidence, conclusion, provider: selectedProvider, model: selectedModel, toolCalls: evidence.length, maxSteps, accessMode: "read_only", audit: "Each tool call has a persisted audit record.", attemptedFallbacks, generatedAt: new Date().toISOString() });
+      return json({ plan, steps: evidence, conclusion, provider: selectedProvider, model: selectedModel, toolCalls: evidence.length, maxSteps, accessMode: "read_only", audit: "Each tool call has a persisted audit record.", attemptedFallbacks, estimatedInputTokens, inputTokenBudget: config.maxInputTokens, inputTruncated, generatedAt: new Date().toISOString() });
     } catch (error) { return json({ error: error instanceof Error ? error.message : "Agent investigation failed." }, 502); }
   }
   if (path === "/api/ai/analyze" && request.method === "POST") {
