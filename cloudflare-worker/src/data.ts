@@ -150,6 +150,15 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   };
   const entity = entityMap[path];
   if (entity && request.method === "GET") {
+    if (entity === "audit") {
+      const [legacy, current] = await Promise.all([
+        env.DB.prepare("SELECT id,payload_json,created_at FROM soc_records WHERE org_id=? AND entity_type='audit' ORDER BY created_at DESC LIMIT 500").bind(org).all<{id:string;payload_json:string;created_at:string}>(),
+        env.DB.prepare("SELECT id,actor_type,event_type,target_id,details,outcome,occurred_at FROM audit_logs WHERE org_id=? ORDER BY occurred_at DESC LIMIT 500").bind(org).all<{id:string;actor_type:string;event_type:string;target_id:string|null;details:string;outcome:string;occurred_at:string}>()
+      ]);
+      const oldRows = legacy.results.map(row => { try { return { id: row.id, cells: JSON.parse(row.payload_json) }; } catch { return { id: row.id, cells: {} }; } });
+      const newRows = current.results.map(row => ({ id: row.id, cells: { "Audit ID": row.id, "Timestamp": row.occurred_at, "Case ID": row.target_id, "Actor Type": row.actor_type, "Actor": "Authenticated analyst", "Event Type": row.event_type, "Details": row.details, "Outcome": row.outcome } }));
+      return json({ data: [...newRows, ...oldRows] });
+    }
     const rows = await env.DB.prepare("SELECT id,payload_json FROM soc_records WHERE org_id=? AND entity_type=? ORDER BY created_at DESC LIMIT 500")
       .bind(org, entity).all<{id:string;payload_json:string}>();
     return json({ data: rows.results.map(row => { try { return { id: row.id, cells: JSON.parse(row.payload_json) }; } catch { return { id: row.id, cells: {} }; } }) });
