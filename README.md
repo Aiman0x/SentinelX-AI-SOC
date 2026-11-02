@@ -88,7 +88,7 @@ For the existing Windows PowerShell collector, add the organization token to the
 The feature branch includes a dynamic Connect your tools page backed by the Worker connector registry. Each adapter exposes connect(), test(), query() and a versioned schema. The UI renders the registry schema dynamically.
 
 - Per-user credentials are encrypted at rest with AES-GCM and scoped to the signed-in user + organization + connector. Secrets are never returned to the browser.
-- Wazuh adapter supports API authentication, agent inventory checks, agent lookup and manager info. Use a private/trusted HTTPS route such as Cloudflare Tunnel + Access; never expose port 55000 publicly.
+- Wazuh adapter connects both Manager API and Indexer: agent inventory, agent lookup, manager info and recent alert search. Use a private/trusted HTTPS route such as Cloudflare Tunnel + Access; never expose port 55000 publicly.
 - Sysmon, Suricata and Zeek adapters use host-collector health and tenant-scoped D1 telemetry queries.
 - VirusTotal, AbuseIPDB and URLScan use each user's own API key and read-only reputation/search lookups.
 - ActivePieces remains gateway-managed and appears in the same registry.
