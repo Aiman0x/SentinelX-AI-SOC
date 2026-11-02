@@ -3,7 +3,6 @@ import type { SecurityCase, CaseStatus } from '../types/case';
 import type { Asset, AssetType, Criticality } from '../types/asset';
 import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
 import type { Integration } from '../types/integration';
-import { demoIntegrations } from '../data/demoIntegrations';
 
 type Row = { id?: string; cells?: Record<string, unknown> } & Record<string, unknown>;
 const obj = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
