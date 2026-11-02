@@ -45,6 +45,7 @@ The intended public origin is `https://sentinelx-api-gateway.aiman132046.workers
 - The two legacy case schemas are now represented in one D1 `cases` table with `source_schema` retained for traceability.
 - Eight obsolete `ARCHIVE v0` flows were deleted from the ActivePieces project. Current enabled flows were preserved.
 - The old ActivePieces case tables and active flows are retained temporarily because enabled workflows still reference them. They must not be deleted until those writers/readers are migrated to the D1 gateway and validated.
+- One enabled callable flow (`SentinelX - SOC Alert Triage`) still contains the legacy `ORG-DEFAULT` value. It must be changed to accept only a trusted, authenticated `org_id` from its upstream caller before that flow can safely write tenant data; simply replacing the literal with caller-controlled JSON would not provide tenant isolation.
 - A D1 migration file is stored at `cloudflare-worker/migrations/0002_soc_data.sql`.
 
 ## Deployment prerequisites
@@ -60,7 +61,8 @@ See `cloudflare-worker/README.md` for the exact runtime secret names and setup i
 
 - Deploy and verify the combined Cloudflare Worker.
 - Configure Worker secrets and ActivePieces webhook URLs.
-- Migrate enabled ActivePieces ingestion/detection workflows from legacy Tables writes to tenant-bound D1 gateway writes; then remove the two legacy ActivePieces case tables.
+- Migrate enabled ActivePieces ingestion/detection workflows from legacy Tables writes to tenant-bound D1 gateway writes; remove the remaining `ORG-DEFAULT` flow dependency; then remove the two legacy ActivePieces case tables.
+- Wire GUI case creation/status changes and analyst notes to the new gateway write routes.
 - Add asset and detection-rule write APIs.
 - Build tool-specific adapters and health checks for Wazuh, Sysmon, Suricata, Zeek, ClamAV, and YARA.
 - Add a workspace provider API key in Settings and run a live connection test (requires a customer-owned provider key).
