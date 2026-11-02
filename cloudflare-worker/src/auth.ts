@@ -48,7 +48,7 @@ function tokenFrom(req:Request) {
 export async function currentUser(req:Request, env:AuthEnv):Promise<User|null> {
   const token=tokenFrom(req); if(!token) return null;
   const tokenHash=await sha(token);
-  const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active,m.organization_id
+  const row=await env.DB.prepare(`SELECT u.id,u.email,u.display_name,m.role,u.is_active,m.org_id AS organization_id
     FROM auth_sessions s JOIN users u ON u.id=s.user_id
     JOIN organization_memberships m ON m.user_id=u.id AND m.org_id=s.org_id
     JOIN organizations o ON o.id=m.org_id AND o.is_active=1
@@ -172,7 +172,7 @@ export async function handleAuthRoute(req:Request,env:AuthEnv,path:string):Promi
     try {
       await env.DB.batch([
         env.DB.prepare("INSERT INTO users(id,email,display_name,password_hash,role) VALUES(?,?,?,?,?)").bind(userId,email,name,await passwordHash(password),role),
-        env.DB.prepare("INSERT INTO organization_memberships(organization_id,user_id,role) VALUES(?,?,?)").bind(membership.org_id,userId,role)
+        env.DB.prepare("INSERT INTO organization_memberships(org_id,user_id,role) VALUES(?,?,?)").bind(membership.org_id,userId,role)
       ]);
       await log(env,actor.id,"admin_created_user",actor.organization_id);
       return response({created:true,user:{id:userId,email,name,role}},201);
