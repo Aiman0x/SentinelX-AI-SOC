@@ -347,7 +347,17 @@ export default {
           return reply({ ok: false, message: error && error.name === "AbortError" ? "ActivePieces health check timed out after 10 seconds." : "Could not reach the ActivePieces webhook." }, 200, cors);
         }
       }
-      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "A saved configuration is not a live connection. This tool needs its SentinelX host collector/adapter before a real health check can run." }, 200, cors);
+      if (integrationId !== "wazuh") {
+        if (!["sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId) || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "This integration has no live adapter." }, 200, cors);
+        const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey((await currentUser(request, env))!.organization_id, integrationId) + ":health");
+        if (!rawHealth) return reply({ ok: false, unavailable: true, message: "No host collector has reported this tool yet. Enroll a collector and run it on the host where the tool is installed." }, 200, cors);
+        try {
+          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; message?: string };
+          const age = health.checkedAt ? Date.now() - Date.parse(health.checkedAt) : Number.POSITIVE_INFINITY;
+          if (!Number.isFinite(age) || age > 10 * 60_000) return reply({ ok: false, unavailable: true, message: "Collector health is stale. Last report was more than 10 minutes ago." }, 200, cors);
+          return reply({ ...health, ok: health.status === "healthy" && health.ok === true, message: health.message || "Latest host collector health report." }, 200, cors);
+        } catch { return reply({ ok: false, unavailable: true, message: "Stored collector health report is invalid." }, 200, cors); }
+      }
       if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure storage is not configured." }, 503, cors);
       const storageKey = integrationConfigKey(actor.organization_id, integrationId);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
