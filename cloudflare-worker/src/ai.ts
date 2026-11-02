@@ -200,7 +200,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
         "Use only tool IDs in the catalog and only fields in that tool's query schema. Never invent tools or credentials. If evidence is insufficient, say so.",
         "Return exactly one JSON object with fields action (tool or finish), plan, tool, input, rationale and conclusion. Do not use markdown."
         "Keep plans concise. Separate observed facts from hypotheses and state uncertainty."
-      ].join("\\n");
+      ].join("\n");
       const safeTask = config.maskSensitiveData ? maskSensitive(body.prompt) : body.prompt;
       const evidence: Array<{ step: number; tool: string; rationale: string; result: unknown }> = [];
       const plan: string[] = [];
