@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   verification_result TEXT,
   payload_json TEXT NOT NULL DEFAULT '{}',
   UNIQUE(org_id, approval_id),
-  FOREIGN KEY(org_id, case_id) REFERENCES cases(org_id, case_id) ON DELETE SET NULL
+  FOREIGN KEY(org_id, case_id) REFERENCES cases(org_id, case_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_org_status ON approvals(org_id, status, requested_at DESC);
 
