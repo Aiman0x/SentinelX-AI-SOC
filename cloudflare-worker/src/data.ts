@@ -1,6 +1,6 @@
 import { currentUser } from "./auth";
 
-interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; AP_BRIDGE_KEY: string; }
+interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; }
 type Actor = { id: string; role: string; organization_id: string; email: string; display_name: string };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
@@ -11,17 +11,9 @@ const allowedOrigin = (request: Request, env: DataEnv) => {
   const origin = request.headers.get("Origin") || "";
   return !origin || env.ALLOWED_ORIGIN.split(",").map(x => x.trim()).includes(origin);
 };
-function secretEqual(a: string, b: string): boolean {
-  if (!a || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
 async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
-  const bridge = request.headers.get("X-SentinelX-Bridge-Key");
-  if (bridge !== null) {
-    if (!env.AP_BRIDGE_KEY || !secretEqual(bridge, env.AP_BRIDGE_KEY)) return null;
-    const orgToken = request.headers.get("X-SentinelX-Org-Key") || "";
+  const orgToken = request.headers.get("X-SentinelX-Org-Key");
+  if (orgToken !== null) {
     if (orgToken.length < 40 || orgToken.length > 256) return null;
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(orgToken)));
     const tokenHash = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -31,6 +23,7 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
   }
   return await currentUser(request, env as Parameters<typeof currentUser>[1]) as Actor | null;
 }
+
 async function audit(env: DataEnv, actor: Actor, event: string, target: string, details: string, outcome = "Success") {
   await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
     .bind(uid(), actor.organization_id, actor.id, actor.role === "service" ? "Automation" : "Human Analyst", event, target, details.slice(0, 2000), outcome).run();
