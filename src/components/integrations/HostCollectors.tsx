@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Copy, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Panel } from '../common/Controls';
 import { StatusBadge } from '../common/StatusBadge';
@@ -41,7 +41,7 @@ export function HostCollectors() {
 
   useEffect(() => { void load(); }, []);
 
-  const create = async (event: React.FormEvent) => {
+  const create = async (event: FormEvent) => {
     event.preventDefault();
     if (name.trim().length < 2) { setError('Enter a collector name with at least 2 characters.'); return; }
     setCreating(true);
