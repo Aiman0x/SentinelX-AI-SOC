@@ -1,5 +1,5 @@
 import { currentUser, handleAuthRoute } from "./auth";
-import { handleAIRoute } from "./ai";
+import { handleAIRoute, runScheduledAIReport } from "./ai";
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
@@ -430,4 +430,7 @@ export default {
       return reply({ error: "Could not reach upstream workflow" }, 502, cors);
     }
   },
-};
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduledAIReport(controller.cron, env));
+  },
+};;
