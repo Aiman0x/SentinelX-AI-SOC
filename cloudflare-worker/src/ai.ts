@@ -377,7 +377,7 @@ export async function runScheduledMonitoring(env: AIEnv): Promise<void> {
       "SELECT r.id,r.entity_type,r.source_table,r.source_record_id,r.case_id,r.payload_json,r.created_at " +
       "FROM soc_records r LEFT JOIN monitoring_processed p ON p.org_id=r.org_id AND p.record_id=r.id " +
       "WHERE r.org_id=? AND r.created_at>=? AND (lower(r.entity_type) LIKE '%alert%' OR lower(r.entity_type) LIKE '%finding%') " +
-      "AND (p.id IS NULL OR (p.status='FAILED' AND p.attempts<3)) ORDER BY r.created_at ASC LIMIT 10"
+      "AND lower(COALESCE(json_extract(r.payload_json,'$.severity'),json_extract(r.payload_json,'$.event.severity'),'')) IN ('critical','high') AND (p.id IS NULL OR (p.status='FAILED' AND p.attempts<3)) ORDER BY r.created_at ASC LIMIT 10"
     ).bind(orgId, since).all<Record<string, unknown>>();
     for (const record of pending.results) {
       const rawEvidence = String(record.payload_json || "{}");
