@@ -12,6 +12,7 @@ import { integrationConfigStore, loadIntegrations, saveIntegrationConfig, testCo
 import type { Integration } from '../types/integration';
 import { formatDateTime } from '../utils/formatDate';
 import { isBackendConfigured } from '../services/apiClient';
+import { HostCollectors } from '../components/integrations/HostCollectors';
 
 const icons: Record<string, LucideIcon> = { activepieces: Workflow, wazuh: Shield, sysmon: Radar, clamav: Bug, yara: ScanSearch, suricata: Network, zeek: Network };
 
@@ -39,11 +40,13 @@ export default function Integrations() {
     const r = await testConnection(i);
     setTesting(null);
     toast(`${i.name}: ${r.message}`, r.ok ? 'success' : 'warn');
+    if (isBackendConfigured) await reload();
   };
 
   return (
     <>
       <PageHeader title="Integrations" subtitle="Planned and optional defensive tool connections." />
+      <HostCollectors />
       <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
         {isBackendConfigured ? 'Backend status is based on the integration registry and successful API reachability. Tool configurations are stored securely, but a saved configuration is not a verified tool connection.' : 'These tools are planned or optional — none is assumed to be installed. States shown are sample values. Saving a configuration is not the same as a verified connection.'}
       </div>
@@ -69,11 +72,11 @@ export default function Integrations() {
                   <div className="flex justify-between"><dt className="text-sx-mute">Configuration</dt><dd>{configured ? <span className="text-sx-warn">Saved · not verified</span> : <span className="text-sx-mute">Not configured</span>}</dd></div>
                   <div className="flex justify-between"><dt className="text-sx-mute">Verified connection</dt><dd className={i.verified ? 'text-sx-green' : 'text-sx-mute'}>{i.verified ? 'Yes' : 'No'}</dd></div>
                   <div className="flex justify-between"><dt className="text-sx-mute">Last successful health check</dt><dd className="mono">{i.lastHealthCheck ? formatDateTime(i.lastHealthCheck) : 'never'}</dd></div>
-                  {last && <div className="rounded border border-sx-line bg-sx-bg p-2 text-sx-mute"><span className="text-sx-warn">Last test:</span> {last.message}</div>}
+                  {last && <div className="rounded border border-sx-line bg-sx-bg p-2 text-sx-mute"><span className="text-sx-warn">Last test:</span> {last.unavailable ? 'Not supported yet — ' : ''}{last.message}</div>}
                 </dl>
                 <div className="mt-3 flex gap-2">
                   {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)}><Settings2 className="h-3.5 w-3.5" /> Configure</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Gateway managed</div>}
-                  {!isBackendConfigured ? <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button> : <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id || !configured}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? "Testing…" : "Test Connection"}</button>}
+                  {!isBackendConfigured ? <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test Connection'}</button> : <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={testing === i.id || (!configured && !["sysmon", "clamav", "yara", "suricata", "zeek"].includes(i.id))}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? "Testing…" : "Test Connection"}</button>}
                 </div>
               </Panel>
             );

@@ -1,9 +1,7 @@
 import type { Integration } from '../types/integration';
-import { minutesAgo } from '../utils/formatDate';
 
 /**
- * DEMO DATA — sample integration states for UI demonstration.
- * No entry is "connected": that value may only be produced by a real backend health check.
+ * Integration catalog. Every tool starts unconfigured; connected state requires a real backend health check.
  * Secret fields (secret: true) are never persisted in the browser.
  */
 export const demoIntegrations: Integration[] = [
@@ -30,23 +28,22 @@ export const demoIntegrations: Integration[] = [
     purpose: 'Detailed Windows process, network and registry telemetry.',
     state: 'demo', configured: false, verified: false,
     fields: [
-      { key: 'collector', label: 'Log collector (via Wazuh / WEF)', placeholder: 'wazuh | wef' },
+      { key: 'eventChannel', label: 'Sysmon event channel', placeholder: 'Microsoft-Windows-Sysmon/Operational' },
       { key: 'configVersion', label: 'Sysmon config version', placeholder: 'e.g. v14.16 + modular rules' },
     ],
   },
   {
     id: 'clamav', name: 'ClamAV', category: 'Malware',
     purpose: 'Open-source antivirus scanning for files and attachments.',
-    state: 'disconnected', configured: true, verified: false, lastHealthCheck: minutesAgo(5200),
+    state: 'not_configured', configured: false, verified: false,
     fields: [
-      { key: 'host', label: 'clamd host', placeholder: '127.0.0.1' },
-      { key: 'port', label: 'clamd port', placeholder: '3310' },
+      { key: 'binaryPath', label: 'ClamAV executable path (optional)', placeholder: 'clamscan or /usr/bin/clamscan' },
     ],
   },
   {
     id: 'yara', name: 'YARA', category: 'Malware',
     purpose: 'Pattern-based malware classification using curated rule sets.',
-    state: 'error', configured: true, verified: false, lastHealthCheck: minutesAgo(1900),
+    state: 'not_configured', configured: false, verified: false,
     fields: [
       { key: 'rulesPath', label: 'Rules directory (server path)', placeholder: '/opt/sentinelx/yara-rules' },
     ],
