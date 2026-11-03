@@ -324,7 +324,9 @@ const cloudflareResponse: ToolAdapter = {
   },
   async query() { throw new Error("Action-only integration; it cannot be queried by the AI agent."); }
 };
-\nconst adapters: ToolAdapter[] = [\n  cloudflareResponse,
+
+const adapters: ToolAdapter[] = [
+  cloudflareResponse,
   activepieces,wazuh,
   hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry and driver events delivered by the SentinelX host collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
@@ -446,7 +448,8 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
       return json({error:message,approvalId,executionStatus:"Execution Failed - inspect provider before retrying"},502);
     }
   }
-\n  if(request.method==="GET" && path==="/api/integrations") {
+
+  if(request.method==="GET" && path==="/api/integrations") {
     const data=[];
     for(const adapter of adapters) {
       const key=storageKey(actor,adapter.id);
