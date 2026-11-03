@@ -16,6 +16,18 @@ The host collector is a customer-installed, read-only agent. It performs local h
    For continuous monitoring omit `--once`. On Linux/macOS use the same environment variables and Python command.
 6. Confirm last-seen time and adapter status in the GUI. Revoke the collector from the GUI if the token is compromised.
 
+## Windows Security Event ID 4625 intake
+
+The separate read-only PowerShell prototype sends failed-logon telemetry directly to the Worker; it does not use the legacy ActivePieces webhook header pair.
+
+1. Enroll a Windows collector in Integrations → Host Collectors and copy its one-time token.
+2. Configure `SENTINELX_COLLECTOR_API_URL` as the deployed Worker base URL (for example, `https://your-worker.example.workers.dev`) and `SENTINELX_COLLECTOR_TOKEN` as the issued collector token.
+3. The PowerShell collector sends batches to `POST /api/collector/events` with `Authorization: Bearer <collector-token>` and `integrationId: windows_security`.
+4. The Worker validates the token hash, derives the organization from the enrolled collector row, and stores normalized records as `telemetry_intake` / `collector_events`. The GUI reads these through `GET /api/telemetry`.
+5. Verify the event in Windows Telemetry and verify collector last-seen status. Do not treat a successful response as a full end-to-end pass until both are checked.
+
+The Windows Security path is implemented in the Worker source but is not yet runtime-tested or deployed. Do not run a collector against production until the Worker deployment is confirmed and an organization admin has intentionally enrolled the collector.
+
 ## Current adapter behavior
 - Sysmon: Windows service and Event Log channel readability.
 - ClamAV: local executable and version check.
