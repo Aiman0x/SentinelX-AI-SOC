@@ -53,11 +53,12 @@ function validEndpoint(value: string): boolean {
   try {
     const u = new URL(value);
     if (u.protocol !== "https:" || u.username || u.password || u.search || u.hash) return false;
-    const host = u.hostname.toLowerCase();
-    if (host.includes(":") || /^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host) || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
-        host === "127.0.0.1" || host === "::1" || /^10\./.test(host) ||
-        /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-        host === "169.254.169.254" || host === "0.0.0.0") return false;
+    const host = u.hostname.toLowerCase().replace(/^\\[|\\]$/g, "");
+    // Reject all IP literals, including private, loopback, link-local and IPv6 targets.
+    if (!host || host.includes(":") || /^\\d+(?:\\.\\d+){0,3}$/.test(host) ||
+        host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
+        host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid")) return false;
+    if (host.length > 253 || host.split(".").some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return false;
     return true;
   } catch { return false; }
 }
@@ -137,6 +138,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
   if (!path.startsWith("/api/ai/")) return null;
   const actor = await currentUser(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
+  if (path === "/api/ai/report" && actor.role === "viewer") return json({ error: "Viewer role is read-only" }, 403);
   if (path !== "/api/ai/analyze" && path !== "/api/ai/agent" && path !== "/api/ai/report" && actor.role !== "owner" && actor.role !== "admin") return json({ error: "Admin permission required" }, 403);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return json({ error: "Encrypted provider storage is not configured." }, 503);
   const key = storageKey(actor.organization_id);
