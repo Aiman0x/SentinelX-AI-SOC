@@ -382,7 +382,7 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
   if(executeMatch && request.method==="POST") {
     if(actor.role!=="owner" && actor.role!=="admin") return json({error:"Owner/admin approval required."},403);
     const approvalId=decodeURIComponent(executeMatch[1]);
-    const approval=await env.DB.prepare("SELECT id,approval_id,org_id,action_type,target_asset,requested_by_actor_id,approved_by_actor_id,status,expires_at,execution_status,execution_attempt_id FROM approvals WHERE org_id=? AND approval_id=? LIMIT 1")
+    const approval=await env.DB.prepare("SELECT id,approval_id,org_id,case_id,action_type,target_asset,proposed_action,reason_evidence,risk_level,action_binding_hash,requested_by_actor_id,approved_by_actor_id,status,expires_at,execution_status,execution_attempt_id FROM approvals WHERE org_id=? AND approval_id=? LIMIT 1")
       .bind(actor.organization_id,approvalId).first<any>();
     if(!approval) return json({error:"Approval not found in this workspace."},404);
     if(approval.status!=="Approved" || !approval.approved_by_actor_id) return json({error:"Action must be approved before execution."},409);
@@ -392,6 +392,23 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
     if(approval.execution_status!=="Not Executed" || approval.execution_attempt_id) return json({error:"Action is already executed or an execution attempt exists; inspect audit records before retrying."},409);
     if(approval.action_type!=="block_ip") return json({error:"No production executor is enabled for this action type."},501);
     const target=String(approval.target_asset||"").trim();
+    // Rebuild the exact canonical payload used when the approval was requested.
+    // Refuse execution if any action-defining field changed after approval.
+    const actionBinding=JSON.stringify({
+      org: actor.organization_id,
+      caseId: approval.case_id ?? null,
+      actionType: approval.action_type,
+      targetAsset: approval.target_asset ?? "",
+      proposed: approval.proposed_action,
+      reason: approval.reason_evidence,
+      risk: approval.risk_level,
+    });
+    const expectedBindingHash=btoa(String.fromCharCode(...new Uint8Array(
+      await crypto.subtle.digest("SHA-256",new TextEncoder().encode(actionBinding))
+    )));
+    if(typeof approval.action_binding_hash!=="string" || approval.action_binding_hash!==expectedBindingHash) {
+      return json({error:"Approval integrity check failed: action details no longer match the approved request. Cancel this approval and create a new one."},409);
+    }
     const validV4=/^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/.test(target);
     const validV6=/^[0-9a-fA-F:]{3,39}$/.test(target) && target.includes(":");
     if(!validV4&&!validV6) return json({error:"The approved target_asset must be a single IPv4 or IPv6 address."},400);
