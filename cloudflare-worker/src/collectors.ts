@@ -70,6 +70,16 @@ async function decryptValues(envelopeText: string, secret: string, aad: string):
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode64(envelope.iv), additionalData: new TextEncoder().encode(aad) }, key, decode64(envelope.data));
   return JSON.parse(new TextDecoder().decode(plain)) as Record<string, string>;
 }
+async function collectorContext(req: Request, env: CollectorEnv) {
+  const authorization = req.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
+  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
+  return json({ organizationId: row.org_id, collectorId: row.id, scopes: ["telemetry:ingest"] });
+}
+
 async function collectorConfig(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -165,8 +175,9 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
 }
 
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events") return null;
+  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events" && path !== "/api/collector/context") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
+  if (path === "/api/collector/context" && req.method === "GET") return collectorContext(req, env);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
