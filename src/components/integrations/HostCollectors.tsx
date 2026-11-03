@@ -116,7 +116,7 @@ export function HostCollectors() {
             <button type="button" className="btn btn-gold" onClick={() => void copy()}><Copy className="h-3.5 w-3.5" /> Copy token</button>
             <span className="text-[11px] text-sx-mute">{copyState || 'It cannot be retrieved after you leave this screen.'}</span>
           </div>
-          <p className="mt-3 text-[11px] text-sx-mute">Configure your collector with this token as <code>SENTINELX_ORG_TOKEN</code> and send it in the <code>X-SentinelX-Org-Key</code> header alongside the existing <code>X-SentinelX-Key</code> webhook header.</p>
+          <p className="mt-3 text-[11px] text-sx-mute">For the Windows Security collector, set <code>SENTINELX_COLLECTOR_API_URL</code> to your deployed Worker base URL and <code>SENTINELX_COLLECTOR_TOKEN</code> to this token. The collector sends events to <code>POST /api/collector/events</code> using <code>Authorization: Bearer</code>. Never use this token as an ActivePieces bridge key.</p>
         </div>
       )}
 
