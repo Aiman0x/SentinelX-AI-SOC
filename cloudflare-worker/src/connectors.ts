@@ -422,9 +422,11 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
     const claim=await env.DB.prepare("UPDATE approvals SET execution_attempt_id=?,execution_status='Execution Started',lifecycle_state='EXECUTING',execution_mode='REAL ACTION - Cloudflare IP Access Rule' WHERE org_id=? AND approval_id=? AND status='Approved' AND execution_status='Not Executed' AND execution_attempt_id IS NULL")
       .bind(attempt,actor.organization_id,approvalId).run();
     if((claim.meta?.changes??0)!==1) return json({error:"Could not claim this approval; reload its current state."},409);
-    await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(attempt,actor.organization_id,actor.id,"Human Approver","response_execution_started",approvalId,JSON.stringify({actionType:"block_ip",target,provider:"cloudflare",zoneId:values.zoneId,approvalId}),"Started").run();
     try {
+      // Persist the start audit before any external side effect. If it fails, no
+      // provider request is made and the catch block marks the claimed attempt failed.
+      await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+        .bind(attempt,actor.organization_id,actor.id,"Human Approver","response_execution_started",approvalId,JSON.stringify({actionType:"block_ip",target,provider:"cloudflare",zoneId:values.zoneId,approvalId}),"Started").run();
       if(!/^[a-f0-9]{32}$/i.test(values.zoneId||"")) throw new Error("Configured Cloudflare Zone ID is invalid.");
       const response=await fetchJson("https://api.cloudflare.com/client/v4/zones/"+encodeURIComponent(values.zoneId)+"/firewall/access_rules/rules",{
         method:"POST",headers:{Authorization:"Bearer "+values.apiToken,Accept:"application/json","Content-Type":"application/json"},
@@ -432,6 +434,7 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
       });
       if(!response.response.ok || response.data?.success!==true) throw new Error("Cloudflare rejected the block request (HTTP "+response.response.status+"). Check token permission and zone.");
       const providerId=String(response.data?.result?.id||"");
+      if(!providerId) throw new Error("Cloudflare created no rule ID; inspect the provider before retrying.");
       const verify=await fetchJson("https://api.cloudflare.com/client/v4/zones/"+encodeURIComponent(values.zoneId)+"/firewall/access_rules/rules/"+encodeURIComponent(providerId),{headers:{Authorization:"Bearer "+values.apiToken,Accept:"application/json"}});
       const verified=verify.response.ok && verify.data?.success===true && String(verify.data?.result?.configuration?.value||"")===target;
       await env.DB.prepare("UPDATE approvals SET execution_status=?,lifecycle_state=?,execution_result=?,verification_result=?,audit_reference=? WHERE org_id=? AND approval_id=? AND execution_attempt_id=?")
