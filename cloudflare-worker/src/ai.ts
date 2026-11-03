@@ -53,9 +53,9 @@ function validEndpoint(value: string): boolean {
   try {
     const u = new URL(value);
     if (u.protocol !== "https:" || u.username || u.password || u.search || u.hash) return false;
-    const host = u.hostname.toLowerCase().replace(/^\\[|\\]$/g, "");
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     // Reject all IP literals, including private, loopback, link-local and IPv6 targets.
-    if (!host || host.includes(":") || /^\\d+(?:\\.\\d+){0,3}$/.test(host) ||
+    if (!host || host.includes(":") || /^\d+(?:\.\d+){0,3}$/.test(host) ||
         host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
         host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid")) return false;
     if (host.length > 253 || host.split(".").some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return false;
