@@ -26,6 +26,9 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
   // ActivePieces is a trusted platform service. Its bridge credential is paired
   // with an organization ID resolved from a collector token by /api/collector/context.
   // Collector tokens themselves never authenticate general data APIs.
+  // Never forward collector credentials to general data APIs, even if another
+  // authentication header is also present.
+  if (request.headers.has("X-SentinelX-Org-Key")) return null;
   const bridgeKey = request.headers.get("X-SentinelX-Bridge-Key") || "";
   const orgId = request.headers.get("X-SentinelX-Org-ID") || "";
   if (bridgeKey || orgId) {
@@ -36,8 +39,6 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
     if (!organization) return null;
     return { id: "activepieces", role: "service", organization_id: organization.id, email: "activepieces@sentinelx.internal", display_name: "ActivePieces" };
   }
-  // Collector credentials are restricted to /api/collector/* routes.
-  if (request.headers.has("X-SentinelX-Org-Key")) return null;
   return await currentUser(request, env as Parameters<typeof currentUser>[1]) as Actor | null;
 }
 
