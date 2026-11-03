@@ -10,13 +10,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$WebhookUrl = $env:SENTINELX_WEBHOOK_URL
-$WebhookKey = $env:SENTINELX_WEBHOOK_KEY
+$CollectorApiUrl = $env:SENTINELX_COLLECTOR_API_URL
+$CollectorToken = $env:SENTINELX_COLLECTOR_TOKEN
 
-if ([string]::IsNullOrWhiteSpace($WebhookUrl) -or [string]::IsNullOrWhiteSpace($WebhookKey)) {
-    throw 'Set SENTINELX_WEBHOOK_URL and SENTINELX_WEBHOOK_KEY in the current PowerShell session before running the collector.'
+if ([string]::IsNullOrWhiteSpace($CollectorApiUrl) -or [string]::IsNullOrWhiteSpace($CollectorToken)) {
+    throw 'Set SENTINELX_COLLECTOR_API_URL and SENTINELX_COLLECTOR_TOKEN in the current PowerShell session before running the collector.'
 }
-if ($WebhookUrl -notmatch '^https://') { throw 'SENTINELX_WEBHOOK_URL must use HTTPS.' }
+if ($CollectorApiUrl -notmatch '^https://') { throw 'SENTINELX_COLLECTOR_API_URL must use HTTPS.' }
+if ($CollectorToken.Length -lt 40 -or $CollectorToken.Length -gt 256) { throw 'Collector token length is invalid.' }
+$CollectorEventsUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/events'
 
 $StateDirectory = Join-Path $env:LOCALAPPDATA 'SentinelX'
 $CheckpointPath = Join-Path $StateDirectory 'last-security-record-id.txt'
@@ -82,11 +84,31 @@ function Get-EventFields {
 
 function Send-Record {
     param([object]$Payload)
-    $json = $Payload | ConvertTo-Json -Depth 8 -Compress
-    Invoke-RestMethod -Uri $WebhookUrl -Method Post -Headers @{
-        'X-SentinelX-Key' = $WebhookKey
-        'Accept' = 'application/json'
-    } -ContentType 'application/json' -Body $json -TimeoutSec 20 | Out-Null
+    $event = @{
+        eventId = [string]$Payload.event_id
+        observedAt = [string]$Payload.timestamp
+        payload = @{
+            eventId = [string]$Payload.event_id
+            eventType = [string]$Payload.event_type
+            host = [string]$Payload.host
+            username = [string]$Payload.username
+            sourceIp = [string]$Payload.source_ip
+            source = [string]$Payload.source_integration
+            dataOrigin = [string]$Payload.data_origin
+            eventData = $Payload.event_data
+        }
+    }
+    $body = @{
+        integrationId = 'windows_security'
+        events = @($event)
+    } | ConvertTo-Json -Depth 10 -Compress
+    $response = Invoke-RestMethod -Uri $CollectorEventsUrl -Method Post -Headers @{
+        Authorization = "Bearer $CollectorToken"
+        Accept = 'application/json'
+    } -ContentType 'application/json' -Body $body -TimeoutSec 20
+    if ($null -eq $response -or [int]$response.accepted -lt 1) {
+        throw 'SentinelX intake did not confirm event acceptance.'
+    }
 }
 
 do {
