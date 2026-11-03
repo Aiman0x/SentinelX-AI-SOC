@@ -45,3 +45,23 @@ The currently published flows still contain the old header contract and `failure
 ## Secret handling
 
 `AP_BRIDGE_KEY` remains a Cloudflare Worker secret. The existing ActivePieces flow definitions contain a literal bridge credential in their HTTP step settings; do not copy it into source code, logs, issue comments, or documentation. Plan a coordinated credential rotation after the new contract is deployed and verified. This change does not rotate or revoke any credential.
+
+## Pre-deployment security test matrix
+
+Run these against a disposable test database or isolated staging environment; do not use production records for destructive tests.
+
+| Test | Expected result |
+|---|---|
+| Valid collector token calls `GET /api/collector/context` | 200 with only its organization and collector IDs |
+| Revoked or unknown collector token calls context | 401 |
+| Collector token calls `GET /api/cases` or `/api/records` | 401 |
+| Bridge key missing or incorrect | 401 |
+| Valid bridge key with missing/malformed/inactive organization ID | 401 |
+| Valid bridge key + organization A reads cases/records | Only organization A rows |
+| Valid bridge key + organization A requests a case belonging to B | 404 |
+| Service actor posts to notes or approvals/decision | 403 |
+| Service actor creates a case with an unapproved schema | 403 |
+| Service actor creates a case using `sx_cases_v1` or `sentinelx_cases` | 201 and an Automation audit row |
+| Normal analyst session reads and writes within its own organization | Existing role rules remain unchanged |
+
+Also verify two organizations can both use the central automation service while every query remains bound to the organization ID returned by the authenticated collector-context call. The platform-wide bridge credential is a trusted-service boundary, not a customer-facing credential.
