@@ -74,11 +74,11 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (actor.role === "viewer" && request.method !== "GET") return json({ error: "Viewer role is read-only" }, 403);
   if (actor.role === "service") {
     const serviceRead = request.method === "GET" && (
-      path === "/api/cases" || /^\\/api\\/cases\\/[^/]+$/.test(path) || path === "/api/records" ||
+      path === "/api/cases" || /^\/api\/cases\/[^/]+$/.test(path) || path === "/api/records" ||
       ["/api/alerts", "/api/investigations", "/api/evidence", "/api/audit", "/api/assets", "/api/rules", "/api/telemetry"].includes(path)
     );
     const serviceWrite = request.method === "POST" && (
-      path === "/api/cases" || /^\\/api\\/cases\\/[^/]+$/.test(path) || path === "/api/records"
+      path === "/api/cases" || /^\/api\/cases\/[^/]+$/.test(path) || path === "/api/records"
     );
     if (!serviceRead && !serviceWrite) return json({ error: "ActivePieces service scope does not permit this route" }, 403);
   }
