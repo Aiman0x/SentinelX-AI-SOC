@@ -150,10 +150,10 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
   if (!collector) return json({ error: "Invalid or revoked collector token" }, 401);
   const body = await readJson(req, 262144);
   const integrationId = typeof body?.integrationId === "string" ? body.integrationId : "";
-  if (!["sysmon", "suricata", "zeek"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata or zeek" }, 400);
+  if (!["sysmon", "suricata", "zeek", "windows_security"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata, zeek or windows_security" }, 400);
   const events = Array.isArray(body?.events) ? body.events : [];
   if (events.length < 1 || events.length > 100) return json({ error: "Provide between 1 and 100 normalized events" }, 400);
-  const entityType = integrationId + "_event";
+  const entityType = integrationId === "windows_security" ? "telemetry_intake" : integrationId + "_event";
   const statements: D1PreparedStatement[] = [];
   let accepted = 0;
   for (const raw of events) {
@@ -162,7 +162,23 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
     const eventId = typeof event.eventId === "string" && event.eventId.trim() ? event.eventId.trim().slice(0, 180) : crypto.randomUUID();
     const observedAt = typeof event.observedAt === "string" && Number.isFinite(Date.parse(event.observedAt)) ? new Date(event.observedAt).toISOString() : new Date().toISOString();
     const safePayload = scrubSecrets(event.payload ?? event) as Record<string, unknown>;
-    const payload = JSON.stringify({ integrationId, collectorId: collector.id, observedAt, eventId, event: safePayload });
+    const payload = JSON.stringify(integrationId === "windows_security" ? {
+      "Source Event ID": String(safePayload.eventId ?? eventId),
+      "Event ID": String(safePayload.eventId ?? eventId),
+      "Event Type": String(safePayload.eventType ?? "windows_failed_login"),
+      "Event Time": observedAt,
+      "Received At": new Date().toISOString(),
+      "Host": String(safePayload.host ?? "unknown"),
+      "Username": String(safePayload.username ?? "unknown"),
+      "Source IP": String(safePayload.sourceIp ?? "unknown"),
+      "Source Integration": "LOCAL_WINDOWS",
+      "Data Origin": "REAL_UNVERIFIED",
+      "Validation Status": "PENDING_VALIDATION",
+      "Notes": "Read-only Windows Security Event ID 4625 collected by SentinelX host collector.",
+      "Normalized Event JSON": safePayload,
+      "collectorId": collector.id,
+      "integrationId"
+    } : { integrationId, collectorId: collector.id, observedAt, eventId, event: safePayload });
     if (payload.length > 16000) continue;
     const id = crypto.randomUUID();
     statements.push(env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at")
