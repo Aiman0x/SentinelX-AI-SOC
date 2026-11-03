@@ -17,6 +17,8 @@ ActivePieces is a trusted platform automation service. A host collector credenti
 
 The Worker verifies the bridge secret, verifies that the organization is active, and constructs a service actor bound to that organization. Every D1 query continues to use the actor's organization ID.
 
+**Trust boundary:** `AP_BRIDGE_KEY` is a platform-wide credential, not a tenant credential. The central ActivePieces project is trusted to act for any active organization when it supplies that organization's ID after collector-context resolution. A tenant must never receive this bridge key. If the deployment later gives each customer a separate ActivePieces project, replace this central credential with independently issued, organization-scoped service credentials before enabling customer-controlled workflows.
+
 ## Service allowlist
 
 The service actor may:
