@@ -1,6 +1,6 @@
 import { currentUser } from "./auth";
 
-interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; }
+interface DataEnv { DB: D1Database; ALLOWED_ORIGIN: string; AP_BRIDGE_KEY: string; }
 type Actor = { id: string; role: string; organization_id: string; email: string; display_name: string };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
@@ -11,9 +11,32 @@ const allowedOrigin = (request: Request, env: DataEnv) => {
   const origin = request.headers.get("Origin") || "";
   return !origin || env.ALLOWED_ORIGIN.split(",").map(x => x.trim()).includes(origin);
 };
+async function sameSecret(left: string, right: string): Promise<boolean> {
+  if (!left || !right || left.length !== right.length) return false;
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(left)),
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(right)),
+  ]);
+  const x = new Uint8Array(a); const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
 async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
-  // Collector tokens are accepted only by the dedicated collector-ingestion route.
-  // They must never authenticate general case, note, approval or SOC APIs.
+  // ActivePieces is a trusted platform service. Its bridge credential is paired
+  // with an organization ID resolved from a collector token by /api/collector/context.
+  // Collector tokens themselves never authenticate general data APIs.
+  const bridgeKey = request.headers.get("X-SentinelX-Bridge-Key") || "";
+  const orgId = request.headers.get("X-SentinelX-Org-ID") || "";
+  if (bridgeKey || orgId) {
+    if (!env.AP_BRIDGE_KEY || !orgId || !/^[0-9a-f-]{36}$/i.test(orgId) ||
+        !(await sameSecret(bridgeKey, env.AP_BRIDGE_KEY))) return null;
+    const organization = await env.DB.prepare("SELECT id FROM organizations WHERE id=? AND is_active=1")
+      .bind(orgId).first<{ id: string }>();
+    if (!organization) return null;
+    return { id: "activepieces", role: "service", organization_id: organization.id, email: "activepieces@sentinelx.internal", display_name: "ActivePieces" };
+  }
+  // Collector credentials are restricted to /api/collector/* routes.
   if (request.headers.has("X-SentinelX-Org-Key")) return null;
   return await currentUser(request, env as Parameters<typeof currentUser>[1]) as Actor | null;
 }
@@ -49,6 +72,16 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (!actor) return json({ error: "Authentication required" }, 401);
   const org = actor.organization_id;
   if (actor.role === "viewer" && request.method !== "GET") return json({ error: "Viewer role is read-only" }, 403);
+  if (actor.role === "service") {
+    const serviceRead = request.method === "GET" && (
+      path === "/api/cases" || /^\\/api\\/cases\\/[^/]+$/.test(path) || path === "/api/records" ||
+      ["/api/alerts", "/api/investigations", "/api/evidence", "/api/audit", "/api/assets", "/api/rules", "/api/telemetry"].includes(path)
+    );
+    const serviceWrite = request.method === "POST" && (
+      path === "/api/cases" || /^\\/api\\/cases\\/[^/]+$/.test(path) || path === "/api/records"
+    );
+    if (!serviceRead && !serviceWrite) return json({ error: "ActivePieces service scope does not permit this route" }, 403);
+  }
 
   if (path === "/api/cases" && request.method === "GET") {
     const url = new URL(request.url);
@@ -74,6 +107,9 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
     const status = text(body?.status, 32) || "New";
     const source = text(body?.source, 240);
     const sourceSchema = text(body?.source_schema, 80) || "gateway";
+    if (actor.role === "service" && !["sx_cases_v1", "sentinelx_cases"].includes(sourceSchema)) {
+      return json({ error: "ActivePieces may only create approved telemetry/investigation case schemas" }, 403);
+    }
     const overview = text(body?.overview, 8000);
     const assignee = text(body?.assignee, 240);
     const extra = body?.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? body.payload as Record<string, unknown> : {};
