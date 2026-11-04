@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost, isBackendConfigured } from '../../services/apiClient';
 
-type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'revoked' };
+type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'paused' | 'revoked' };
 export function HostCollectors() {
   const [items, setItems] = useState<Collector[]>([]);
   const [name, setName] = useState('My security host');
   const [platform, setPlatform] = useState('windows');
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState('');
   const [error, setError] = useState('');
   const apiUrl = import.meta.env.VITE_API_BASE_URL || 'https://sentinelx-api-gateway.aiman132046.workers.dev';
   const windowsCommand = `$env:SENTINELX_COLLECTOR_API_URL = "${apiUrl}"\n$env:SENTINELX_COLLECTOR_TOKEN = "${token}"\n.\\SentinelX_Local_Windows_Collector.ps1`;
@@ -26,6 +27,12 @@ export function HostCollectors() {
       setToken(data.token); await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not create collector.'); }
     finally { setBusy(false); }
+  };
+  const togglePause = async (id: string, paused: boolean) => {
+    setActionBusyId(id); setError('');
+    try { await apiPost('/api/collectors/' + id + (paused ? '/resume' : '/pause'), {}); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not update collector state.'); }
+    finally { setActionBusyId(''); }
   };
   const revoke = async (id: string) => {
     try { await apiDelete('/api/collectors/' + id); await load(); }
@@ -56,7 +63,7 @@ export function HostCollectors() {
             <p className="mt-2 text-[10px] text-sx-mute">Continuous mode:</p>
             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-sx-bg p-2 text-[10px]">{windowsContinuousCommand}</pre>
             <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(windowsContinuousCommand)}>Copy continuous command</button>
-            <p className="mt-1 text-[10px] text-sx-mute">Stop locally with Ctrl+C. Revoke blocks future requests but does not remotely terminate the process.</p>
+            <p className="mt-1 text-[10px] text-sx-mute">Pause/Resume from this page tells the agent to stop/resume sending data on its next config poll. Ctrl+C stops the local process; Revoke permanently blocks that token.</p>
           </div>
           <div>
             <p className="text-xs font-semibold">Python host-health checks</p>
@@ -69,7 +76,13 @@ export function HostCollectors() {
       <div className="mt-4 space-y-2">
         {items.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-sx-line bg-sx-bg p-2 text-xs">
           <div><span className="font-medium">{item.name}</span><span className="ml-2 text-sx-mute">{item.platform}</span><div className="mt-1 text-[10px] text-sx-mute">Last heartbeat: {item.lastSeenAt ? new Date(item.lastSeenAt).toLocaleString() : 'Never'}</div></div>
-          <div className="flex items-center gap-2"><span className={item.status==='online'?'text-sx-green':item.status==='revoked'?'text-sx-red':'text-sx-warn'}>{item.status}</span>{item.status!=='revoked' && <button className="btn" onClick={()=>void revoke(item.id)}>Revoke</button>}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={item.status==='online'?'text-sx-green':item.status==='revoked'?'text-sx-red':item.status==='paused'?'text-sx-mute':'text-sx-warn'}>{item.status}</span>
+            {item.status!=='revoked' && <>
+              <button className="btn" disabled={actionBusyId===item.id} onClick={()=>void togglePause(item.id,item.status==='paused')}>{actionBusyId===item.id?'Updating…':item.status==='paused'?'Resume':'Pause'}</button>
+              <button className="btn" onClick={()=>void revoke(item.id)}>Revoke</button>
+            </>}
+          </div>
         </div>)}
         {!items.length && <p className="text-xs text-sx-mute">No collectors enrolled yet.</p>}
       </div>
