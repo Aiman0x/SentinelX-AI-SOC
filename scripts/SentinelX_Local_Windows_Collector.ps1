@@ -19,6 +19,12 @@ if ([string]::IsNullOrWhiteSpace($CollectorApiUrl) -or [string]::IsNullOrWhiteSp
 if ($CollectorApiUrl -notmatch '^https://') { throw 'SENTINELX_COLLECTOR_API_URL must use HTTPS.' }
 if ($CollectorToken.Length -lt 40 -or $CollectorToken.Length -gt 256) { throw 'Collector token length is invalid.' }
 $CollectorEventsUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/events'
+$CollectorConfigUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/config'
+
+function Test-CollectorPaused {
+    $config = Invoke-RestMethod -Uri $CollectorConfigUrl -Method Get -Headers @{ Authorization = "Bearer $CollectorToken"; Accept = 'application/json' } -TimeoutSec 10
+    return [bool]$config.paused
+}
 
 $StateDirectory = Join-Path $env:LOCALAPPDATA 'SentinelX'
 $CheckpointPath = Join-Path $StateDirectory 'last-security-record-id.txt'
@@ -112,6 +118,12 @@ function Send-Record {
 }
 
 do {
+    if (Test-CollectorPaused) {
+        Write-Host 'Collector is paused by SentinelX; no Windows events will be sent.'
+        if ($Continuous) { Start-Sleep -Seconds $IntervalSeconds; continue }
+        break
+    }
+
     $lastRecordId = 0L
     $hasCheckpoint = Test-Path -LiteralPath $CheckpointPath
     if ($hasCheckpoint) {
