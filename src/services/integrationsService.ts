@@ -1,6 +1,6 @@
 import { demoIntegrations } from '../data/demoIntegrations';
 import type { Integration, TestResult } from '../types/integration';
-import { apiGet, apiPost, delay, isBackendConfigured } from './apiClient';
+import { apiDelete, apiGet, apiPost, delay, isBackendConfigured } from './apiClient';
 import { mapIntegrationRows } from './backendMappers';
 import { createLocalStore } from './localStore';
 
@@ -43,4 +43,9 @@ export async function queryIntegration(integration: Integration, input: Record<s
   if (!isBackendConfigured) throw new Error('Connect the SentinelX backend before querying external tools.');
   const result = await apiPost<{ data: unknown }>(`/api/integrations/${integration.id}/query`, input);
   return result.data;
+}
+
+export async function disconnectIntegration(integration: Integration): Promise<void> {
+  if (!isBackendConfigured) throw new Error('Connect the SentinelX backend before disconnecting tools.');
+  await apiDelete(`/api/integrations/${integration.id}/disconnect`);
 }
