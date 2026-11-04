@@ -126,7 +126,7 @@ export function mapIntegrationRows(payload: unknown): Integration[] {
       category: str(item.category, 'Endpoint') as Integration['category'],
       state: verified ? 'connected' : configured ? 'disconnected' : 'not_configured',
       configured, verified, lastHealthCheck: typeof item.lastHealthCheck === 'string' ? date(item.lastHealthCheck) : undefined,
-      configuredKeys: arr(item.configuredKeys), fields,
+      configuredKeys: arr(item.configuredKeys), capabilities: arr(item.capabilities), fields,
       schema: obj(item.schema) as Integration['schema'],
     };
   });
