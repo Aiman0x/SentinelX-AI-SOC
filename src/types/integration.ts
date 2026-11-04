@@ -27,6 +27,8 @@ export interface Integration {
   savedConfig?: Record<string, string>;
   configuredKeys?: string[];
   fields: IntegrationField[];
+  /** Server-discovered lifecycle and data capabilities for this adapter. */
+  capabilities?: string[];
 }
 
 export interface TestResult {
