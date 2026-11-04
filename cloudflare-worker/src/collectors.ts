@@ -162,16 +162,18 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
     const eventId = typeof event.eventId === "string" && event.eventId.trim() ? event.eventId.trim().slice(0, 180) : crypto.randomUUID();
     const observedAt = typeof event.observedAt === "string" && Number.isFinite(Date.parse(event.observedAt)) ? new Date(event.observedAt).toISOString() : new Date().toISOString();
     const safePayload = scrubSecrets(event.payload ?? event) as Record<string, unknown>;
+    const windowsEventData = safePayload.eventData && typeof safePayload.eventData === "object" && !Array.isArray(safePayload.eventData)
+      ? safePayload.eventData as Record<string, unknown> : {};
     const payload = JSON.stringify(integrationId === "windows_security" ? {
       "Source Event ID": String(safePayload.eventId ?? eventId),
-      "Event ID": String(safePayload.eventId ?? eventId),
+      "Event ID": String(windowsEventData.EventID ?? safePayload.windowsEventId ?? 4625),
       "Event Type": String(safePayload.eventType ?? "windows_failed_login"),
       "Event Time": observedAt,
       "Received At": new Date().toISOString(),
       "Host": String(safePayload.host ?? "unknown"),
       "Username": String(safePayload.username ?? "unknown"),
       "Source IP": String(safePayload.sourceIp ?? "unknown"),
-      "Source Integration": "LOCAL_WINDOWS",
+      "Source Integration": String(safePayload.source ?? safePayload.sourceIntegration ?? "Windows Security Event Log"),
       "Data Origin": "REAL_UNVERIFIED",
       "Validation Status": "PENDING_VALIDATION",
       "Notes": "Read-only Windows Security Event ID 4625 collected by SentinelX host collector.",
