@@ -1,0 +1,25 @@
+name: Validate SentinelX feature branch
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/byo-llm-multi-tenant-integrations, fix/activepieces-tenant-service-auth]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build frontend
+        run: npm run build
+      - name: Bundle Worker without deploying
+        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml

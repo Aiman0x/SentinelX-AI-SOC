@@ -1,84 +1,79 @@
-# SentinelX Cloudflare Worker — GUI + API Gateway
+# SentinelX Cloudflare Worker
 
-The `sentinelx-api-gateway` Worker serves both the React GUI static assets and the authenticated API gateway. The browser and API share one origin; the Worker forwards authenticated read requests to the existing ActivePieces workflows.
+The Worker serves the SentinelX GUI and authenticated multi-tenant API. Cloudflare D1 is the SOC data plane; Activepieces is the workflow/orchestration layer.
 
-## Public origin
+## Required bindings
 
-`https://sentinelx-api-gateway.aiman132046.workers.dev`
+- `DB`: D1 database binding.
+- `ALLOWED_ORIGIN`: allowed SentinelX frontend origin.
+- `SESSION_SECRET`: secret used to sign analyst sessions.
+- `AP_BRIDGE_KEY`: retained for the Worker-to-Activepieces health/read integrations that still use the legacy webhook bridge.
+- `AP_WEBHOOK_KEY` and the configured Activepieces webhook URLs: used by the remaining Activepieces health and orchestration integrations.
 
-## Security model
+The D1 data routes do **not** accept a shared bridge key or an organization ID supplied in a JSON body. Activepieces uses an organization-specific collector token in `X-SentinelX-Org-Key`.
 
-- The GUI authenticates with a dedicated analyst password sent only to `POST /api/auth/login`.
-- The Worker verifies a PBKDF2-SHA-256 password hash; the plaintext password is never stored in Worker configuration.
-- Successful login receives a four-hour signed, HttpOnly, Secure, same-site session cookie.
-- Session signatures use a separate `SESSION_HMAC_SECRET` Worker secret.
-- Login attempts are rate-limited (5 per minute per IP; Cloudflare's rate limiter is approximate).
-- ActivePieces bridge key remains a Worker secret and is never sent to the browser.
-- Data retrieval is GET-only. The only write endpoint in this phase saves encrypted integration configuration; case updates, playbook execution, connection tests, and defensive actions are not exposed.
-- This is a single shared analyst login, not multi-user identity management. Use a unique, strong password and rotate it if shared.
+## D1 schema
 
-## Authentication endpoints
+- `migrations/0002_soc_data.sql`: creates `cases`, `notes`, `approvals`, `soc_records`, `audit_logs`, and `host_collectors`, all with `org_id`.
+- `manual-migrations/0003_auth_org_scope.sql`: records the auth-scope migration already applied to the connected D1 database. It renames membership `organization_id` to `org_id`, adds `org_id` to sessions and auth audit rows, backfills existing rows, and rejects new sessions without an organization.
 
-- `POST /api/auth/login` with JSON `{"password":"..."}` sets the session cookie.
-- `GET /api/auth/me` reports whether the cookie is valid.
-- `POST /api/auth/logout` clears the cookie.
+`users` is a global identity table; `organizations.id` is the organization identifier. A membership binds a user to an organization, and every new session stores that `org_id`. The `currentUser` lookup joins the session and membership on the same `org_id`.
 
-The GUI is served by the same Worker origin as the API, so browser requests use same-origin cookies and do not need a cross-site cookie exception.
+## API routes
 
-## Worker variables and secrets
+### Analyst-session routes
 
-The Worker origin is configured in `cloudflare-worker/wrangler.toml`:
+- `GET /api/cases` and `GET /api/cases/:caseId`
+- `POST /api/cases` and `POST /api/cases/:caseId`
+- `GET /api/notes?caseId=...` and `POST /api/notes`
+- `GET /api/approvals` and `POST /api/approvals`
+- `POST /api/approvals/:approvalId/decision`
+- `GET /api/records?entity_type=...`
 
-- `ALLOWED_ORIGIN` = `https://sentinelx-api-gateway.aiman132046.workers.dev`
+The organization is taken from the signed session. A browser-supplied `org_id` is ignored. Viewer-role users are read-only; approval decisions require owner/admin.
 
-Add these as **Secret** values in Workers & Pages > sentinelx-api-gateway > Settings > Variables and Secrets:
+### Activepieces service routes
 
-- `LOGIN_PASSWORD_HASH` = PBKDF2-SHA-256 encoded hash in the format `pbkdf2-sha256$310000$BASE64URL_SALT$BASE64URL_HASH`
-- `SESSION_HMAC_SECRET` = a separately generated random secret (at least 32 random bytes, encoded as hex)
-- `CONFIG_ENCRYPTION_KEY` = a separate 32-byte random AES-256-GCM key (64 hex characters)
-- `AP_BRIDGE_KEY` = the rotated `X-SentinelX-Bridge-Key` value configured on all eight ActivePieces read workflows
-- `AP_READ_DETECTION_FINDINGS_URL`, `AP_READ_INCIDENT_RECORDS_URL`, `AP_READ_INVESTIGATIONS_URL`, `AP_READ_EVIDENCE_REFERENCES_URL`, `AP_READ_AUDIT_LOGS_URL`, `AP_READ_ASSETS_URL`, `AP_READ_DETECTION_RULES_URL`, and `AP_READ_SECURITY_INTEGRATIONS_URL` = corresponding published ActivePieces webhook URLs with `/sync` appended
+- `GET /api/cases` and `GET /api/cases/:caseId`
+- `POST /api/cases` and `POST /api/cases/:caseId`
+- `GET /api/records?entity_type=...` and `POST /api/records`
+- `GET /api/approvals?approval_id=...`
+- `POST /api/approvals`
+- `POST /api/notes`
 
-Do not reuse the Windows telemetry-ingestion key. Do not put any secret or ActivePieces webhook URL in GitHub source, Vite variables, or browser code. The `INTEGRATION_CONFIGS` KV namespace stores tool configuration encrypted with AES-256-GCM; the encryption key stays in Worker Secrets. Secret fields are never returned to the browser.
+For these routes, Activepieces sends `X-SentinelX-Org-Key`. The Worker SHA-256 hashes the token, looks up the hash in `host_collectors`, checks that the organization is active, and derives `org_id` from that row. No `org_id` in the event body is trusted.
 
-Copy each webhook URL from its corresponding published ActivePieces workflow trigger, then append `/sync` to the URL path so the Worker waits for the flow's Return Response step. The Catch Webhook trigger accepts GET, and each flow's Return Response step returns the table data as JSON. Confirm its auth check expects the bridge key header before enabling live data. Do not guess URLs.
+`POST /api/records` supports one record or a batch of up to 200 records. The D1 uniqueness key is `(org_id, entity_type, source_table, source_record_id)`, so retries upsert within the same tenant and cannot overwrite another tenant's record.
 
-## Integration configuration
+### Collector enrollment
 
-- `POST /api/integrations/{id}/config` saves allowlisted configuration fields after analyst authentication.
-- Supported IDs: wazuh, sysmon, clamav, yara, suricata, zeek. ActivePieces webhook URLs and bridge credentials are configured only as Worker Secrets.
-- Values are encrypted before being written to the dedicated `INTEGRATION_CONFIGS` KV namespace.
-- `GET /api/integrations` includes only safe non-secret configuration values and configured field names; passwords and webhook secrets are never returned.
-- Connection-test routes deliberately return an unavailable response until each tool-specific ActivePieces adapter and health-check workflow is implemented. A saved configuration is not a connected integration.
+- `GET /api/collectors`
+- `POST /api/collectors`
+- `DELETE /api/collectors/:id`
 
-## Read-only route mapping
+Only an owner/admin analyst session can enroll or revoke a collector. The raw token is returned once; only its hash is stored in D1.
 
-| Frontend route | ActivePieces workflow |
-|---|---|
-| GET /api/alerts | Read Detection Findings |
-| GET /api/cases | Read Incident Records |
-| GET /api/investigations | Read Investigations |
-| GET /api/evidence | Read Evidence References |
-| GET /api/audit | Read Audit Logs |
-| GET /api/assets | Read Assets |
-| GET /api/rules | Read Detection Rules |
-| GET /api/integrations | Read Security Integrations |
+## Activepieces webhook headers
 
-## Deployment
+The existing webhook authentication header `X-SentinelX-Key` remains for the Activepieces webhook trigger. A host collector must also send its own tenant token:
 
-The repository's `.github/workflows/deploy-worker.yml` builds the React GUI and deploys the GUI assets plus API Worker together. The Worker uses Workers Static Assets with SPA fallback; `/api/*` requests are routed through the Worker code.
+```powershell
+$headers = @{
+  "X-SentinelX-Key" = $env:SENTINELX_WEBHOOK_KEY
+  "X-SentinelX-Org-Key" = $env:SENTINELX_ORG_TOKEN
+}
+```
 
-### GitHub Actions prerequisite
+Do not send `ORG-DEFAULT` or an untrusted `organization_id` field to select the tenant.
 
-- Add `CLOUDFLARE_API_TOKEN` as a GitHub Actions secret. Grant only the Cloudflare permissions needed to deploy Workers Scripts.
+## Local development and deployment
 
-### Runtime configuration
+From the repository root:
 
-1. Run `scripts/generate-auth-secrets.ps1` locally and add its outputs as Worker Secrets. Choose the analyst password locally; it is never sent to GitHub or this repository.
-2. Rotate the shared bridge credential on all eight ActivePieces read workflows, then set the matching value as `AP_BRIDGE_KEY` in Worker Secrets.
-3. Add the eight ActivePieces webhook URL secrets copied from their published trigger settings, with `/sync` appended.
-4. Add the generated `LOGIN_PASSWORD_HASH`, `SESSION_HMAC_SECRET`, and `CONFIG_ENCRYPTION_KEY` as Worker Secrets.
-5. Merge the deployment branch into `main`; the GitHub Actions workflow builds the GUI and deploys the combined Worker.
-6. Open the public Worker origin above and verify login and the read-only GUI routes after runtime secrets are configured.
+```bash
+npm ci
+npm run build
+npx wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml
+```
 
-A successful `/health` endpoint is intentionally not provided: only the authentication and actual data endpoints should be used to validate the deployed gateway.
+The GitHub Actions deploy workflow applies the automatic D1 migration before deploying the Worker to Cloudflare. The manual auth-scope migration is already applied to the existing D1 database and is deliberately outside Wrangler's automatic migration directory to avoid replaying its non-idempotent `ALTER TABLE` statements.

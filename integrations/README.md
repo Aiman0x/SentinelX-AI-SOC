@@ -1,46 +1,40 @@
 # SentinelX Defensive Integrations
 
-## Purpose
-This directory documents integrations between SentinelX and external defensive cybersecurity tools.
+## Implemented connector registry
 
-## Planned Integrations
+The Cloudflare Worker hosts a dynamic connector registry. Each adapter exposes the standard methods `connect()`, `test()`, `query()` and a versioned `schema`. The Connect your tools page renders fields and query controls from that registry.
 
-### Wazuh
-Intended for security event collection, endpoint monitoring, and alert generation.
+| Connector | Status in code | Capabilities |
+|---|---|---|
+| Wazuh | Implemented | Manager API auth, agent inventory, agent details, Manager info, Indexer alert search |
+| Windows Sysmon | Implemented | Collector health, event ingestion, tenant-scoped event query |
+| Suricata | Implemented | Collector health, eve.json event ingestion, tenant-scoped event query |
+| Zeek | Implemented | Collector health, Zeek event ingestion, tenant-scoped event query |
+| VirusTotal | Implemented | User-owned API key, read-only IP/domain/URL/hash lookups |
+| AbuseIPDB | Implemented | User-owned API key, read-only IP reputation checks |
+| URLScan | Implemented | User-owned API key, quotas test, historical scan search |
+| ActivePieces | Implemented | Gateway-managed bridge health check |
 
-**Status:** Planned; integration not yet verified.
+## Credentials and security
 
-### Sysmon
-Intended to provide detailed Windows system activity telemetry when configured on an authorized endpoint.
+- Credentials are encrypted using AES-256-GCM in Worker KV and scoped by organization + authenticated user + connector.
+- Secrets are never returned to the browser and are not written to audit logs.
+- Viewer accounts cannot save connector credentials.
+- Use dedicated read-only Wazuh Manager and Indexer accounts.
+- Wazuh API and Indexer endpoints must use trusted HTTPS. Keep ports 55000 and 9200 private behind Cloudflare Tunnel + Access or a private bridge; do not expose them publicly.
+- VirusTotal lookups may add queried indicators to its shared dataset. Never submit sensitive, confidential or personal indicators. Review VirusTotal API terms before product use.
+- Threat-intel connectors perform lookups only; URLScan adapter does not submit new scans.
 
-**Status:** Planned.
+## Host telemetry
 
-### Suricata
-Intended to provide network threat detection alerts where suitable network telemetry is available.
+Create a SentinelX Host Collector and use its one-time token:
+- POST /api/collector/heartbeat for tool health reports.
+- POST /api/collector/events for normalized Sysmon, Suricata or Zeek event batches.
+- The Worker resolves org_id from the collector token; clients cannot select another tenant.
+- Event ingestion strips common credential fields and stores records in tenant-scoped D1 soc_records.
 
-**Status:** Planned.
+## Verification boundary
 
-### YARA
-Intended to support file scanning and malware-pattern detection using appropriate rules.
+Implementation is committed on `feat/byo-llm-multi-tenant-integrations`. A connector is not live-connected just because credentials were saved. Wazuh requires the user's own reachable Manager + Indexer endpoints and read-only credentials, followed by a successful test. Sysmon/Suricata/Zeek require an enrolled collector and recent health/events. Provider API keys must be supplied by each user; no shared SentinelX keys are bundled.
 
-**Status:** Planned.
-
-### ClamAV
-Intended to support antivirus scanning where compatible with the target environment.
-
-**Status:** Under consideration.
-
-## Integration Requirements
-Each integration should document:
-- Installation and configuration requirements
-- Required permissions
-- Data formats and event fields
-- Authentication and credential handling
-- Testing procedures
-- Known limitations
-
-## Security
-Only connect systems that are authorized for monitoring. Never commit API keys, passwords, authentication secrets, or sensitive logs.
-
-## Current Status
-Integrations are being planned. No integration should be considered operational until it has been configured and tested successfully.
+The Worker and frontend changes are not yet deployed from this feature branch.

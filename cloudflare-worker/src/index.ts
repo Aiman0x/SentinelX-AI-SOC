@@ -1,4 +1,8 @@
 import { currentUser, handleAuthRoute } from "./auth";
+import { handleAIRoute, runScheduledAIReport, runScheduledMonitoring } from "./ai";
+import { handleCollectorRoute } from "./collectors";
+import { handleDataRoute } from "./data";
+import { handleConnectorRoute } from "./connectors";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -10,7 +14,6 @@ export interface Env {
   INTEGRATION_CONFIGS: KVNamespace;
   LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
-  AP_READ_INCIDENT_RECORDS_URL: string;
   AP_READ_INVESTIGATIONS_URL: string;
   AP_READ_EVIDENCE_REFERENCES_URL: string;
   AP_READ_AUDIT_LOGS_URL: string;
@@ -27,7 +30,6 @@ const PBKDF2_ITERATIONS_MAX = 1_000_000;
 
 const ROUTES: Record<string, keyof Env> = {
   "/api/alerts": "AP_READ_DETECTION_FINDINGS_URL",
-  "/api/cases": "AP_READ_INCIDENT_RECORDS_URL",
   "/api/investigations": "AP_READ_INVESTIGATIONS_URL",
   "/api/evidence": "AP_READ_EVIDENCE_REFERENCES_URL",
   "/api/audit": "AP_READ_AUDIT_LOGS_URL",
@@ -39,8 +41,8 @@ const ROUTES: Record<string, keyof Env> = {
 
 const INTEGRATION_FIELDS: Record<string, string[]> = {
   wazuh: ["apiUrl", "apiUser", "apiPassword", "accessClientId", "accessClientSecret"],
-  sysmon: ["collector", "configVersion"],
-  clamav: ["host", "port"],
+  sysmon: ["eventChannel", "configVersion"],
+  clamav: ["binaryPath"],
   yara: ["rulesPath"],
   suricata: ["eveLog", "sensor"],
   zeek: ["logPath", "sensor"],
@@ -98,6 +100,14 @@ function integrationConfigKey(organizationId: string, integrationId: string): st
   return `${organizationId}:${integrationId}`;
 }
 
+function isPublicHttpsTarget(url: URL): boolean {
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  if (/^(?:0|10|127|169\.254|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2}$/.test(host)) return false;
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return false;
+  return true;
+}
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) return reply({ error: "Origin not allowed" }, 403, cors);
   const actor = await currentUser(request, env);
@@ -135,15 +145,15 @@ async function handleIntegrationConfig(request: Request, env: Env, cors: Headers
 }
 async function integrationConfigSummary(env: Env, organizationId: string): Promise<Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }>> {
   const result: Record<string, { configured: boolean; values: Record<string, string>; keys: string[]; health?: { ok: boolean; message: string; checkedAt: string } }> = {};
-  for (const id of Object.keys(INTEGRATION_FIELDS)) {
+  for (const id of ["activepieces", ...Object.keys(INTEGRATION_FIELDS)]) {
     try {
       const storageKey = integrationConfigKey(organizationId, id);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
-      if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [] }; continue; }
-      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
-      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
       const healthRaw = await env.INTEGRATION_CONFIGS.get(storageKey + ":health");
       const health = healthRaw ? JSON.parse(healthRaw) as { ok: boolean; message: string; checkedAt: string } : undefined;
+      if (!encrypted || !env.CONFIG_ENCRYPTION_KEY) { result[id] = { configured: false, values: {}, keys: [], health }; continue; }
+      const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
+      const publicValues = Object.fromEntries(Object.entries(values).filter(([key]) => !/(password|secret|token|api.?key|private.?key|credential)/i.test(key)));
       result[id] = { configured: true, values: publicValues, keys: Object.keys(values), health };
     } catch { result[id] = { configured: false, values: {}, keys: [] }; }
   }
@@ -171,7 +181,7 @@ function corsHeaders(origin: string, env: Env): HeadersInit {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type, X-SentinelX-Bootstrap",
+    "Access-Control-Allow-Headers": "Accept, Content-Type, Authorization, X-SentinelX-Bootstrap, X-SentinelX-Org-Key, X-SentinelX-Org-ID, X-SentinelX-Bridge-Key",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
   };
@@ -288,8 +298,20 @@ export default {
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
 
+    const connectorResponse = await handleConnectorRoute(request, env, url.pathname);
+    if (connectorResponse) return new Response(connectorResponse.body, { status: connectorResponse.status, headers: { ...Object.fromEntries(connectorResponse.headers), ...cors } });
+
+    const collectorResponse = await handleCollectorRoute(request, env, url.pathname);
+    if (collectorResponse) return new Response(collectorResponse.body, { status: collectorResponse.status, headers: { ...Object.fromEntries(collectorResponse.headers), ...cors } });
+
+    const aiResponse = await handleAIRoute(request, env, url.pathname);
+    if (aiResponse) return new Response(aiResponse.body, { status: aiResponse.status, headers: { ...Object.fromEntries(aiResponse.headers), ...cors } });
+
     const authResponse = await handleAuthRoute(request, env, url.pathname);
     if (authResponse) return new Response(authResponse.body, { status: authResponse.status, headers: { ...Object.fromEntries(authResponse.headers), ...cors } });
+
+    const dataResponse = await handleDataRoute(request, env, url.pathname);
+    if (dataResponse) return new Response(dataResponse.body, { status: dataResponse.status, headers: { ...Object.fromEntries(dataResponse.headers), ...cors } });
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       return handleLogin(request, env, cors);
@@ -312,15 +334,44 @@ export default {
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
       const integrationId = url.pathname.split("/")[3];
-      if (integrationId !== "wazuh") return reply({ ok: false, unavailable: true, message: "Secure storage is ready. This integration needs its host/collector adapter before a real health check can be performed." }, 200, cors);
-      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure configuration storage is not configured." }, 503, cors);
+      if (!["activepieces", "wazuh", "sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId)) return reply({ error: "Unknown integration" }, 404, cors);
+      if (integrationId === "activepieces") {
+        if (!env.AP_READ_SECURITY_INTEGRATIONS_URL || !env.AP_BRIDGE_KEY) return reply({ ok: false, unavailable: true, message: "ActivePieces read webhook or bridge credential is not configured." }, 200, cors);
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          try {
+            const upstream = await fetch(env.AP_READ_SECURITY_INTEGRATIONS_URL, { headers: { Accept: "application/json", "X-SentinelX-Bridge-Key": env.AP_BRIDGE_KEY }, signal: controller.signal, redirect: "error" });
+            if (!upstream.ok) return reply({ ok: false, message: "ActivePieces webhook returned HTTP " + upstream.status + "." }, 200, cors);
+            await upstream.arrayBuffer();
+            const checkedAt = new Date().toISOString();
+            const health = { ok: true, message: "ActivePieces webhook is reachable and accepted the bridge credential.", checkedAt };
+            if (env.INTEGRATION_CONFIGS) await env.INTEGRATION_CONFIGS.put(integrationConfigKey(actor.organization_id, integrationId) + ":health", JSON.stringify(health));
+            return reply(health, 200, cors);
+          } finally { clearTimeout(timeout); }
+        } catch (error) {
+          return reply({ ok: false, message: error && error.name === "AbortError" ? "ActivePieces health check timed out after 10 seconds." : "Could not reach the ActivePieces webhook." }, 200, cors);
+        }
+      }
+      if (integrationId !== "wazuh") {
+        if (!["sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId) || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "This integration has no live adapter." }, 200, cors);
+        const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey((await currentUser(request, env))!.organization_id, integrationId) + ":health");
+        if (!rawHealth) return reply({ ok: false, unavailable: true, message: "No host collector has reported this tool yet. Enroll a collector and run it on the host where the tool is installed." }, 200, cors);
+        try {
+          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; message?: string };
+          const age = health.checkedAt ? Date.now() - Date.parse(health.checkedAt) : Number.POSITIVE_INFINITY;
+          if (!Number.isFinite(age) || age > 10 * 60_000) return reply({ ok: false, unavailable: true, message: "Collector health is stale. Last report was more than 10 minutes ago." }, 200, cors);
+          return reply({ ...health, ok: health.status === "healthy" && health.ok === true, message: health.message || "Latest host collector health report." }, 200, cors);
+        } catch { return reply({ ok: false, unavailable: true, message: "Stored collector health report is invalid." }, 200, cors); }
+      }
+      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure storage is not configured." }, 503, cors);
       const storageKey = integrationConfigKey(actor.organization_id, integrationId);
       const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
       if (!encrypted) return reply({ ok: false, message: "Save Wazuh configuration before testing." }, 400, cors);
       try {
         const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
         const base = new URL(values.apiUrl || "");
-        if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) return reply({ ok: false, message: "Use a valid HTTPS Wazuh API URL without embedded credentials." }, 400, cors);
+        if (!isPublicHttpsTarget(base)) return reply({ ok: false, message: "Use a public HTTPS Wazuh API hostname; local/private addresses and embedded credentials are blocked." }, 400, cors);
         if (!values.apiUser || !values.apiPassword) return reply({ ok: false, message: "Wazuh API username and password are required." }, 400, cors);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
@@ -378,5 +429,8 @@ export default {
     } catch {
       return reply({ error: "Could not reach upstream workflow" }, 502, cors);
     }
+  },
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env)]).then(() => undefined));
   },
 };

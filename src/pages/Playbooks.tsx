@@ -1,6 +1,7 @@
 import { AlertOctagon, ArrowDown, Bell, CheckCheck, GitBranch, Play, ShieldQuestion, Zap, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import { ResponseApprovalPanel } from '../components/ResponseApprovalPanel';
 import { Drawer } from '../components/common/Drawer';
 import { Panel } from '../components/common/Controls';
 import { ErrorState, LoadingState } from '../components/common/EmptyState';
@@ -22,7 +23,8 @@ export default function Playbooks() {
 
   return (
     <>
-      <PageHeader title="Response Playbooks" subtitle="Workflow designs for future ActivePieces automation." />
+      <PageHeader title="Response Playbooks" subtitle="Workflow designs and approval-gated defensive response." />
+      <ResponseApprovalPanel />
       <div className="mb-4 grid gap-3 rounded-lg border border-sx-line bg-sx-panel p-3 text-xs sm:grid-cols-3">
         <div><StatusBadge value="designed" label="Designed" /><p className="mt-1.5 text-sx-mute">Documented on paper. Not built in any tool.</p></div>
         <div><StatusBadge value="configured" label="Configured" /><p className="mt-1.5 text-sx-mute">Built in ActivePieces but not proven end-to-end.</p></div>

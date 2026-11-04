@@ -14,7 +14,7 @@ export const navItems: NavItem[] = [
   { to: '/cases', label: 'Incidents & Cases', icon: FolderKanban },
   { to: '/investigation', label: 'Investigation', icon: Microscope },
   { to: '/assets', label: 'Assets & Endpoints', icon: Boxes },
-  { to: '/integrations', label: 'Integrations', icon: Plug },
+  { to: '/integrations', label: 'Connect your tools', icon: Plug },
   { to: '/rules', label: 'Detection Rules', icon: Activity },
   { to: '/playbooks', label: 'Response Playbooks', icon: BookOpenCheck },
   { to: '/audit', label: 'Audit Logs', icon: ScrollText },

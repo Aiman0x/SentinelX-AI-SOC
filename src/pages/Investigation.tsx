@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Select } from '../components/common/Controls';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import { InvestigationWorkspace } from '../components/investigation/InvestigationWorkspace';
+import { AgentInvestigationPanel } from '../components/investigation/AgentInvestigationPanel';
+import { AgentReportsPanel } from '../components/investigation/AgentReportsPanel';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useAlerts } from '../hooks/useAlerts';
 import { severityRank } from '../utils/severity';
@@ -40,8 +42,10 @@ export default function Investigation() {
       {isBackendConfigured ? (
         <>
           <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
-            These are Activepieces correlation investigations, not a verified autonomous AI verdict. Findings remain candidates and require analyst review. The AI model and external tool execution are not enabled in this foundation phase.
+            Correlation findings are candidates, not verified verdicts. The autonomous agent below can gather read-only evidence from tools connected to your account; always review its conclusions.
           </div>
+          <div className="mb-5"><AgentInvestigationPanel /></div>
+          <div className="mb-5"><AgentReportsPanel /></div>
           {backendInvestigations.loading ? <div className="panel"><LoadingState label="Loading backend investigations…" /></div> : backendInvestigations.error ? <div className="panel"><ErrorState message={backendInvestigations.error} onRetry={backendInvestigations.reload} /></div> : (backendInvestigations.data ?? []).length === 0 ? (
             <div className="panel"><EmptyState title="No backend investigations" description="The backend has not produced any correlation records yet." /></div>
           ) : (

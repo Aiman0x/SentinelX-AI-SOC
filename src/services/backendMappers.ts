@@ -3,7 +3,6 @@ import type { SecurityCase, CaseStatus } from '../types/case';
 import type { Asset, AssetType, Criticality } from '../types/asset';
 import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
 import type { Integration } from '../types/integration';
-import { demoIntegrations } from '../data/demoIntegrations';
 
 type Row = { id?: string; cells?: Record<string, unknown> } & Record<string, unknown>;
 const obj = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
@@ -113,28 +112,22 @@ export function mapAudit(row: Row): AuditRecord {
 
 export function mapIntegrationRows(payload: unknown): Integration[] {
   const rows = rowsFrom(payload);
-  const configs = obj(obj(payload).configs);
-  return demoIntegrations.map(base => {
-    const match = rows.find(row => {
-      const c = cells(row);
-      const id = str(c['Integration ID']).toLowerCase();
-      const name = str(c['Integration Name']).toLowerCase();
-      return id.includes(base.id) || name.includes(base.name.toLowerCase());
+  return rows.map((row) => {
+    const item = obj(row);
+    const health = obj(item.health);
+    const fields = (Array.isArray(item.fields) ? item.fields : []).map((f) => {
+      const v = obj(f);
+      return { key: str(v.key), label: str(v.label, str(v.key)), placeholder: str(v.placeholder), secret: v.type === 'password', type: (v.type === 'password' || v.type === 'url' ? v.type : 'text') as 'password' | 'url' | 'text', required: v.required === true, help: str(v.help) || undefined };
     });
-    const c = match ? cells(match) : {};
-    const s = str(c['Connection Status']).toLowerCase();
-    const state: Integration['state'] = s === 'connected' ? 'connected' : s.includes('degrad') ? 'error' : s.includes('fail') ? 'error' : s.includes('simulated') ? 'demo' : s.includes('not configured') ? 'not_configured' : s.includes('config') ? 'disconnected' : 'not_configured';
-    const config = obj(configs[base.id]);
-    const savedValues = obj(config.values) as Record<string, string>;
-    const health = obj(config.health);
-    const healthVerified = health.ok === true;
-    // Registry access alone does not prove an ActivePieces webhook round-trip.
-    const configured = config.configured === true || (!s.includes('not configured') && !!match);
+    const configured = item.configured === true;
+    const verified = item.verified === true || health.ok === true;
     return {
-      ...base, state: configured && state === 'not_configured' ? 'disconnected' : state,
-      configured, verified: healthVerified || s === 'connected',
-      lastHealthCheck: typeof health.checkedAt === 'string' ? date(health.checkedAt) : c['Last Health Check'] ? date(c['Last Health Check']) : undefined,
-      savedConfig: savedValues, configuredKeys: arr(config.keys),
+      id: str(item.id), name: str(item.name), purpose: str(item.purpose, str(item.description)),
+      category: str(item.category, 'Endpoint') as Integration['category'],
+      state: verified ? 'connected' : configured ? 'disconnected' : 'not_configured',
+      configured, verified, lastHealthCheck: typeof item.lastHealthCheck === 'string' ? date(item.lastHealthCheck) : undefined,
+      configuredKeys: arr(item.configuredKeys), fields,
+      schema: obj(item.schema) as Integration['schema'],
     };
   });
 }

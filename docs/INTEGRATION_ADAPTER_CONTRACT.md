@@ -1,6 +1,6 @@
 # SentinelX Integration Adapter Contract
 
-Status: design contract (not an installed or verified adapter)
+Status: implemented connector registry and adapters on feat/byo-llm-multi-tenant-integrations. A provider is only shown as Verified after its live test or collector telemetry succeeds.
 
 This document defines the common contract for host-side integrations. A saved configuration is not proof that a tool is installed, running, collecting data, or healthy.
 
@@ -95,3 +95,59 @@ A tool may be marked **Verified** only when:
 - Treat tool output and logs as untrusted input.
 - Keep secrets in encrypted backend storage; never mirror secret values into browser local storage or logs.
 - Display **Saved**, **Reachable**, **Telemetry observed**, and **Verified** as distinct states.
+
+
+## Implemented connector API (registry v1.0)
+
+The Cloudflare Worker exposes a registry-driven API. The frontend renders the returned schema.fields and schema.query.fields; it does not maintain a second hard-coded catalog.
+
+- GET /api/integrations — current user's registry entries, schema, configured field names and health state (never secret values).
+- GET /api/integrations/:id/schema — versioned adapter schema.
+- POST /api/integrations/:id/connect — validate and save that user's credentials/configuration.
+- POST /api/integrations/:id/test — real provider or host-collector health check.
+- POST /api/integrations/:id/query — provider-specific, read-only query.
+
+Every adapter implements connect(), test(), query() and exposes schema. Credentials are encrypted with AES-256-GCM in Worker KV and keyed by organization + authenticated user + connector ID. The browser receives configured field names only, never secret values. Connector actions are audit logged without storing credentials or IOC values.
+
+### Implemented adapters
+
+| Adapter | Connect | Test | Query |
+|---|---|---|---|
+| Wazuh | User-owned Manager API + Indexer read-only usernames/passwords and optional Cloudflare Access service token | Authenticate to Manager, retrieve agent inventory, and search the Wazuh alert index | List agents, get one agent, manager info, recent alerts |
+| Windows Sysmon | Sensor/channel metadata | Fresh collector health report | Tenant-scoped Sysmon records from D1 |
+| Suricata | Sensor / eve.json source metadata | Fresh collector health report | Tenant-scoped Suricata records from D1 |
+| Zeek | Sensor / log source metadata | Fresh collector health report | Tenant-scoped Zeek records from D1 |
+| VirusTotal | User-owned API key | Read-only IP report check | IP, domain, URL and file-hash reports |
+| AbuseIPDB | User-owned API key | Read-only IP check | IP reputation / abuse-confidence lookup |
+| URLScan | User-owned API key | Read-only quota check | Search historic scans by IP, domain, URL or hash |
+| ActivePieces | Gateway-managed bridge | Verify configured bridge webhook | Uses SentinelX SOC/workflow routes |
+
+Wazuh API access is restricted to a public HTTPS hostname; private/local IPs, embedded credentials, and non-HTTPS URLs are rejected. Use Cloudflare Tunnel + Access service credentials or a private outbound bridge. Never expose Wazuh TCP/55000 to the public internet.
+
+### Threat-intelligence privacy
+
+All three threat-intel adapters use the current user's own API key and read-only lookups. AbuseIPDB supports IP addresses only. VirusTotal documentation warns that queried indicators may be added to its shared dataset; do not query confidential, personal, or sensitive indicators. Check VirusTotal's API terms and licensing before using a Community API key in a product. URLScan searches historical scan data; this adapter does not submit new URLs for scanning.
+
+### Verification boundary
+
+The connector code and API contract are implemented. Wazuh cannot be marked live-connected until an administrator supplies a reachable trusted HTTPS API endpoint and that user's own read-only Wazuh credentials. Sysmon, Suricata and Zeek need a collector installed on the respective endpoint/sensor and fresh health/telemetry reports. Provider API keys are never bundled with SentinelX; each user supplies their own.
+
+
+### Host collector event ingestion
+
+Sysmon, Suricata and Zeek adapters use the authenticated collector pipeline. After creating a host collector, send health reports to POST /api/collector/heartbeat and normalized event batches to POST /api/collector/events with Authorization: Bearer <collector-token>. The event body is { integrationId: 'sysmon' | 'suricata' | 'zeek', events: [{ eventId, observedAt, payload }] }. Batches accept 1–100 events and are stored in D1 soc_records using the organization resolved from the collector token, never from caller-supplied org_id. The ingestion layer strips common credential fields before storage and deduplicates per collector + event ID. The connector query adapters then read only that organization's matching records.
+
+## LLM gateway contract
+
+The Worker LLM gateway supports a primary provider plus up to three fallback provider configurations. Every provider entry has a provider ID, model, BYO API key and optional HTTPS base URL for OpenAI-compatible endpoints. Keys are encrypted in KV with AES-GCM and are never returned to the browser.
+
+Before analysis, the gateway optionally masks common secret-value pairs, bearer tokens, email addresses and phone numbers. It then applies a configurable approximate input budget (500–12,000 tokens; default 6,000; ~4 characters/token) and truncates excess evidence. Responses include the selected provider/model, fallback count, estimated input tokens, configured budget, masking status and truncation status.
+
+Masking is best-effort and not a guarantee of anonymization. Provider requests can still disclose submitted evidence to the selected third-party provider. Do not send credentials, regulated personal data or confidential telemetry unless the organization has approved that provider and its data terms.
+
+## Autonomous agent loop and tool safety
+
+`POST /api/ai/agent` accepts an investigation prompt and optional `maxSteps` (clamped server-side to 1–5). The planner receives only the authenticated user's configured query-capable connectors. It can request one schema-constrained read-only query per step or finish. The gateway rejects unknown connectors, unsupported fields and non-primitive values; it does not expose write, shell, containment or remediation operations.
+
+Tool outputs are untrusted evidence, not instructions. The LLM system policy explicitly guards against prompt injection embedded in telemetry, alert text, command lines, URLs and tool results. Evidence is optionally masked and capped before being sent back to the model. Every connector call writes an audit start record before execution and updates it with success/failure afterward; if the audit start cannot be persisted, the tool is not called. Maximum tool calls are hard-limited to five. Conclusions are advisory and must be reviewed by an analyst.
+
