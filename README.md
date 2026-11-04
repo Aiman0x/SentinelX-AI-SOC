@@ -156,3 +156,21 @@ Safety controls: maximum five tool calls (server-enforced; UI can request 1–5)
 - Cloudflare Worker Cron is configured for daily (02:00 UTC) and weekly (Monday 03:00 UTC) report generation. Scheduled reports run only for active organizations with an AI provider configured and are stored in D1. Provider billing is charged to the configured provider account.
 - Cron/report generation does not perform containment or remediation. MITRE mappings are candidate mappings requiring analyst validation.
 - **Monitoring limitation:** collectors currently push normalized Sysmon/Suricata/Zeek events into tenant-scoped D1. Fully autonomous alert-to-agent investigation/queue processing and host-side Sysmon/Suricata/Zeek deployment scripts remain separate implementation work; do not interpret scheduled reports as continuous autonomous response.
+
+
+## Detection, correlation and evidence engine
+
+New tenant-scoped Worker APIs:
+- `GET /api/detections/rules` — built-in and tenant-defined detection rules.
+- `POST /api/detections/rules` — Owner/Admin creates or updates a rule. JSON fields: `ruleKey`, `title`, optional `description`, `ruleType` (`sigma` or `builtin`), `sigmaYaml`, `definition`, `severity`, `confidence`, and optional `mitre`.
+- `DELETE /api/detections/rules?ruleKey=...` — Owner/Admin disables a tenant rule.
+- `GET /api/detections/findings` or `GET /api/incidents` — tenant-scoped incidents and severity/confidence.
+- `GET /api/incidents/{id}` — incident, correlated events and supporting evidence.
+- `GET /api/evidence?incidentId=...` — preserved evidence snapshots.
+- `GET /api/evidence/verify?id=...` — recomputes SHA-256 and checks evidence integrity.
+
+Newly persisted queue events are evaluated before queue acknowledgement. A per-event processing marker allows retries to resume detection if a failure occurs after event persistence. Incident/event/evidence writes are idempotent. Evidence stores the normalized event plus scrubbed raw event, detection rule, MITRE mapping, capture time and SHA-256 digest.
+
+Built-in detections cover repeated authentication failures, failed-logon-then-success sequences, suspicious script interpreters, persistence-related activity, remote service activity and periodic outbound patterns. Sigma support intentionally implements a safe, documented subset: field equality, lists, `|contains`, `|startswith`, `|endswith`, and common `and`/`or`/ `1 of`/`all of` selection conditions. It is not a complete SigmaHQ backend pipeline; unsupported modifiers and correlation rules must not be treated as supported.
+
+Severity is rule-driven and escalates when a stronger matching rule is observed. Confidence is an explainable rule score (1–100), not a probability that compromise is confirmed. Findings remain analyst-review candidates.
