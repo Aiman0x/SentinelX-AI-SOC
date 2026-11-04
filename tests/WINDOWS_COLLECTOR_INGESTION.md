@@ -15,12 +15,14 @@ Validates the tenant-scoped Cloudflare Worker endpoint for read-only Windows Sec
     "eventId": "synthetic-4625-001",
     "observedAt": "2026-11-03T12:00:00.000Z",
     "payload": {
-      "eventId": "4625",
+      "eventId": "win4625-TEST-WIN-12345",
       "eventType": "windows_failed_login",
       "host": "TEST-WIN",
       "username": "test-user",
       "sourceIp": "192.0.2.10",
-      "dataOrigin": "LOCAL_WINDOWS"
+      "source": "Windows Security Event Log",
+      "dataOrigin": "LOCAL_WINDOWS",
+      "eventData": { "EventID": 4625, "LogonType": 2 }
     }
   }]
 }
@@ -34,6 +36,8 @@ Validates the tenant-scoped Cloudflare Worker endpoint for read-only Windows Sec
 5. Missing, invalid, or revoked tokens receive HTTP 401 and do not create a record.
 6. Unsupported integration IDs, malformed bodies, empty batches, and batches over 100 events are rejected.
 7. Re-sending the same event ID from the same collector updates the existing row rather than creating a duplicate.
+8. A paused collector's config response includes `paused: true`; event and heartbeat writes are rejected with HTTP 423 until an owner/admin resumes it.
+9. The GUI can pause/resume an enrolled collector; revocation remains a separate irreversible token action.
 
 ## Safety checks
 - Never put a collector token in a URL, query string, source code, test fixture, or log.
@@ -44,4 +48,6 @@ Validates the tenant-scoped Cloudflare Worker endpoint for read-only Windows Sec
 - Mark the test PASS only after the actual response and stored row have been inspected.
 
 ## Current status
-Implementation added on branch `fix/activepieces-tenant-service-auth`. Runtime tests, Worker deployment, collector enrollment, and real Windows event ingestion are **NOT YET VERIFIED**.
+Production Worker deployment is complete. Synthetic production smoke tests passed for Windows Event ID 4625 ingestion, normalized `GET /api/telemetry` visibility, collector config/heartbeat, dual-credential ActivePieces reads, revoked-token rejection, and tenant isolation. Temporary smoke-test collectors, records, and the temporary test organization were removed afterward.
+
+The actual PowerShell/Python agents have not yet been run on the user's Windows host. GUI pause/resume was added and is awaiting its final deployed runtime smoke test.
