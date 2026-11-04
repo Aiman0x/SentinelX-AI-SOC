@@ -2,28 +2,30 @@
 
 ## Purpose
 
-ActivePieces is a trusted platform automation service. A host collector credential must never authenticate general case, note, approval, or SOC-record APIs. Collector credentials are accepted only by dedicated `/api/collector/*` endpoints.
+ActivePieces is a trusted platform automation service. A tenant collector token identifies the organization, while the platform bridge key proves that the request came from the trusted ActivePieces project. Neither credential is sufficient by itself.
 
-## Request sequence
+## Request contract
 
-1. ActivePieces receives an event that carries the collector token in `X-SentinelX-Org-Key` (or the normalized `org_token` field).
-2. Before making any general data API request, ActivePieces calls:
-   - `GET /api/collector/context`
-   - `Authorization: Bearer <collector-token>`
-3. The Worker validates the token hash against `host_collectors`, checks `revoked_at IS NULL`, and returns the collector's `organizationId` and `collectorId`. This endpoint does not return case data or grant data API access.
-4. ActivePieces makes tenant-scoped data requests with both:
-   - `X-SentinelX-Bridge-Key: <AP_BRIDGE_KEY>`
-   - `X-SentinelX-Org-ID: <organizationId-from-context>`
+For every ActivePieces request to the Worker data APIs, send both:
 
-The Worker verifies the bridge secret, verifies that the organization is active, and constructs a service actor bound to that organization. Every D1 query continues to use the actor's organization ID.
+- `X-SentinelX-Org-Key: <tenant collector token>`
+- `X-SentinelX-Bridge-Key: <AP_BRIDGE_KEY>`
 
-**Trust boundary:** `AP_BRIDGE_KEY` is a platform-wide credential, not a tenant credential. The central ActivePieces project is trusted to act for any active organization when it supplies that organization's ID after collector-context resolution. A tenant must never receive this bridge key. If the deployment later gives each customer a separate ActivePieces project, replace this central credential with independently issued, organization-scoped service credentials before enabling customer-controlled workflows.
+The Worker hashes the collector token using the same SHA-256/base64url scheme used by collector enrollment, resolves its active `host_collectors` row, checks that it is not revoked, verifies the platform bridge secret, and binds the service actor to that collector's active organization.
+
+The old `X-SentinelX-Org-ID` contract remains supported for trusted internal service calls that already have a verified organization ID. It is not a substitute for the tenant token on externally triggered tenant workflows.
+
+**Important:** `X-SentinelX-Org-Key` must contain a real, non-revoked collector token created for that tenant. An arbitrary string or the old webhook secret is not accepted. The collector token alone cannot access general data APIs.
+
+## Trust boundary
+
+`AP_BRIDGE_KEY` is a platform-wide credential, not a tenant credential. The central ActivePieces project is trusted to act for a tenant only when it also presents that tenant's valid collector token. Never expose the bridge key in the GUI, to customers, or in collector scripts. If each customer later receives a separate ActivePieces project, replace this central credential with independently issued organization-scoped service credentials before enabling customer-controlled workflows.
 
 ## Service allowlist
 
 The service actor may:
 - Read tenant cases and SOC records.
-- Read the existing read-only findings, investigations, evidence, audit, assets, rules, and telemetry routes.
+- Read findings, investigations, evidence, audit, assets, rules, telemetry, and approval status.
 - Create only the approved `sx_cases_v1` and `sentinelx_cases` case schemas.
 - Update an existing case in its own organization.
 - Upsert SOC records in its own organization.
@@ -32,19 +34,22 @@ The service actor may not:
 - Create notes or approvals.
 - Decide or execute approvals.
 - Enroll, list, configure, or revoke collectors.
-- Access another organization without a separate trusted request carrying that organization's verified ID.
+- Access another organization without that organization's valid collector token.
 
-Normal analyst sessions continue to use the session cookie. Collector tokens continue to use Bearer authentication only on collector routes.
+Normal analyst sessions continue to use the session cookie. Collector tokens continue to use Bearer authentication on dedicated `/api/collector/*` routes; on ActivePieces data requests they are paired with the bridge key and used only to resolve the tenant.
 
-## Required ActivePieces follow-up
+## ActivePieces flow contract
 
-The Worker code change is not sufficient by itself. Before deploying it, update the relevant ActivePieces flows to add the context lookup and replace `X-SentinelX-Org-Key` on D1 API calls with the bridge key plus the resolved organization ID. Do not send a collector token to `/api/cases` or `/api/records`.
+- Webhook/callable flow payloads must carry the tenant's collector token as `X-SentinelX-Org-Key` (or the normalized `org_token` value that downstream steps forward).
+- Every Worker `/api/cases`, `/api/records`, and read-only `/api/approvals` HTTP action must send both headers above.
+- The Worker must never accept a collector token without the bridge key.
+- HTTP action `failureMode: continue_none` means **do not continue; stop the flow on failure**. Do not change this to a continue mode. Retry is disabled for non-idempotent POST operations; use retries only for safe, idempotent reads.
 
-The currently published flows still contain the old header contract and `failureMode: continue_none`; leave them unchanged until the Worker and flow changes can be deployed together. Change HTTP failure handling to stop on non-2xx responses and add explicit retries only to idempotent requests.
+The relevant active flows have been updated in the current ActivePieces draft. Validate them and publish them together with the Worker change. Do not publish an untested draft.
 
 ## Secret handling
 
-`AP_BRIDGE_KEY` remains a Cloudflare Worker secret. The existing ActivePieces flow definitions contain a literal bridge credential in their HTTP step settings; do not copy it into source code, logs, issue comments, or documentation. Plan a coordinated credential rotation after the new contract is deployed and verified. This change does not rotate or revoke any credential.
+`AP_BRIDGE_KEY` remains a Cloudflare Worker secret. The ActivePieces flow definitions contain the matching credential in their HTTP step settings; do not copy it into source code, logs, issue comments, or customer-facing documentation. Rotate it only as a coordinated Worker + ActivePieces change.
 
 ## Pre-deployment security test matrix
 
@@ -52,16 +57,17 @@ Run these against a disposable test database or isolated staging environment; do
 
 | Test | Expected result |
 |---|---|
-| Valid collector token calls `GET /api/collector/context` | 200 with only its organization and collector IDs |
-| Revoked or unknown collector token calls context | 401 |
-| Collector token calls `GET /api/cases` or `/api/records` | 401 |
-| Bridge key missing or incorrect | 401 |
-| Valid bridge key with missing/malformed/inactive organization ID | 401 |
-| Valid bridge key + organization A reads cases/records | Only organization A rows |
-| Valid bridge key + organization A requests a case belonging to B | 404 |
-| Service actor posts to notes or approvals/decision | 403 |
+| Valid collector token + correct bridge key | Service actor bound to that collector's organization |
+| Valid collector token without bridge key | 401 |
+| Incorrect bridge key, even with a valid collector token | 401 |
+| Revoked or unknown collector token | 401 |
+| Collector token used alone on a general data API | 401 |
+| Valid token + bridge key reads cases/records | Only that organization’s rows |
+| Tenant A token requests a case belonging to B | 404 |
+| Service actor reads approval status | 200, organization-scoped |
+| Service actor creates notes or approvals/decision | 403 |
 | Service actor creates a case with an unapproved schema | 403 |
-| Service actor creates a case using `sx_cases_v1` or `sentinelx_cases` | 201 and an Automation audit row |
+| Service actor creates an approved case schema | 201 and an Automation audit row |
 | Normal analyst session reads and writes within its own organization | Existing role rules remain unchanged |
 
-Also verify two organizations can both use the central automation service while every query remains bound to the organization ID returned by the authenticated collector-context call. The platform-wide bridge credential is a trusted-service boundary, not a customer-facing credential.
+The platform-wide bridge credential is a trusted-service boundary, not a customer-facing credential.
