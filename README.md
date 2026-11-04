@@ -56,6 +56,20 @@ The two obsolete Activepieces approval intake/decision flows and the obsolete in
 
 Other Activepieces tables remain as legacy/reference data during the wider transition. The 19 legacy audit rows and 19 incoming-event rows that still carried `ORG-DEFAULT` were normalized to the real organization UUID; a project-wide scan found no remaining `ORG-DEFAULT` values in table records or active flow definitions. D1 is the source of truth for the migrated case, telemetry, event, finding, investigation, timeline, asset, audit and approval paths.
 
+
+## Live event ingestion pipeline
+
+Security telemetry enters one tenant-scoped pipeline:
+- **Host collectors:** `POST /api/collector/events` with `Authorization: Bearer <collector-token>` and JSON `{ "integrationId": "sysmon|suricata|zeek|...", "events": [...] }`.
+- **Webhook/Activepieces:** `POST /api/events/ingest` with `X-SentinelX-Bridge-Key`, `X-SentinelX-Org-Key: <collector-token>`, and JSON `{ "source": "activepieces|wazuh|...", "events": [...] }`. Tenant identity is resolved from the enrolled collector token, never from payload fields.
+- Both paths validate and normalize events, then publish to Cloudflare Queue `sentinelx-events`. A successful HTTP `202` means queued for processing, not yet persisted.
+- The queue consumer writes the normalized event and sanitized raw event to D1 `security_events`. Unique `(org_id,dedup_key)` prevents duplicate delivery from creating duplicate rows.
+- The common schema includes schema version, source, event ID/type, severity, observed/received timestamps, host, source/destination IP, username and message. Raw source data is retained after secret-field scrubbing.
+- Queue delivery retries failures up to five times with delay; exhausted messages are routed to `sentinelx-events-dlq` for inspection/replay. Queue retention is configured by Cloudflare Queue settings.
+- `GET /api/events?limit=100` returns only the authenticated user's organization events.
+
+The Worker owns the queue consumer. The D1 table is created by migration `0004_security_events.sql`; on the currently connected production database this schema was applied and verified. Do not send a tenant/org ID in event payloads to select a tenant.
+
 ## Collector setup
 
 1. In the SentinelX console, open **Integrations → Host Collectors**.
