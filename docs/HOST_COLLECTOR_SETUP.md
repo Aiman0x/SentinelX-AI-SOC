@@ -55,9 +55,11 @@ The Python agent reads optional integration configuration from `GET /api/collect
 ## Start, stop and revoke
 
 - **Start:** run the relevant command in a terminal on the host.
-- **Stop:** press **Ctrl+C** in that terminal.
-- **Revoke:** use the collector's **Revoke** action in the SentinelX GUI. This blocks future API requests from that token, but it does not remotely terminate a process already running on the host.
-- **Restart:** rerun the command with a valid, non-revoked token.
+- **Pause:** click **Pause** beside the collector in Integrations → Host Collectors. The agents check the config endpoint and stop sending health/events on their next poll. The Worker also rejects ingest requests while paused.
+- **Resume:** click **Resume**. The agent resumes on its next config poll.
+- **Stop locally:** press **Ctrl+C** in the terminal. Pause does not terminate the local process.
+- **Revoke:** use the collector's **Revoke** action in the SentinelX GUI. This permanently blocks future API requests from that token.
+- **Restart:** rerun the command with a valid, non-revoked token; a paused collector must also be resumed in the GUI.
 
 The GUI displays the last heartbeat/event time and collector status. A collector with no recent heartbeat may be offline, stopped, or unable to reach the Worker.
 
