@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
-import { loadIntegrations, saveIntegrationConfig, testConnection, queryIntegration } from '../services/integrationsService';
+import { loadIntegrations, saveIntegrationConfig, testConnection, queryIntegration, disconnectIntegration } from '../services/integrationsService';
 import type { Integration, IntegrationField } from '../types/integration';
 import { formatDateTime } from '../utils/formatDate';
 import { isBackendConfigured } from '../services/apiClient';
@@ -31,6 +31,7 @@ export default function Integrations() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [querying, setQuerying] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [queryValues, setQueryValues] = useState<Record<string, Record<string, string>>>({});
   const [queryResults, setQueryResults] = useState<Record<string, string>>({});
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
@@ -51,6 +52,15 @@ export default function Integrations() {
     setTesting(null);
     toast(`${i.name}: ${r.message}`, r.ok ? 'success' : 'warn');
     if (isBackendConfigured) await reload();
+  };
+  const disconnect = async (i: Integration) => {
+    setDisconnecting(i.id);
+    try {
+      await disconnectIntegration(i);
+      toast(`${i.name}: disconnected. Stored connector credentials and health state were removed for this user.`, 'success');
+      await reload();
+    } catch (e) { toast(e instanceof Error ? e.message : 'Could not disconnect connector.', 'warn'); }
+    finally { setDisconnecting(null); }
   };
   const runQuery = async (i: Integration) => {
     setQuerying(i.id);
@@ -95,12 +105,14 @@ export default function Integrations() {
                 <dl className="mt-3 space-y-1.5 border-t border-sx-line pt-3 text-[11px]">
                   <div className="flex justify-between"><dt className="text-sx-mute">Credentials</dt><dd>{i.configured ? <span className="text-sx-warn">Saved · not verified</span> : <span className="text-sx-mute">Not connected</span>}</dd></div>
                   <div className="flex justify-between"><dt className="text-sx-mute">Live test</dt><dd className={i.verified ? 'text-sx-green' : 'text-sx-mute'}>{i.verified ? 'Passed' : 'Not verified'}</dd></div>
+                  {i.capabilities?.length ? <div className="text-[10px] text-sx-mute">Capabilities: {i.capabilities.join(' · ')}</div> : null}
                   <div className="flex justify-between"><dt className="text-sx-mute">Last health check</dt><dd className="mono">{i.lastHealthCheck ? formatDateTime(i.lastHealthCheck) : 'never'}</dd></div>
                   {i.configuredKeys?.length ? <div className="text-[10px] text-sx-mute">Saved fields: {i.configuredKeys.join(', ')}</div> : null}
                 </dl>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" /> Connect / update</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Gateway managed</div>}
-                  <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={!isBackendConfigured || testing === i.id || (!i.configured && i.id !== 'activepieces' && !['sysmon','suricata','zeek'].includes(i.id))}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test connection'}</button>
+                  {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" /> {i.configured ? (i.verified ? 'Update / reconnect' : 'Reconnect') : 'Connect tool'}</button> : <div className="flex flex-1 items-center justify-center rounded border border-sx-line px-2 text-[10px] text-sx-mute">Gateway managed</div>}
+                  <button className="btn btn-gold flex-1" onClick={() => test(i)} disabled={!isBackendConfigured || testing === i.id || (!i.configured && i.id !== 'activepieces' && !['sysmon','suricata','zeek','clamav','yara'].includes(i.id))}><TestTube2 className="h-3.5 w-3.5" /> {testing === i.id ? 'Testing…' : 'Test connection'}</button>
+                  {i.configured && <button className="btn flex-1" onClick={() => void disconnect(i)} disabled={disconnecting === i.id}>{disconnecting === i.id ? 'Disconnecting…' : 'Disconnect'}</button>}
                   {querySchema?.supported && <button className="btn w-full" onClick={() => { setExpandedQuery(expandedQuery === i.id ? null : i.id); setQueryValues(prev => ({ ...prev, [i.id]: prev[i.id] ?? initialQuery(querySchema.fields) })); }}><Search className="h-3.5 w-3.5" /> Query tool</button>}
                 </div>
                 {expandedQuery === i.id && querySchema?.supported && (
