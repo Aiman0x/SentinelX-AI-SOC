@@ -48,12 +48,8 @@ jobs:
           VITE_ENVIRONMENT_LABEL: SENTINELX PRODUCTION
         run: npm run build
 
-      - name: Apply D1 schema migrations
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: f3d939d4d22c2ce55786566917f3f15b
-        run: npx --yes wrangler@4 d1 migrations apply DB --remote --config cloudflare-worker/wrangler.toml
-
+      # D1 schema is applied separately with the scoped Cloudflare connection.
+      # Keep Worker deploy independent until the GitHub token has D1 write scope.
       - name: Deploy GUI assets and API gateway
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
