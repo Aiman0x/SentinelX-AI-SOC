@@ -83,9 +83,7 @@ export function AIProviderSettings() {
       </div>
     </form> : <div className="space-y-2">
       <p className="text-[11px] text-sx-mute">Only an explicitly registered SentinelX platform administrator can change the shared API key. Workspace owners and customer admins can view connection status but cannot replace the platform model.</p>
-      <button className="btn btn-sm" type="button" onClick={test} disabled={!isBackendConfigured || busy || !configured}>{busy ? "Testing…" : "Test model connection"}</button>
-      {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
-      {message && <p role="status" className="text-xs text-sx-gold break-words">{message}</p>}
+      <p className="text-[10px] text-sx-mute">Model connection testing and API-key management are reserved for the platform administrator.</p>
     </div>}
   </section>;
 }
