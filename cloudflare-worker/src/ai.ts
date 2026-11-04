@@ -146,7 +146,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
   const actor = await currentUser(request, env);
   if (!actor) return json({ error: "Authentication required" }, 401);
   if (path === "/api/ai/report" && actor.role === "viewer") return json({ error: "Viewer role is read-only" }, 403);
-  const publicAIRead = (path === "/api/ai/config" && request.method === "GET") || (path === "/api/ai/test" && request.method === "POST");
+  const publicAIRead = path === "/api/ai/config" && request.method === "GET";
   if (!publicAIRead && path !== "/api/ai/analyze" && path !== "/api/ai/agent" && path !== "/api/ai/report" && actor.role !== "owner" && actor.role !== "admin") return json({ error: "Admin permission required" }, 403);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return json({ error: "Encrypted provider storage is not configured." }, 503);
   const key = storageKey(actor.organization_id);
@@ -171,14 +171,22 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
     if (apiKey.length < 20 || apiKey.length > 2048 || !/^sk-or-v1-[A-Za-z0-9_-]+$/.test(apiKey)) return json({ error: "Enter a valid OpenRouter API key (sk-or-v1-...)."}, 400);
     const maxInputTokens = Math.max(1000, Math.min(12000, Number(body.maxInputTokens) || existing?.maxInputTokens || 6000));
     const config: AISettings = { primary: { provider: "openai-compatible", model: OPENROUTER_MODEL, apiKey, baseUrl: OPENROUTER_BASE_URL }, fallbacks: [], maskSensitiveData: true, maxInputTokens };
+    const configAuditId = crypto.randomUUID();
     try {
-      await env.INTEGRATION_CONFIGS.put(key, await seal(config, env.CONFIG_ENCRYPTION_KEY, actor.organization_id));
       await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(), actor.organization_id, actor.id, "Platform Administrator", "platform_ai_model_configured", "openrouter:" + OPENROUTER_MODEL, JSON.stringify({ provider: "OpenRouter", model: OPENROUTER_MODEL, keyUpdated: typeof body.apiKey === "string" && Boolean(body.apiKey.trim()), maxInputTokens }), "Success").run();
+        .bind(configAuditId, actor.organization_id, actor.id, "Platform Administrator", "platform_ai_model_configured", "openrouter:" + OPENROUTER_MODEL, JSON.stringify({ provider: "OpenRouter", model: OPENROUTER_MODEL, keyUpdated: typeof body.apiKey === "string" && Boolean(body.apiKey.trim()), maxInputTokens }), "Started").run();
+      await env.INTEGRATION_CONFIGS.put(key, await seal(config, env.CONFIG_ENCRYPTION_KEY, actor.organization_id));
+      await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+        .bind("Success", JSON.stringify({ provider: "OpenRouter", model: OPENROUTER_MODEL, keyUpdated: typeof body.apiKey === "string" && Boolean(body.apiKey.trim()), maxInputTokens }), configAuditId, actor.organization_id).run();
       return json({ saved: true, configured: true, provider: "OpenRouter", model: OPENROUTER_MODEL, maskSensitiveData: true, maxInputTokens, canManage: true });
-    } catch { return json({ error: "Could not securely save the shared platform AI configuration." }, 500); }
+    } catch {
+      await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+        .bind("Failure", "Platform AI configuration could not be saved or audited.", configAuditId, actor.organization_id).run().catch(() => undefined);
+      return json({ error: "Could not securely save and audit the shared platform AI configuration." }, 503);
+    }
   }
   if (path === "/api/ai/test" && request.method === "POST") {
+    if (!(await isPlatformAdmin(env, actor.id))) return json({ ok: false, message: "Only a SentinelX platform administrator can test the shared model." }, 403);
     const raw = await env.INTEGRATION_CONFIGS.get(key);
     if (!raw) return json({ ok: false, message: "Save an AI provider configuration first." }, 400);
     try {
