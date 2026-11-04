@@ -11,6 +11,7 @@ interface ToolAdapter {
   connect(context: AdapterContext, values: Record<string, string>): Promise<{ saved: boolean; configuredKeys: string[] }>;
   test(context: AdapterContext): Promise<AdapterResult>;
   query(context: AdapterContext, input: Record<string, unknown>): Promise<unknown>;
+  disconnect(context: AdapterContext): Promise<void>;
 }
 const now = () => new Date().toISOString();
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -62,6 +63,22 @@ async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = 10000)
     try { data = raw ? JSON.parse(raw) : null; } catch { data = { message: "Provider returned a non-JSON response." }; }
     return {response,data};
   } finally { clearTimeout(timeout); }
+}
+async function disconnectStored(context: AdapterContext, id: string) {
+  const key = storageKey(context.actor, id);
+  await context.env.INTEGRATION_CONFIGS.delete(key);
+  await context.env.INTEGRATION_CONFIGS.delete(key + ":health");
+  // Host-side non-secret settings are shared with enrolled collectors. Remove
+  // them only when no other user in this organization still has this connector.
+  const orgKey = context.actor.organization_id + ":" + id;
+  const listed = await context.env.INTEGRATION_CONFIGS.list({ prefix: context.actor.organization_id + ":", limit: 1000 });
+  const anotherUserConfigured = listed.keys.some(item =>
+    item.name !== orgKey && item.name.endsWith(":" + id) && !item.name.endsWith(":health")
+  );
+  if (!anotherUserConfigured) {
+    await context.env.INTEGRATION_CONFIGS.delete(orgKey);
+    await context.env.INTEGRATION_CONFIGS.delete(orgKey + ":health");
+  }
 }
 async function saved(context: AdapterContext, id: string) {
   const key = storageKey(context.actor,id);
@@ -135,6 +152,7 @@ const wazuh: ToolAdapter = {
     await context.env.INTEGRATION_CONFIGS.put(key,await seal(merged,context.env.CONFIG_ENCRYPTION_KEY,key));
     return {saved:true,configuredKeys:Object.keys(merged)};
   },
+  async disconnect(context) { await disconnectStored(context, this.id); },
   async test(context) {
     const at=now();
     try {
@@ -197,6 +215,7 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
       await context.env.INTEGRATION_CONFIGS.put(key,await seal({...previous,...values},context.env.CONFIG_ENCRYPTION_KEY,key));
       return {saved:true,configuredKeys:["apiKey"]};
     },
+    async disconnect(context) { await disconnectStored(context, id); },
     async test(context) {
       const at=now();
       try {
@@ -234,8 +253,8 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
     }
   };
 }
-function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:string):ToolAdapter {
-  const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current"};
+function hostAdapter(id:"sysmon"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
+  const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
     id,name,category:id==="sysmon"?"Endpoint":"Network",description,
     schema:{version:"1.0",fields:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped records reported by the enrolled host collector.",fields:[field("limit","Maximum records (1–100)","25")]}},
@@ -251,6 +270,7 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek",name:string,description:strin
       await context.env.INTEGRATION_CONFIGS.put(orgKey,await seal({...orgPrev,...values},context.env.CONFIG_ENCRYPTION_KEY,orgKey));
       return {saved:true,configuredKeys:Object.keys(merged)};
     },
+    async disconnect(context) { await disconnectStored(context, id); },
     async test(context) {
       const raw=await context.env.INTEGRATION_CONFIGS.get(context.actor.organization_id+":"+id+":health");
       if(!raw) {
@@ -278,6 +298,7 @@ const activepieces: ToolAdapter = {
   id:"activepieces",name:"ActivePieces",category:"Orchestration",description:"Connect the SentinelX workflow bridge for event ingestion, triage and automation.",
   schema:{version:"1.0",fields:[],query:{supported:false,description:"Workflow execution remains controlled by SentinelX gateway routes."}},
   async connect() { return {saved:true,configuredKeys:[]}; },
+  async disconnect(context) { await disconnectStored(context, this.id); },
   async test(context) {
     const at=now();
     try {
@@ -308,6 +329,7 @@ const cloudflareResponse: ToolAdapter = {
     await context.env.INTEGRATION_CONFIGS.put(key,await seal({...prev,...values},context.env.CONFIG_ENCRYPTION_KEY,key));
     return {saved:true,configuredKeys:["apiToken","zoneId"]};
   },
+  async disconnect(context) { await disconnectStored(context, this.id); },
   async test(context) {
     const at=now();
     try {
@@ -331,6 +353,8 @@ const adapters: ToolAdapter[] = [
   hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry and driver events delivered by the SentinelX host collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
   hostAdapter("zeek","Zeek","Network connection, DNS, HTTP and TLS metadata via a network sensor collector."),
+  hostAdapter("clamav","ClamAV","Malware scan results and daemon health delivered by the enrolled host collector."),
+  hostAdapter("yara","YARA","YARA rule-match and file-scan results delivered by the enrolled host collector."),
   threatAdapter("virustotal"),threatAdapter("abuseipdb"),threatAdapter("urlscan")
 ];
 
@@ -461,16 +485,31 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
       const health=healthRaw?JSON.parse(healthRaw):null;
       let configuredKeys:string[]=[];
       if(raw) { try { configuredKeys=Object.keys(await unseal(raw,env.CONFIG_ENCRYPTION_KEY,key)); } catch {} }
-      data.push({id:adapter.id,name:adapter.name,category:adapter.category,purpose:adapter.description,description:adapter.description,schema:adapter.schema,fields:adapter.schema.fields,configured:!!raw,configuredKeys,verified:health?.ok===true,state:health?.ok===true?"connected":raw?"disconnected":"not_configured",lastHealthCheck:health?.checkedAt||null,health:health?{ok:health.ok===true,message:health.message,checkedAt:health.checkedAt}:null});
+      const capabilities = ["schema", "connect", "test", "disconnect", ...(adapter.schema.query.supported ? ["query"] : [])];
+      data.push({id:adapter.id,name:adapter.name,category:adapter.category,purpose:adapter.description,description:adapter.description,schema:adapter.schema,fields:adapter.schema.fields,capabilities,configured:!!raw,configuredKeys,verified:health?.ok===true,state:health?.ok===true?"connected":raw?"disconnected":"not_configured",lastHealthCheck:health?.checkedAt||null,health:health?{ok:health.ok===true,message:health.message,checkedAt:health.checkedAt}:null});
     }
     return json({data,registryVersion:"1.0"});
   }
-  const match=path.match(/^\/api\/integrations\/([a-z0-9_-]+)\/(schema|connect|test|query)$/);
+  if(request.method==="GET" && path==="/api/integrations/capabilities") {
+    return json({registryVersion:"1.1",data:adapters.map(adapter=>({
+      id:adapter.id,name:adapter.name,category:adapter.category,
+      capabilities:["schema","connect","test","disconnect",...(adapter.schema.query.supported?["query"]:[])],
+      schema:adapter.schema
+    }))});
+  }
+  const match=path.match(/^\/api\/integrations\/([a-z0-9_-]+)\/(schema|connect|test|query|disconnect)$/);
   if(!match) return json({error:"Unknown integration route"},404);
   const adapter=adapters.find(x=>x.id===match[1]);
   if(!adapter) return json({error:"Unknown connector"},404);
-  if(match[2]==="connect" && actor.role==="viewer") return json({error:"Viewer role cannot save connector credentials."},403);
-  if(match[2]==="schema"&&request.method==="GET") return json({id:adapter.id,schema:adapter.schema});
+  if((match[2]==="connect" || match[2]==="disconnect") && actor.role==="viewer") return json({error:"Viewer role cannot manage connector configuration."},403);
+  if(match[2]==="schema"&&request.method==="GET") return json({id:adapter.id,schema:adapter.schema,capabilities:["schema","connect","test","disconnect",...(adapter.schema.query.supported?["query"]:[])]});
+  if(match[2]==="disconnect"&&request.method==="DELETE") {
+    try { await adapter.disconnect({request,env,actor,values:{}}); }
+    catch(e) { return json({error:e instanceof Error?e.message:"Could not disconnect connector."},503); }
+    try { await audit({request,env,actor,values:{}},"integration_disconnected",adapter.id,"Success"); }
+    catch { return json({error:"Connector was disconnected, but its security audit could not be written. Refresh the integration status before retrying.",disconnected:true},503); }
+    return json({disconnected:true,connectionState:"not_configured"});
+  }
   if(match[2]==="connect"&&request.method==="POST") {
     let body:any; try { body=await request.json(); } catch { return json({error:"Invalid JSON body"},400); }
     if(!body?.values||typeof body.values!=="object"||Array.isArray(body.values)) return json({error:"values object required"},400);
