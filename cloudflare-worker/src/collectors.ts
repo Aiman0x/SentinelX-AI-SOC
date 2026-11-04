@@ -177,7 +177,7 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
       "Notes": "Read-only Windows Security Event ID 4625 collected by SentinelX host collector.",
       "Normalized Event JSON": safePayload,
       "collectorId": collector.id,
-      "integrationId"
+      integrationId
     } : { integrationId, collectorId: collector.id, observedAt, eventId, event: safePayload });
     if (payload.length > 16000) continue;
     const id = crypto.randomUUID();
