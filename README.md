@@ -96,6 +96,21 @@ The feature branch includes a dynamic Connect your tools page backed by the Work
 
 Provider live status requires the user to add their own credentials and pass the real test. Sysmon/Suricata/Zeek require an enrolled collector on the endpoint or network sensor. VirusTotal lookups can contribute queried indicators to its shared dataset; do not submit sensitive or personal indicators, and review its API terms before product use.
 
+
+## Universal BYOT connector framework
+
+The production Worker exposes a versioned connector registry at `GET /api/integrations` and a capability catalog at `GET /api/integrations/capabilities`. Each adapter follows the same lifecycle: schema discovery, connect/update, live test, read-only query when supported, and disconnect. The UI reads the server registry and renders each adapter's fields and capabilities rather than storing provider credentials in browser storage.
+
+Initial connector coverage:
+- **Wazuh:** Manager API authentication, agent inventory and Indexer alert search. Use a trusted HTTPS route (for example Cloudflare Tunnel + Access); do not expose Manager/Indexer ports directly.
+- **VirusTotal / AbuseIPDB:** tenant-user-owned API keys and read-only indicator lookups. VirusTotal queries may contribute indicators to its shared dataset; avoid confidential or personal indicators.
+- **Sysmon / Suricata / Zeek:** collector-reported sensor health and tenant-scoped telemetry queries.
+- **ClamAV / YARA:** collector-reported scanner/rule-engine health and tenant-scoped scan-result queries. These require the relevant tool to be installed on a customer-owned host and an enrolled collector to report its health; SentinelX does not install or execute scanners remotely.
+- **ActivePieces:** gateway-managed workflow bridge; no customer API key is entered in the connector form.
+- **Cloudflare Response:** separately approval-gated action connector; excluded from the read-only AI query catalog.
+
+Connector credentials are encrypted at rest in tenant- and user-scoped KV entries. The browser receives configured field names and health metadata only, never secret values. Reconnect updates the saved configuration; disconnect removes the current user's connector configuration and health state. Organization-shared, non-secret host settings are retained while another organization member still has that connector configured. Viewer users cannot change connector configuration. A saved configuration is not considered connected until its live test passes.
+
 ## BYO-LLM layer
 
 The Worker provides a provider-neutral LLM gateway for OpenAI, Anthropic, Gemini and OpenAI-compatible HTTPS endpoints.
