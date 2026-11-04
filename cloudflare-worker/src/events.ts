@@ -104,9 +104,10 @@ export async function consumeEventBatch(batch:MessageBatch<NormalizedSecurityEve
  for(const message of batch.messages){
   try{
    const e=message.body;if(!e?.organizationId||!e.dedupKey||!e.eventId||!e.source)throw new Error("Malformed queued event.");
-   const inserted=await env.DB.prepare("INSERT INTO security_events(id,org_id,event_id,dedup_key,source,collector_id,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(org_id,dedup_key) DO NOTHING")
+   await env.DB.prepare("INSERT INTO security_events(id,org_id,event_id,dedup_key,source,collector_id,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json,raw_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(org_id,dedup_key) DO NOTHING")
     .bind(crypto.randomUUID(),e.organizationId,e.eventId,e.dedupKey,e.source,e.collectorId,e.eventType,e.severity,e.observedAt,e.receivedAt,e.host,e.sourceIp,e.destinationIp,e.username,e.message,JSON.stringify(e.normalized),JSON.stringify(e.raw)).run();
-   if(inserted.meta.changes>0){const row=await env.DB.prepare("SELECT id FROM security_events WHERE org_id=? AND dedup_key=?").bind(e.organizationId,e.dedupKey).first<{id:string}>();if(row)await evaluateSecurityEvent(env,row.id);}
+   const row=await env.DB.prepare("SELECT id,detection_processed_at FROM security_events WHERE org_id=? AND dedup_key=?").bind(e.organizationId,e.dedupKey).first<{id:string;detection_processed_at:string|null}>();
+   if(row&&!row.detection_processed_at){await evaluateSecurityEvent(env,row.id);await env.DB.prepare("UPDATE security_events SET detection_processed_at=? WHERE id=? AND org_id=? AND detection_processed_at IS NULL").bind(new Date().toISOString(),row.id,e.organizationId).run();}
    message.ack();
   }catch(error){
    console.error("SentinelX event pipeline delivery failed",{messageId:message.id,attempts:message.attempts,error:error instanceof Error?error.message:String(error)});
