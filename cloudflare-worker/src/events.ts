@@ -76,7 +76,8 @@ async function collectorIngest(req:Request,env:EventEnv){
  }catch(e){return json({error:e instanceof Error?e.message:"Could not queue events."},400);}
 }
 async function webhookIngest(req:Request,env:EventEnv){
- if(!env.AP_BRIDGE_KEY||req.headers.get("X-SentinelX-Bridge-Key")!==env.AP_BRIDGE_KEY)return json({error:"Invalid bridge authentication."},401);
+ const bridgeKey=req.headers.get("X-SentinelX-Bridge-Key")||req.headers.get("X-SentinelX-Key")||"";
+ if(!env.AP_BRIDGE_KEY||bridgeKey!==env.AP_BRIDGE_KEY)return json({error:"Invalid bridge authentication."},401);
  const c=await collector(req,env,"X-SentinelX-Org-Key");if(!c)return json({error:"A valid organization collector token is required."},401);
  if(c.is_paused)return json({error:"Collector is paused."},423);
  const raw=await req.text();if(raw.length>524288)return json({error:"Event batch exceeds 512 KB."},413);
