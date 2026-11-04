@@ -24,7 +24,7 @@ async function sameSecret(left: string, right: string): Promise<boolean> {
 }
 async function collectorTokenHash(token: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
-  return btoa(String.fromCharCode(...digest)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
   // ActivePieces must prove both platform identity (bridge key) and tenant identity
