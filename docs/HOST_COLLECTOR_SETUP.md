@@ -1,41 +1,81 @@
-# SentinelX Host Collector
+# SentinelX Host Collectors
 
-The host collector is a customer-installed, read-only agent. It performs local health checks and reports normalized adapter health to the SentinelX Worker over outbound HTTPS. It does not expose local service ports or send raw log contents.
+Host collectors are customer-installed, read-only agents. They use outbound HTTPS only, are scoped to one organization, and authenticate with a one-time collector token. The token is stored in D1 as a SHA-256 hash and can be revoked from Integrations → Host Collectors.
 
 ## Enrollment
-1. Sign in to SentinelX as organization owner/admin.
-2. Open Integrations → Host Collectors → Create collector.
-3. Copy the one-time token and keep it secret.
-4. Install Python 3.10+ on the host and download `scripts/sentinelx_collector.py`.
-5. Run with the deployed Worker URL and token:
-   ```powershell
-   $env:SENTINELX_URL="https://YOUR-SENTINELX-WORKER"
-   $env:SENTINELX_COLLECTOR_TOKEN="ONE_TIME_TOKEN"
-   python .\sentinelx_collector.py --once
-   ```
-   For continuous monitoring omit `--once`. On Linux/macOS use the same environment variables and Python command.
-6. Confirm last-seen time and adapter status in the GUI. Revoke the collector from the GUI if the token is compromised.
 
-## Windows Security Event ID 4625 intake
+1. Sign in to SentinelX as an organization owner/admin.
+2. Open **Integrations → Host Collectors → Create collector**.
+3. Choose a name and platform, then create the collector.
+4. Copy the one-time token immediately. SentinelX does not display it again.
+5. Keep the token in an environment variable or secret manager. Never commit it to source control.
 
-The separate read-only PowerShell prototype sends failed-logon telemetry directly to the Worker; it does not use the legacy ActivePieces webhook header pair.
+## Windows Security Event ID 4625 collector
 
-1. Enroll a Windows collector in Integrations → Host Collectors and copy its one-time token.
-2. Configure `SENTINELX_COLLECTOR_API_URL` as the deployed Worker base URL (for example, `https://your-worker.example.workers.dev`) and `SENTINELX_COLLECTOR_TOKEN` as the issued collector token.
-3. The PowerShell collector sends batches to `POST /api/collector/events` with `Authorization: Bearer <collector-token>` and `integrationId: windows_security`.
-4. The Worker validates the token hash, derives the organization from the enrolled collector row, and stores normalized records as `telemetry_intake` / `collector_events`. The GUI reads these through `GET /api/telemetry`.
-5. Verify the event in Windows Telemetry and verify collector last-seen status. Do not treat a successful response as a full end-to-end pass until both are checked.
+This PowerShell collector reads Windows Security failed-logon events (Event ID 4625) and sends normalized event batches directly to the Worker.
 
-The Windows Security path is implemented in the Worker source but is not yet runtime-tested or deployed. Do not run a collector against production until the Worker deployment is confirmed and an organization admin has intentionally enrolled the collector.
+Open PowerShell as an administrator on the Windows host, download `scripts/SentinelX_Local_Windows_Collector.ps1` from the repository, then run:
+
+```powershell
+$env:SENTINELX_COLLECTOR_API_URL = "https://sentinelx-api-gateway.aiman132046.workers.dev"
+$env:SENTINELX_COLLECTOR_TOKEN = "PASTE_ONE_TIME_COLLECTOR_TOKEN"
+.\SentinelX_Local_Windows_Collector.ps1
+```
+
+For continuous collection every 30 seconds:
+
+```powershell
+.\SentinelX_Local_Windows_Collector.ps1 -Continuous -IntervalSeconds 30
+```
+
+The collector keeps its checkpoint at `%LOCALAPPDATA%\SentinelX\last-security-record-id.txt`. It advances the checkpoint only after the Worker confirms that an event was accepted. Press **Ctrl+C** in that PowerShell window to stop the local process.
+
+The Worker validates the Bearer token, derives the organization from the enrolled collector row, and stores normalized records as `telemetry_intake` / `collector_events`. Windows Event ID is stored as `4625`; the unique Windows record reference is stored separately as Source Event ID.
+
+## Python host-health collector
+
+The standard-library Python agent reports health checks for Sysmon, ClamAV, YARA, Suricata and Zeek. It does not collect raw Windows Security events.
+
+Install Python 3.10+ and download `scripts/sentinelx_collector.py`. In PowerShell:
+
+```powershell
+$env:SENTINELX_URL = "https://sentinelx-api-gateway.aiman132046.workers.dev"
+$env:SENTINELX_COLLECTOR_TOKEN = "PASTE_ONE_TIME_COLLECTOR_TOKEN"
+python .\sentinelx_collector.py --once
+```
+
+For continuous heartbeats every five minutes:
+
+```powershell
+python .\sentinelx_collector.py --interval 300
+```
+
+The Python agent reads optional integration configuration from `GET /api/collector/config` and posts health to `POST /api/collector/heartbeat`. Press **Ctrl+C** to stop it.
+
+## Start, stop and revoke
+
+- **Start:** run the relevant command in a terminal on the host.
+- **Stop:** press **Ctrl+C** in that terminal.
+- **Revoke:** use the collector's **Revoke** action in the SentinelX GUI. This blocks future API requests from that token, but it does not remotely terminate a process already running on the host.
+- **Restart:** rerun the command with a valid, non-revoked token.
+
+The GUI displays the last heartbeat/event time and collector status. A collector with no recent heartbeat may be offline, stopped, or unable to reach the Worker.
+
+## API contract
+
+- Python health agent: `GET /api/collector/config`, `POST /api/collector/heartbeat`.
+- Windows Security agent: `POST /api/collector/events` with `Authorization: Bearer <collector-token>`, `integrationId: windows_security`, and one or more normalized events.
+- GUI reads normalized telemetry from `GET /api/telemetry` using the user's authenticated session.
+- ActivePieces general data API calls require both the tenant collector token in `X-SentinelX-Org-Key` and the platform bridge key in `X-SentinelX-Bridge-Key`. The bridge key is never shared with customers.
+
+The Worker API paths and token validation have passed production smoke tests with synthetic test events. A successful synthetic smoke test does not replace testing on the actual Windows host; verify Security log permissions, the collector's last-seen status, and the resulting telemetry row after the first real run.
 
 ## Current adapter behavior
+
 - Sysmon: Windows service and Event Log channel readability.
 - ClamAV: local executable and version check.
 - YARA: local executable and version check.
-- Suricata: executable/build check plus freshness of default `/var/log/suricata/eve.json`.
+- Suricata: executable/build check plus freshness of the configured/default `eve.json`.
 - Zeek: executable/version check plus freshness of common `conn.log` paths.
 
-These are host-health checks, not proof of detection efficacy or end-to-end alert ingestion. Suricata/Zeek custom log paths and actual telemetry-to-ActivePieces forwarding are subsequent adapter work. The collector never scans arbitrary files, quarantines files, changes firewall rules, or terminates processes.
-
-## Security
-Tokens are shown once, hashed in D1, scoped to one organization and collector, and can be revoked. Keep tokens in environment variables or a secret manager, not in source control. Use HTTPS only. Heartbeat payloads contain tool status/check metadata, not raw security events.
+These are host-health checks, not proof of detection efficacy. Suricata/Zeek custom log paths and full telemetry-to-investigation evaluation remain separate integration work. The collector never scans arbitrary files, quarantines files, changes firewall rules, or terminates processes.
