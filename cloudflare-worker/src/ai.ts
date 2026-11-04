@@ -30,7 +30,7 @@ async function keyFor(secret: string, usage: KeyUsage[]) {
   return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, usage);
 }
 const PLATFORM_AI_KEY = "platform:ai-provider:v2";
-const OPENROUTER_MODEL = "qwen/qwen3-30b-a3b-instruct-2507";
+const OPENROUTER_MODEL = "nvidia/nemotron-3-ultra:free";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 function storageKey(_org: string) { return PLATFORM_AI_KEY; }
 async function isPlatformAdmin(env: AIEnv, userId: string): Promise<boolean> {
