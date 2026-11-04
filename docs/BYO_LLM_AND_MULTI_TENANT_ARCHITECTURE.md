@@ -8,12 +8,12 @@ SentinelX has one centrally managed defensive SOC agent and one fixed model for 
 
 - **BYO-Security-Tools:** each workspace/user connects the tools they own or are authorized to access. The agent sees only the authenticated user's connected, query-capable tools.
 - **Fixed SentinelX Agent:** `SentinelX SOC Investigator v1` has centrally managed identity, system policy, planning loop and tool-selection guardrails.
-- **Fixed LLM:** OpenRouter model `qwen/qwen3-30b-a3b-instruct-2507`. Customers cannot select providers, models, endpoints, fallbacks or agent profiles.
+- **Fixed LLM:** OpenRouter model `nvidia/nemotron-3-ultra:free`. Customers cannot select providers, models, endpoints, fallbacks or agent profiles.
 - **Platform API key:** a SentinelX platform administrator configures one shared OpenRouter API key in Settings → Integration settings. The key is encrypted at rest using AES-GCM and is never returned to the browser.
 - **Platform administrator authorization:** D1 `platform_admins` allowlist. Migration `0007_platform_admins.sql` bootstraps the existing owner(s) at migration time; future tenant owners are not automatically platform administrators.
 - **No fake verification:** model configured, provider test passed, agent run completed and connected tool verified are separate states.
 
-The selected Qwen model is not free on OpenRouter's current catalog. All model usage is billed to the shared SentinelX platform account. Rate limits, quotas and cost monitoring must therefore be managed centrally.
+The selected NVIDIA Nemotron 3 Ultra `:free` variant is listed at $0 input/output token pricing on OpenRouter. Free-tier capacity, rate limits and availability can change. All requests use the shared SentinelX platform API key.
 
 ## Target architecture
 
@@ -40,7 +40,7 @@ ActivePieces remains the workflow orchestration engine. It does not control mode
 ## Fixed model configuration
 
 - Provider endpoint: `https://openrouter.ai/api/v1/chat/completions`
-- Model ID: `qwen/qwen3-30b-a3b-instruct-2507`
+- Model ID: `nvidia/nemotron-3-ultra:free`
 - Admin UI accepts only the OpenRouter API key and the platform input-token budget.
 - Model ID, endpoint, provider, agent identity and policy are constants enforced server-side.
 - The platform API key is stored in the encrypted KV entry `platform:ai-provider:v2`, with platform-wide AES-GCM associated data.
