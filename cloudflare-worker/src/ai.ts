@@ -37,13 +37,13 @@ async function isPlatformAdmin(env: AIEnv, userId: string): Promise<boolean> {
   const row = await env.DB.prepare("SELECT user_id FROM platform_admins WHERE user_id=? LIMIT 1").bind(userId).first<{user_id:string}>();
   return Boolean(row);
 }
-async function seal(config: AISettings, secret: string, org: string) {
+async function seal(config: AISettings, secret: string, _org: string) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await keyFor(secret, ["encrypt"]);
   const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(PLATFORM_AI_KEY) }, key, enc.encode(JSON.stringify(config)));
   return JSON.stringify({ v: 1, iv: bytesToB64(iv), data: bytesToB64(new Uint8Array(data)) });
 }
-async function unseal(raw: string, secret: string, org: string): Promise<AISettings> {
+async function unseal(raw: string, secret: string, _org: string): Promise<AISettings> {
   const envelope = JSON.parse(raw) as { v: number; iv: string; data: string };
   if (envelope.v !== 1) throw new Error("Unsupported encrypted configuration version");
   const key = await keyFor(secret, ["decrypt"]);
