@@ -29,16 +29,17 @@ function sigmaSelection(yaml:string,event:Record<string,unknown>):boolean{
   if(/^detection:\s*$/.test(line)){inDetection=true;continue;}if(!inDetection)continue;
   const top=line.match(/^  ([A-Za-z0-9_* -]+):\s*(.*)$/);
   if(top){section=top[1].trim();if(section==="condition"){condition=top[2].trim().replace(/^['"]|['"]$/g,"");continue;}selection[section]=selection[section]||{};continue;}
-  const field=line.match(/^    ([A-Za-z0-9_.-]+):\s*(.*)$/);
+  const field=line.match(/^    ([A-Za-z0-9_.| -]+):\s*(.*)$/);
   if(field&&section){const rawField=field[1],parts=rawField.split("|"),modifier=parts.length>1?parts[parts.length-1]:((rawField.match(/_(contains|startswith|endswith)$/)||[])[1]||""),baseField=parts.length>1?parts.slice(0,-1).join("|"):modifier?rawField.slice(0,rawField.lastIndexOf("_")):rawField,key=baseField.toLowerCase();const value=parseScalar(field[2]);selection[section][key]=modifier?{[modifier]:value}:value;continue;}
   const list=line.match(/^      -\s*(.*)$/);if(list&&section){const keys=Object.keys(selection[section]);const key=keys[keys.length-1];if(key)selection[section][key]=[...(Array.isArray(selection[section][key])?selection[section][key] as unknown[]:[selection[section][key]]),parseScalar(list[1])];}
  }
  const flat=flatten(event);const normalized:Record<string,unknown>={};for(const [k,v] of Object.entries(flat))normalized[k.toLowerCase()]=v;
  const names=Object.keys(selection);if(!names.length||!condition)return false;
  const evalSel=(n:string)=>Object.entries(selection[n]).every(([k,v])=>matchValue(normalized[k]??normalized[k.split(".").pop()||k],v));
- const cond=condition.toLowerCase().replace(/[()]/g," ").replace(/\\s+/g," ").trim();
+ const cond=condition.toLowerCase().replace(/[()]/g," ").replace(/\s+/g," ").trim();
  if(cond==="all of them")return names.every(evalSel);
  if(cond==="1 of them")return names.some(evalSel);
+ const wildcard=cond.match(/^(all|1) of ([a-z0-9_*]+)$/);if(wildcard){const matching=names.filter(n=>wildcard[2].endsWith("*")?n.startsWith(wildcard[2].slice(0,-1)):n===wildcard[2]);return wildcard[1]==="all"?matching.length>0&&matching.every(evalSel):matching.some(evalSel);}
  const clauses=cond.split(/\s+(and|or)\s+/);let value=evalSel(clauses[0]);for(let i=1;i<clauses.length;i+=2){const next=evalSel(clauses[i+1]);value=clauses[i]==="and"?(value&&next):(value||next);}return value;
 }
 function parseScalar(v:string):unknown{const s=v.trim();if((s.startsWith('"')&&s.endsWith('"'))||(s.startsWith("'")&&s.endsWith("'")))return s.slice(1,-1);if(s==="true")return true;if(s==="false")return false;if(s==="null")return null;if(s.startsWith("[")&&s.endsWith("]"))return s.slice(1,-1).split(",").map(x=>parseScalar(x));return s;}
@@ -52,7 +53,7 @@ function mitreFor(e:EventRow):Array<{id:string;name:string}>{
  return out;
 }
 function sigmaMitre(yaml:string):Array<{id:string;name:string}>{
- const ids=[...new Set((yaml.match(/attack\\.t\\d{4}(?:\\.\\d{3})?/gi)||[]).map(x=>x.split(".")[1].toUpperCase()))];
+ const ids=[...new Set((yaml.match(/attack\.t\d{4}(?:\.\d{3})?/gi)||[]).map(x=>x.split(".")[1].toUpperCase()))];
  const names:Record<string,string>={T1110:"Brute Force",T1078:"Valid Accounts",T1059:"Command and Scripting Interpreter",T1053:"Scheduled Task/Job",T1021:"Remote Services",T1071:"Application Layer Protocol",T1547:"Boot or Logon Autostart Execution"};
  return ids.slice(0,20).map(id=>({id,name:names[id]||"MITRE ATT&CK technique"}));
 }
