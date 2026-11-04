@@ -194,11 +194,13 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
     try { body = await request.json() as typeof body; } catch { return json({ error: "Invalid JSON." }, 400); }
     if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 12000) return json({ error: "Prompt must be 1–12000 characters." }, 400);
     const raw = await env.INTEGRATION_CONFIGS.get(key);
-    if (!raw) return json({ error: "Configure an AI provider in Settings first." }, 400);
+    if (!raw) return json({ error: "The SentinelX platform AI model has not been configured by a platform administrator yet." }, 503);
+    let activeRunAuditId: string | null = null;
     try {
       const config = await unseal(raw, env.CONFIG_ENCRYPTION_KEY, actor.organization_id);
       const catalogResult = await getAgentToolCatalog(request, env as any);
       const runAuditId = crypto.randomUUID();
+      activeRunAuditId = runAuditId;
       await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
         .bind(runAuditId, actor.organization_id, actor.id, "AI Agent", "agent_investigation_started", runAuditId, JSON.stringify({ promptLength: body.prompt.length, fixedAgent: "SentinelX SOC Investigator v1", model: OPENROUTER_MODEL, maxToolCalls: 5, availableToolCount: catalogResult.tools.length, accessMode: "read_only" }), "Started").run();
       const catalog = catalogResult.tools;
@@ -274,7 +276,13 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
         .bind("Success", JSON.stringify({ fixedAgent: "SentinelX SOC Investigator v1", model: OPENROUTER_MODEL, toolCalls: evidence.length, maxToolCalls: maxSteps, conclusionLength: conclusion.length, accessMode: "read_only" }), runAuditId, actor.organization_id).run();
       return json({ plan, steps: evidence, conclusion, provider: selectedProvider, model: selectedModel, agent: "SentinelX SOC Investigator v1", toolCalls: evidence.length, maxSteps, accessMode: "read_only", audit: "Investigation and every tool call have persisted audit records.", attemptedFallbacks, estimatedInputTokens, inputTokenBudget: config.maxInputTokens, inputTruncated, generatedAt: new Date().toISOString() });
-    } catch (error) { return json({ error: error instanceof Error ? error.message : "Agent investigation failed." }, 502); }
+    } catch (error) {
+      if (activeRunAuditId) {
+        await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+          .bind("Failure", JSON.stringify({ fixedAgent: "SentinelX SOC Investigator v1", model: OPENROUTER_MODEL, error: error instanceof Error ? error.message.slice(0, 300) : "Agent investigation failed" }), activeRunAuditId, actor.organization_id).run().catch(() => undefined);
+      }
+      return json({ error: error instanceof Error ? error.message : "Agent investigation failed." }, 502);
+    }
   }
   if (path === "/api/ai/report" && request.method === "POST") {
     let body: { period?: unknown; caseId?: unknown };
