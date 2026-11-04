@@ -22,14 +22,25 @@ async function sameSecret(left: string, right: string): Promise<boolean> {
   for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
   return diff === 0;
 }
+async function collectorTokenHash(token: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+  return btoa(String.fromCharCode(...digest)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+}
 async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
-  // ActivePieces is a trusted platform service. Its bridge credential is paired
-  // with an organization ID resolved from a collector token by /api/collector/context.
-  // Collector tokens themselves never authenticate general data APIs.
-  // Never forward collector credentials to general data APIs, even if another
-  // authentication header is also present.
-  if (request.headers.has("X-SentinelX-Org-Key")) return null;
+  // ActivePieces must prove both platform identity (bridge key) and tenant identity
+  // (a non-revoked collector token). The collector token alone is never sufficient.
   const bridgeKey = request.headers.get("X-SentinelX-Bridge-Key") || "";
+  const orgToken = request.headers.get("X-SentinelX-Org-Key") || "";
+  if (orgToken) {
+    if (!env.AP_BRIDGE_KEY || !(await sameSecret(bridgeKey, env.AP_BRIDGE_KEY))) return null;
+    const tenant = await env.DB.prepare("SELECT org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+      .bind(await collectorTokenHash(orgToken)).first<{ org_id: string }>();
+    if (!tenant) return null;
+    const organization = await env.DB.prepare("SELECT id FROM organizations WHERE id=? AND is_active=1")
+      .bind(tenant.org_id).first<{ id: string }>();
+    if (!organization) return null;
+    return { id: "activepieces", role: "service", organization_id: organization.id, email: "activepieces@sentinelx.internal", display_name: "ActivePieces" };
+  }
   const orgId = request.headers.get("X-SentinelX-Org-ID") || "";
   if (bridgeKey || orgId) {
     if (!env.AP_BRIDGE_KEY || !orgId || !/^[0-9a-f-]{36}$/i.test(orgId) ||
