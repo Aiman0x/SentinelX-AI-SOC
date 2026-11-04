@@ -24,16 +24,22 @@ function matchValue(actual:unknown,expected:unknown):boolean{
  return String(actual??"").toLowerCase()===String(expected??"").toLowerCase();
 }
 function sigmaSelection(yaml:string,event:Record<string,unknown>):boolean{
- // Deliberately supports a safe Sigma subset (field equality, lists, contains/startswith/endswith and all/or selection conditions).
- const lines=yaml.split(/\r?\n/);let section="",selection:Record<string,unknown>={},condition="";let currentKey="";
- for(const raw of lines){const line=raw.replace(/\s+#.*$/,"");if(!line.trim()||/^\s*title:|^\s*id:|^\s*status:|^\s*description:|^\s*logsource:|^\s*level:|^\s*tags:/.test(line))continue;
-  if(/^detection:\s*$/.test(line)){section="detection";continue;}if(section!=="detection")continue;
-  const m=line.match(/^\s{2}([A-Za-z0-9_* -]+):\s*(.*)$/);if(m){currentKey=m[1].trim();if(currentKey==="condition"){condition=m[2].trim().replace(/^['"]|['"]$/g,"");continue;}if(m[2])selection[currentKey]=parseScalar(m[2]);else selection[currentKey]={};continue;}
-  const item=line.match(/^\s{4}([A-Za-z0-9_.-]+):\s*(.*)$/);if(item&&currentKey){const field=item[1],rawValue=item[2];const op=field.match(/_(contains|startswith|endswith)$/);const key=op?field.slice(0,op.index):field;const value=parseScalar(rawValue);const target=selection[currentKey] as Record<string,unknown>;target[key]=op?{[op[1]]:value}:value;continue;}
-  const list=line.match(/^\s{4}-\s*(.*)$/);if(list&&currentKey){const obj=selection[currentKey] as Record<string,unknown>;const prev=Object.keys(obj).at(-1);if(prev)obj[prev]=[...(Array.isArray(obj[prev])?obj[prev] as unknown[]:[obj[prev]]),parseScalar(list[1])];}
+ const lines=yaml.split(/\r?\n/);let inDetection=false,section="",selection:Record<string,Record<string,unknown>>={},condition="";
+ for(const raw of lines){const line=raw.replace(/\s+#.*$/,"");if(!line.trim())continue;
+  if(/^detection:\s*$/.test(line)){inDetection=true;continue;}if(!inDetection)continue;
+  const top=line.match(/^  ([A-Za-z0-9_* -]+):\s*(.*)$/);
+  if(top){section=top[1].trim();if(section==="condition"){condition=top[2].trim().replace(/^['"]|['"]$/g,"");continue;}selection[section]=selection[section]||{};continue;}
+  const field=line.match(/^    ([A-Za-z0-9_.-]+):\s*(.*)$/);
+  if(field&&section){const rawField=field[1],op=rawField.match(/_(contains|startswith|endswith)$/),key=(op?rawField.slice(0,op.index):rawField).toLowerCase();const value=parseScalar(field[2]);selection[section][key]=op?{[op[1]]:value}:value;continue;}
+  const list=line.match(/^      -\s*(.*)$/);if(list&&section){const keys=Object.keys(selection[section]);const key=keys[keys.length-1];if(key)selection[section][key]=[...(Array.isArray(selection[section][key])?selection[section][key] as unknown[]:[selection[section][key]]),parseScalar(list[1])];}
  }
- const flat=flatten(event);const names=Object.keys(selection).filter(k=>k!=="condition");const evalSel=(n:string)=>{const fields=selection[n] as Record<string,unknown>;return Object.entries(fields).every(([k,v])=>matchValue(flat[k]??event[k],v));};
- if(!names.length)return false;const cond=condition.toLowerCase();if(cond.includes(" or "))return names.filter(n=>cond.includes(n.toLowerCase())).some(evalSel);return names.filter(n=>cond.includes(n.toLowerCase())).every(evalSel);
+ const flat=flatten(event);const normalized:Record<string,unknown>={};for(const [k,v] of Object.entries(flat))normalized[k.toLowerCase()]=v;
+ const names=Object.keys(selection);if(!names.length||!condition)return false;
+ const evalSel=(n:string)=>Object.entries(selection[n]).every(([k,v])=>matchValue(normalized[k]??normalized[k.split(".").pop()||k],v));
+ const cond=condition.toLowerCase().replace(/[()]/g," ").replace(/\\s+/g," ").trim();
+ if(cond==="all of them")return names.every(evalSel);
+ if(cond==="1 of them")return names.some(evalSel);
+ const clauses=cond.split(/\s+(and|or)\s+/);let value=evalSel(clauses[0]);for(let i=1;i<clauses.length;i+=2){const next=evalSel(clauses[i+1]);value=clauses[i]==="and"?(value&&next):(value||next);}return value;
 }
 function parseScalar(v:string):unknown{const s=v.trim();if((s.startsWith('"')&&s.endsWith('"'))||(s.startsWith("'")&&s.endsWith("'")))return s.slice(1,-1);if(s==="true")return true;if(s==="false")return false;if(s==="null")return null;if(s.startsWith("[")&&s.endsWith("]"))return s.slice(1,-1).split(",").map(x=>parseScalar(x));return s;}
 function mitreFor(e:EventRow):Array<{id:string;name:string}>{
