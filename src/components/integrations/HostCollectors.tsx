@@ -1,142 +1,58 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Copy, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
-import { Panel } from '../common/Controls';
-import { StatusBadge } from '../common/StatusBadge';
+import { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost, isBackendConfigured } from '../../services/apiClient';
 
-type Collector = {
-  id: string;
-  name: string;
-  platform: string;
-  createdAt: string;
-  lastSeenAt: string | null;
-  status: 'pending' | 'online' | 'stale' | 'revoked' | string;
-};
-type CollectorList = { collectors: Collector[] };
-type CreateResult = { created: boolean; collector: Collector; token: string; warning: string };
-
+type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'revoked' };
 export function HostCollectors() {
-  const [collectors, setCollectors] = useState<Collector[]>([]);
-  const [name, setName] = useState('');
+  const [items, setItems] = useState<Collector[]>([]);
+  const [name, setName] = useState('My security host');
   const [platform, setPlatform] = useState('windows');
-  const [loading, setLoading] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
   const [token, setToken] = useState('');
-  const [copyState, setCopyState] = useState('');
-
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const load = async () => {
     if (!isBackendConfigured) return;
-    setLoading(true);
-    setError('');
-    try {
-      const result = await apiGet<CollectorList>('/api/collectors');
-      setCollectors(result.collectors ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load host collectors.');
-    } finally {
-      setLoading(false);
-    }
+    try { const data = await apiGet<{ collectors: Collector[] }>('/api/collectors'); setItems(data.collectors || []); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not load collectors.'); }
   };
-
   useEffect(() => { void load(); }, []);
-
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    if (name.trim().length < 2) { setError('Enter a collector name with at least 2 characters.'); return; }
-    setCreating(true);
-    setError('');
-    setToken('');
+  const create = async () => {
+    setBusy(true); setError(''); setToken('');
     try {
-      const result = await apiPost<CreateResult>('/api/collectors', { name: name.trim(), platform });
-      setToken(result.token);
-      setName('');
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create collector.');
-    } finally {
-      setCreating(false);
-    }
+      const data = await apiPost<{ token: string }>('/api/collectors', { name, platform });
+      setToken(data.token); await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create collector.'); }
+    finally { setBusy(false); }
   };
-
-  const revoke = async (collector: Collector) => {
-    if (!window.confirm(`Revoke collector "${collector.name}"? Its token will stop working immediately.`)) return;
-    setError('');
-    try {
-      await apiDelete<{ revoked: boolean }>(`/api/collectors/${collector.id}`);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not revoke collector.');
-    }
+  const revoke = async (id: string) => {
+    try { await apiDelete('/api/collectors/' + id); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke collector.'); }
   };
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopyState('Copied');
-    } catch {
-      setCopyState('Select and copy the token manually.');
-    }
-  };
-
-  if (!isBackendConfigured) {
-    return (
-      <Panel bodyClass="p-4" className="mb-4">
-        <div className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-sx-gold" /> Host collectors</div>
-        <p className="mt-2 text-xs text-sx-mute">Connect the authenticated SentinelX backend to enroll tenant-scoped Windows, Linux, or macOS collectors.</p>
-      </Panel>
-    );
-  }
-
-  return (
-    <Panel bodyClass="p-4" className="mb-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-sx-gold" /> Host collectors</div>
-          <p className="mt-1 text-xs text-sx-mute">Each collector gets a unique organization-scoped token. Tokens are shown only once.</p>
-        </div>
-        <button className="btn" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+  return <section className="panel mb-5 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h2 className="text-sm font-semibold">Host Collectors</h2><p className="mt-1 text-xs text-sx-mute">Enroll customer-owned Windows/Linux hosts. The collector performs read-only checks and sends health over outbound HTTPS.</p></div>
+      <span className="rounded border border-sx-gold/30 px-2 py-1 text-[10px] text-sx-gold">Tenant-scoped credentials</span>
+    </div>
+    {!isBackendConfigured ? <p className="mt-3 text-xs text-sx-warn">Connect the SentinelX backend to enroll collectors.</p> : <>
+      <div className="mt-3 grid gap-2 md:grid-cols-[1fr_150px_auto]">
+        <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="Collector name" aria-label="Collector name" />
+        <select className="input" value={platform} onChange={e=>setPlatform(e.target.value)} aria-label="Collector platform"><option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option><option value="other">Other</option></select>
+        <button className="btn btn-primary" disabled={busy || name.trim().length<2} onClick={()=>void create()}>{busy ? 'Creating…' : 'Create collector'}</button>
       </div>
-
-      <form onSubmit={create} className="mt-4 grid gap-2 sm:grid-cols-[1fr_150px_auto]">
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Collector name (e.g. Aiman-Windows-01)" maxLength={80} />
-        <select className="input" value={platform} onChange={(e) => setPlatform(e.target.value)}>
-          <option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option><option value="other">Other</option>
-        </select>
-        <button className="btn btn-primary" type="submit" disabled={creating}><Plus className="h-3.5 w-3.5" /> {creating ? 'Creating…' : 'Create collector'}</button>
-      </form>
-
-      {error && <p className="mt-3 rounded border border-sx-red/30 bg-sx-red/5 p-2 text-xs text-sx-red">{error}</p>}
-
-      {token && (
-        <div className="mt-4 rounded border border-sx-gold/35 bg-sx-gold/5 p-3">
-          <div className="text-xs font-semibold text-sx-gold">New collector token — copy it now</div>
-          <code className="mt-2 block break-all rounded bg-sx-bg p-2 text-[11px] text-sx-text">{token}</code>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button type="button" className="btn btn-gold" onClick={() => void copy()}><Copy className="h-3.5 w-3.5" /> Copy token</button>
-            <span className="text-[11px] text-sx-mute">{copyState || 'It cannot be retrieved after you leave this screen.'}</span>
-          </div>
-          <p className="mt-3 text-[11px] text-sx-mute">For the Windows Security collector, set <code>SENTINELX_COLLECTOR_API_URL</code> to your deployed Worker base URL and <code>SENTINELX_COLLECTOR_TOKEN</code> to this token. The collector sends events to <code>POST /api/collector/events</code> using <code>Authorization: Bearer</code>. Never use this token as an ActivePieces bridge key.</p>
-        </div>
-      )}
-
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[540px] text-left text-xs">
-          <thead className="border-b border-sx-line text-sx-mute"><tr><th className="py-2">Collector</th><th>Platform</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
-          <tbody>
-            {collectors.map((collector) => (
-              <tr key={collector.id} className="border-b border-sx-line/70">
-                <td className="py-2 font-medium">{collector.name}</td>
-                <td className="text-sx-mute">{collector.platform}</td>
-                <td><StatusBadge value={collector.status} /></td>
-                <td className="text-sx-mute">{collector.lastSeenAt ? new Date(collector.lastSeenAt).toLocaleString() : 'Never'}</td>
-                <td className="text-right">{collector.status !== 'revoked' && <button type="button" className="btn btn-danger" onClick={() => void revoke(collector)}><Trash2 className="h-3 w-3" /> Revoke</button>}</td>
-              </tr>
-            ))}
-            {!collectors.length && <tr><td colSpan={5} className="py-4 text-center text-sx-mute">{loading ? 'Loading collectors…' : 'No host collectors enrolled.'}</td></tr>}
-          </tbody>
-        </table>
+      {token && <div className="mt-3 rounded border border-sx-gold/40 bg-sx-gold/5 p-3">
+        <p className="text-xs font-semibold text-sx-gold">One-time collector token — copy it now</p>
+        <code className="mt-2 block break-all text-xs">{token}</code>
+        <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(token)}>Copy token</button>
+        <p className="mt-2 text-[10px] text-sx-mute">Token is shown only once. Store it in an environment variable; never commit it to source control.</p>
+      </div>}
+      {error && <p className="mt-2 text-xs text-sx-warn">{error}</p>}
+      <div className="mt-4 space-y-2">
+        {items.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-sx-line bg-sx-bg p-2 text-xs">
+          <div><span className="font-medium">{item.name}</span><span className="ml-2 text-sx-mute">{item.platform}</span><div className="mt-1 text-[10px] text-sx-mute">Last heartbeat: {item.lastSeenAt ? new Date(item.lastSeenAt).toLocaleString() : 'Never'}</div></div>
+          <div className="flex items-center gap-2"><span className={item.status==='online'?'text-sx-green':item.status==='revoked'?'text-sx-red':'text-sx-warn'}>{item.status}</span>{item.status!=='revoked' && <button className="btn" onClick={()=>void revoke(item.id)}>Revoke</button>}</div>
+        </div>)}
+        {!items.length && <p className="text-xs text-sx-mute">No collectors enrolled yet.</p>}
       </div>
-    </Panel>
-  );
+      <p className="mt-3 text-[10px] text-sx-mute">Download <code>scripts/sentinelx_collector.py</code> from the SentinelX repository. Setup guide: <code>docs/HOST_COLLECTOR_SETUP.md</code>.</p>
+    </>}
+  </section>;
 }
