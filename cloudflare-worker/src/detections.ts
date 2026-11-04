@@ -30,7 +30,7 @@ function sigmaSelection(yaml:string,event:Record<string,unknown>):boolean{
   const top=line.match(/^  ([A-Za-z0-9_* -]+):\s*(.*)$/);
   if(top){section=top[1].trim();if(section==="condition"){condition=top[2].trim().replace(/^['"]|['"]$/g,"");continue;}selection[section]=selection[section]||{};continue;}
   const field=line.match(/^    ([A-Za-z0-9_.-]+):\s*(.*)$/);
-  if(field&&section){const rawField=field[1],op=rawField.match(/_(contains|startswith|endswith)$/),key=(op?rawField.slice(0,op.index):rawField).toLowerCase();const value=parseScalar(field[2]);selection[section][key]=op?{[op[1]]:value}:value;continue;}
+  if(field&&section){const rawField=field[1],parts=rawField.split("|"),modifier=parts.length>1?parts[parts.length-1]:((rawField.match(/_(contains|startswith|endswith)$/)||[])[1]||""),baseField=parts.length>1?parts.slice(0,-1).join("|"):modifier?rawField.slice(0,rawField.lastIndexOf("_")):rawField,key=baseField.toLowerCase();const value=parseScalar(field[2]);selection[section][key]=modifier?{[modifier]:value}:value;continue;}
   const list=line.match(/^      -\s*(.*)$/);if(list&&section){const keys=Object.keys(selection[section]);const key=keys[keys.length-1];if(key)selection[section][key]=[...(Array.isArray(selection[section][key])?selection[section][key] as unknown[]:[selection[section][key]]),parseScalar(list[1])];}
  }
  const flat=flatten(event);const normalized:Record<string,unknown>={};for(const [k,v] of Object.entries(flat))normalized[k.toLowerCase()]=v;
@@ -50,6 +50,11 @@ function mitreFor(e:EventRow):Array<{id:string;name:string}>{
  if(/scheduled.?task|registry.?run|persistence|service.?install/.test(t))out.push({id:"T1053",name:"Scheduled Task/Job"});
  if(/dns|outbound|network.?connection|beacon/.test(t))out.push({id:"T1071",name:"Application Layer Protocol"});
  return out;
+}
+function sigmaMitre(yaml:string):Array<{id:string;name:string}>{
+ const ids=[...new Set((yaml.match(/attack\\.t\\d{4}(?:\\.\\d{3})?/gi)||[]).map(x=>x.split(".")[1].toUpperCase()))];
+ const names:Record<string,string>={T1110:"Brute Force",T1078:"Valid Accounts",T1059:"Command and Scripting Interpreter",T1053:"Scheduled Task/Job",T1021:"Remote Services",T1071:"Application Layer Protocol",T1547:"Boot or Logon Autostart Execution"};
+ return ids.slice(0,20).map(id=>({id,name:names[id]||"MITRE ATT&CK technique"}));
 }
 function incidentFingerprint(org:string,rule:string,e:EventRow){return [org,rule,(e.host||"").toLowerCase(),(e.username||"").toLowerCase(),(e.source_ip||"").toLowerCase()].join("|");}
 async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:string;title:string;description:string;severity:Severity;confidence:number;mitre:Array<{id:string;name:string}>}>>{
