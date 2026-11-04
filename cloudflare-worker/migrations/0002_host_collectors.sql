@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS host_collectors (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   last_seen_at TEXT,
   revoked_at TEXT,
+  is_paused INTEGER NOT NULL DEFAULT 0 CHECK (is_paused IN (0,1)),
   last_ip_hash TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_host_collectors_org ON host_collectors(org_id, created_at DESC);
