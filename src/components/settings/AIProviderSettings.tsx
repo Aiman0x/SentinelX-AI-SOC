@@ -10,7 +10,7 @@ type ConfigResponse = {
   maxInputTokens?: number;
 };
 
-const FIXED_MODEL = "qwen/qwen3-30b-a3b-instruct-2507";
+const FIXED_MODEL = "nvidia/nemotron-3-ultra:free";
 
 export function AIProviderSettings() {
   const [apiKey, setApiKey] = useState("");
@@ -64,7 +64,7 @@ export function AIProviderSettings() {
     <div className="rounded-lg border border-sx-line p-3 space-y-1">
       <div className="text-xs text-sx-mute">Fixed model</div>
       <div className="mono break-all text-sm text-sx-ink">{FIXED_MODEL}</div>
-      <div className="text-[10px] text-sx-mute">Provider: OpenRouter · Shared platform connection · Read-only agent tools</div>
+      <div className="text-[10px] text-sx-mute">Provider: OpenRouter · Free model · Shared platform connection · Read-only agent tools</div>
       <div className="text-[10px] text-sx-mute">{configured ? "Platform model API key is configured." : "Platform model API key is not configured yet."}</div>
     </div>
     {canManage ? <form onSubmit={save} className="space-y-3">
@@ -74,7 +74,7 @@ export function AIProviderSettings() {
       <label className="block text-xs text-sx-mute">Maximum evidence input budget (approx. tokens)
         <input className="input mt-1" type="number" min={1000} max={12000} step={500} value={maxInputTokens} onChange={e=>setMaxInputTokens(Math.max(1000,Math.min(12000,Number(e.target.value)||1000)))} disabled={busy}/>
       </label>
-      <p className="text-[10px] text-sx-mute">API key is encrypted server-side using AES-GCM. Sensitive evidence masking is always enabled. The model and agent identity are fixed in the backend.</p>
+      <p className="text-[10px] text-sx-mute">OpenRouter free-tier model; usage is not billed, but free-tier availability and rate limits apply. API key is encrypted server-side using AES-GCM. Sensitive evidence masking is always enabled. The model and agent identity are fixed in the backend.</p>
       {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
       {message && <p role="status" className="text-xs text-sx-gold break-words">{message}</p>}
       <div className="flex flex-wrap gap-2">
