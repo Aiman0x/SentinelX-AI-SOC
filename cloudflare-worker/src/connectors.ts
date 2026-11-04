@@ -75,7 +75,7 @@ async function disconnectStored(context: AdapterContext, id: string) {
   const anotherUserConfigured = listed.keys.some(item =>
     item.name !== orgKey && item.name.endsWith(":" + id) && !item.name.endsWith(":health")
   );
-  if (!anotherUserConfigured) {
+  if (listed.list_complete && !anotherUserConfigured) {
     await context.env.INTEGRATION_CONFIGS.delete(orgKey);
     await context.env.INTEGRATION_CONFIGS.delete(orgKey + ":health");
   }
