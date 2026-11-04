@@ -3,6 +3,7 @@ import { handleAIRoute, runScheduledAIReport, runScheduledMonitoring } from "./a
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
+import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -12,6 +13,7 @@ export interface Env {
   AP_BRIDGE_KEY: string;
   CONFIG_ENCRYPTION_KEY: string;
   INTEGRATION_CONFIGS: KVNamespace;
+  EVENTS_QUEUE: Queue<NormalizedSecurityEvent>;
   LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
   AP_READ_INVESTIGATIONS_URL: string;
@@ -298,6 +300,9 @@ export default {
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
 
+    const eventResponse = await handleEventRoute(request, env, url.pathname);
+    if (eventResponse) return new Response(eventResponse.body, { status: eventResponse.status, headers: { ...Object.fromEntries(eventResponse.headers), ...cors } });
+
     const connectorResponse = await handleConnectorRoute(request, env, url.pathname);
     if (connectorResponse) return new Response(connectorResponse.body, { status: connectorResponse.status, headers: { ...Object.fromEntries(connectorResponse.headers), ...cors } });
 
@@ -429,6 +434,9 @@ export default {
     } catch {
       return reply({ error: "Could not reach upstream workflow" }, 502, cors);
     }
+  },
+  async queue(batch: MessageBatch<NormalizedSecurityEvent>, env: Env): Promise<void> {
+    await consumeEventBatch(batch, env);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env)]).then(() => undefined));
