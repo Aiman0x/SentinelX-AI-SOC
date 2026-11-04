@@ -138,69 +138,6 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), row.id).run();
   return json({ accepted, collectorId: row.id, receivedAt: new Date().toISOString() });
 }
-function scrubSecrets(value: unknown, depth = 0): unknown {
-  if (depth > 8) return "[depth-limited]";
-  if (Array.isArray(value)) return value.slice(0, 100).map(item => scrubSecrets(item, depth + 1));
-  if (!value || typeof value !== "object") return typeof value === "string" ? value.slice(0, 4000) : value;
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
-    if (/(password|secret|token|api.?key|authorization|cookie|private.?key)/i.test(key)) continue;
-    out[key.slice(0, 100)] = scrubSecrets(item, depth + 1);
-  }
-  return out;
-}
-async function receiveEvents(req: Request, env: CollectorEnv) {
-  const authorization = req.headers.get("Authorization") || "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const collector = await env.DB.prepare("SELECT id,org_id,is_paused FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;org_id:string;is_paused:number}>();
-  if (!collector) return json({ error: "Invalid or revoked collector token" }, 401);
-  if (collector.is_paused) return json({ error: "Collector is paused", paused: true }, 423);
-  const body = await readJson(req, 262144);
-  const integrationId = typeof body?.integrationId === "string" ? body.integrationId : "";
-  if (!["sysmon", "suricata", "zeek", "windows_security"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata, zeek or windows_security" }, 400);
-  const events = Array.isArray(body?.events) ? body.events : [];
-  if (events.length < 1 || events.length > 100) return json({ error: "Provide between 1 and 100 normalized events" }, 400);
-  const entityType = integrationId === "windows_security" ? "telemetry_intake" : integrationId + "_event";
-  const statements: D1PreparedStatement[] = [];
-  let accepted = 0;
-  for (const raw of events) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    const event = raw as Record<string, unknown>;
-    const eventId = typeof event.eventId === "string" && event.eventId.trim() ? event.eventId.trim().slice(0, 180) : crypto.randomUUID();
-    const observedAt = typeof event.observedAt === "string" && Number.isFinite(Date.parse(event.observedAt)) ? new Date(event.observedAt).toISOString() : new Date().toISOString();
-    const safePayload = scrubSecrets(event.payload ?? event) as Record<string, unknown>;
-    const windowsEventData = safePayload.eventData && typeof safePayload.eventData === "object" && !Array.isArray(safePayload.eventData)
-      ? safePayload.eventData as Record<string, unknown> : {};
-    const payload = JSON.stringify(integrationId === "windows_security" ? {
-      "Source Event ID": String(safePayload.eventId ?? eventId),
-      "Event ID": String(windowsEventData.EventID ?? safePayload.windowsEventId ?? 4625),
-      "Event Type": String(safePayload.eventType ?? "windows_failed_login"),
-      "Event Time": observedAt,
-      "Received At": new Date().toISOString(),
-      "Host": String(safePayload.host ?? "unknown"),
-      "Username": String(safePayload.username ?? "unknown"),
-      "Source IP": String(safePayload.sourceIp ?? "unknown"),
-      "Source Integration": String(safePayload.source ?? safePayload.sourceIntegration ?? "Windows Security Event Log"),
-      "Data Origin": "REAL_UNVERIFIED",
-      "Validation Status": "PENDING_VALIDATION",
-      "Notes": "Read-only Windows Security Event ID 4625 collected by SentinelX host collector.",
-      "Normalized Event JSON": safePayload,
-      "collectorId": collector.id,
-      integrationId
-    } : { integrationId, collectorId: collector.id, observedAt, eventId, event: safePayload });
-    if (payload.length > 16000) continue;
-    const id = crypto.randomUUID();
-    statements.push(env.DB.prepare("INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,case_id,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,NULL,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at")
-      .bind(id, collector.org_id, entityType, "collector_events", collector.id + ":" + eventId, payload, observedAt, new Date().toISOString()));
-    accepted++;
-  }
-  if (statements.length) await env.DB.batch(statements);
-  await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), collector.id).run();
-  return json({ accepted, received: events.length, integrationId, collectorId: collector.id, organizationScoped: true });
-}
-
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
   if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events" && path !== "/api/collector/context") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
@@ -208,7 +145,6 @@ export async function handleCollectorRoute(req: Request, env: CollectorEnv, path
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
-  if (path === "/api/collector/events" && req.method === "POST") return receiveEvents(req, env);
   if (path === "/api/collector/config" && req.method === "GET") return collectorConfig(req, env);
   const pauseMatch = path.match(/^\/api\/collectors\/([0-9a-f-]+)\/(pause|resume)$/);
   if (pauseMatch && req.method === "POST") return setCollectorPaused(req, env, pauseMatch[1], pauseMatch[2] === "pause");
