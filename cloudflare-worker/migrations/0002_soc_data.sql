@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS approvals (
   execution_mode TEXT NOT NULL DEFAULT 'SIMULATED - no real containment',
   verification_result TEXT,
   payload_json TEXT NOT NULL DEFAULT '{}',
+  requested_by_actor_id TEXT,
+  approved_by_actor_id TEXT,
+  execution_attempt_id TEXT,
   UNIQUE(org_id, approval_id),
   FOREIGN KEY(org_id, case_id) REFERENCES cases(org_id, case_id) ON DELETE CASCADE
 );
