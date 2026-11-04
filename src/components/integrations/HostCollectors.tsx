@@ -9,6 +9,10 @@ export function HostCollectors() {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const apiUrl = import.meta.env.VITE_API_BASE_URL || 'https://sentinelx-api-gateway.aiman132046.workers.dev';
+  const windowsCommand = `$env:SENTINELX_COLLECTOR_API_URL = "${apiUrl}"\n$env:SENTINELX_COLLECTOR_TOKEN = "${token}"\n.\\SentinelX_Local_Windows_Collector.ps1`;
+  const windowsContinuousCommand = `${windowsCommand} -Continuous -IntervalSeconds 30`;
+  const pythonCommand = `$env:SENTINELX_URL = "${apiUrl}"\n$env:SENTINELX_COLLECTOR_TOKEN = "${token}"\npython .\\sentinelx_collector.py --once`;
   const load = async () => {
     if (!isBackendConfigured) return;
     try { const data = await apiGet<{ collectors: Collector[] }>('/api/collectors'); setItems(data.collectors || []); }
@@ -43,6 +47,23 @@ export function HostCollectors() {
         <code className="mt-2 block break-all text-xs">{token}</code>
         <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(token)}>Copy token</button>
         <p className="mt-2 text-[10px] text-sx-mute">Token is shown only once. Store it in an environment variable; never commit it to source control.</p>
+        {platform === 'windows' && <div className="mt-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold">Windows Security Event ID 4625</p>
+            <p className="mt-1 text-[10px] text-sx-mute">Run PowerShell as Administrator. One-time run:</p>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-sx-bg p-2 text-[10px]">{windowsCommand}</pre>
+            <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(windowsCommand)}>Copy Windows command</button>
+            <p className="mt-2 text-[10px] text-sx-mute">Continuous mode:</p>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-sx-bg p-2 text-[10px]">{windowsContinuousCommand}</pre>
+            <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(windowsContinuousCommand)}>Copy continuous command</button>
+            <p className="mt-1 text-[10px] text-sx-mute">Stop locally with Ctrl+C. Revoke blocks future requests but does not remotely terminate the process.</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold">Python host-health checks</p>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-sx-bg p-2 text-[10px]">{pythonCommand}</pre>
+            <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(pythonCommand)}>Copy Python command</button>
+          </div>
+        </div>}
       </div>}
       {error && <p className="mt-2 text-xs text-sx-warn">{error}</p>}
       <div className="mt-4 space-y-2">
@@ -52,7 +73,7 @@ export function HostCollectors() {
         </div>)}
         {!items.length && <p className="text-xs text-sx-mute">No collectors enrolled yet.</p>}
       </div>
-      <p className="mt-3 text-[10px] text-sx-mute">Download <code>scripts/sentinelx_collector.py</code> from the SentinelX repository. Setup guide: <code>docs/HOST_COLLECTOR_SETUP.md</code>.</p>
+      <p className="mt-3 text-[10px] text-sx-mute">Windows 4625 and Python health collectors are available in the repository. Use the commands above or see <code>docs/HOST_COLLECTOR_SETUP.md</code>.</p>
     </>}
   </section>;
 }
