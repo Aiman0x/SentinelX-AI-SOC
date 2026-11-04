@@ -5,6 +5,7 @@ import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
 import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
 import { handleDetectionRoute } from "./detections";
+// Detection, correlation and evidence processing is part of the event-ingestion runtime.
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
