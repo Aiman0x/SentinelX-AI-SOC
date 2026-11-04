@@ -33,7 +33,7 @@ async function actorFor(request: Request, env: DataEnv): Promise<Actor | null> {
   const orgToken = request.headers.get("X-SentinelX-Org-Key") || "";
   if (orgToken) {
     if (!env.AP_BRIDGE_KEY || !(await sameSecret(bridgeKey, env.AP_BRIDGE_KEY))) return null;
-    const tenant = await env.DB.prepare("SELECT org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    const tenant = await env.DB.prepare("SELECT org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL AND is_paused=0")
       .bind(await collectorTokenHash(orgToken)).first<{ org_id: string }>();
     if (!tenant) return null;
     const organization = await env.DB.prepare("SELECT id FROM organizations WHERE id=? AND is_active=1")
