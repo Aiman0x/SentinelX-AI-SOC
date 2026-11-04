@@ -4,6 +4,7 @@ import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
 import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
+import { handleDetectionRoute } from "./detections";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -299,6 +300,9 @@ export default {
         : reply({ error: "Origin not allowed" }, 403);
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
+
+    const detectionResponse = await handleDetectionRoute(request, env, url.pathname);
+    if (detectionResponse) return new Response(detectionResponse.body, { status: detectionResponse.status, headers: { ...Object.fromEntries(detectionResponse.headers), ...cors } });
 
     const eventResponse = await handleEventRoute(request, env, url.pathname);
     if (eventResponse) return new Response(eventResponse.body, { status: eventResponse.status, headers: { ...Object.fromEntries(eventResponse.headers), ...cors } });
