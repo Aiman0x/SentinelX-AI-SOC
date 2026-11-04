@@ -79,8 +79,9 @@ function LoginScreen() {
     try {
       await login(email, password);
       setPassword('');
-    } catch {
-      setError('Login failed. Check your password or try again later.');
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '';
+      setError(message || 'Login failed. Check your password or try again later.');
     } finally {
       setBusy(false);
     }
