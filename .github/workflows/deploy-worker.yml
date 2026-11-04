@@ -1,4 +1,5 @@
 name: Deploy SentinelX to Cloudflare Workers
+# Production deployment runs from main after the validated merge.
 
 on:
   push:
