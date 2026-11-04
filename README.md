@@ -130,14 +130,14 @@ Connector credentials are encrypted at rest in tenant- and user-scoped KV entrie
 SentinelX uses one centrally managed agent identity and one fixed model for every customer workspace:
 - **Agent:** SentinelX SOC Investigator v1
 - **Provider:** OpenRouter
-- **Model:** `qwen/qwen3-30b-a3b-instruct-2507`
+- **Model:** `nvidia/nemotron-3-ultra:free`
 - **Model selection:** fixed server-side; customers cannot select an agent, provider, model, or fallback.
 - **API key:** entered only by an explicitly registered SentinelX platform administrator in Settings → Integration settings. It is encrypted at rest in KV with AES-GCM and a platform-wide associated-data key. The browser receives only configured status, never the key.
 - **Platform admin authorization:** D1 `platform_admins` allowlist. Migration `0007_platform_admins.sql` bootstraps the existing workspace owner(s) once; future tenant owners are not automatically promoted.
 - **Privacy:** common secrets and direct identifiers are masked before model requests. Masking is always enabled for the agent.
 - **Budget:** model input is bounded (1,000–12,000 estimated tokens; default 6,000). The model adapter uses OpenRouter's OpenAI-compatible chat completions API.
 
-The selected Qwen model is **not free** on OpenRouter's current catalog. Its price is provider-routed and can change; check the OpenRouter model pricing page before production usage. API usage is billed to the SentinelX platform's OpenRouter account, not to individual customers.
+The selected NVIDIA Nemotron 3 Ultra `:free` variant is listed at $0 input/output token pricing on OpenRouter. Free-tier capacity and rate limits apply, and availability can change. API usage uses the shared SentinelX platform OpenRouter key.
 
 ## Read-only autonomous agent loop
 
