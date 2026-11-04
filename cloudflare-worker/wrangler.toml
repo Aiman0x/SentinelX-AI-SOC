@@ -1,4 +1,5 @@
 name = "sentinelx-api-gateway"
+# Phase 2 live event pipeline: queue producer, retrying consumer and DLQ
 main = "src/index.ts"
 compatibility_date = "2026-10-30"
 
