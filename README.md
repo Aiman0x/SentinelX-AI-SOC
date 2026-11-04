@@ -125,28 +125,31 @@ Initial connector coverage:
 
 Connector credentials are encrypted at rest in tenant- and user-scoped KV entries. The browser receives configured field names and health metadata only, never secret values. Reconnect updates the saved configuration; disconnect removes the current user's connector configuration and health state. Organization-shared, non-secret host settings are retained while another organization member still has that connector configured. Viewer users cannot change connector configuration. A saved configuration is not considered connected until its live test passes.
 
-## BYO-LLM layer
+## Fixed platform LLM and SOC agent
 
-The Worker provides a provider-neutral LLM gateway for OpenAI, Anthropic, Gemini and OpenAI-compatible HTTPS endpoints.
+SentinelX uses one centrally managed agent identity and one fixed model for every customer workspace:
+- **Agent:** SentinelX SOC Investigator v1
+- **Provider:** OpenRouter
+- **Model:** `qwen/qwen3-30b-a3b-instruct-2507`
+- **Model selection:** fixed server-side; customers cannot select an agent, provider, model, or fallback.
+- **API key:** entered only by an explicitly registered SentinelX platform administrator in Settings → Integration settings. It is encrypted at rest in KV with AES-GCM and a platform-wide associated-data key. The browser receives only configured status, never the key.
+- **Platform admin authorization:** D1 `platform_admins` allowlist. Migration `0007_platform_admins.sql` bootstraps the existing workspace owner(s) once; future tenant owners are not automatically promoted.
+- **Privacy:** common secrets and direct identifiers are masked before model requests. Masking is always enabled for the agent.
+- **Budget:** model input is bounded (1,000–12,000 estimated tokens; default 6,000). The model adapter uses OpenRouter's OpenAI-compatible chat completions API.
 
-- Workspace administrators configure the primary provider and optional fallback provider in **Settings → Integration settings → Bring Your Own LLM**. Provider keys are encrypted at rest in Cloudflare KV; the browser receives only a masked key hint.
-- The gateway tries the primary model first, then configured fallbacks on provider errors/timeouts/quota failures. The response reports which provider succeeded and whether fallback was used.
-- Evidence masking is enabled by default for common credential labels, bearer tokens, email addresses and phone numbers. Masking is best-effort; analysts must still avoid sending highly sensitive data.
-- Input size is capped by a configurable approximate token budget (500–12,000; default 6,000). The gateway estimates tokens from text length and truncates oversized prompts before sending them.
-- The AI test endpoint validates the configured chain; the analysis endpoint runs the bounded, masked SOC prompt. Provider billing remains with the user's provider account.
-- The current model adapter uses text chat APIs; it does not claim tool-calling or autonomous response execution.
+The selected Qwen model is **not free** on OpenRouter's current catalog. Its price is provider-routed and can change; check the OpenRouter model pricing page before production usage. API usage is billed to the SentinelX platform's OpenRouter account, not to individual customers.
 
 ## Read-only autonomous agent loop
 
-The investigation workspace exposes a bounded agent endpoint at `POST /api/ai/agent`.
+The investigation workspace exposes the fixed SentinelX SOC Investigator v1 at `POST /api/ai/agent`.
 
 1. The model creates a short investigation plan.
 2. The gateway supplies only query-capable connectors configured for the authenticated user.
-3. The model selects one connector and one schema-valid query at a time; the gateway validates the tool ID and every input field before execution.
+3. The fixed model selects one connector from the tools connected to the authenticated user and one schema-valid query at a time; the gateway validates the tool ID and every input field before execution.
 4. Tool results are treated as untrusted evidence, masked when masking is enabled, bounded before being sent back to the model, and used to re-plan until the model finishes or the hard limit is reached.
 5. The model returns a conclusion with evidence and uncertainty.
 
-Safety controls: maximum five tool calls (server-enforced; UI can request 1–5), read-only connector query allowlist, no shell/response/remediation tools, strict audit start and completion/failure records for every connector call, and a system-level prompt-injection guard that treats logs and tool results as untrusted data. Audit creation fails closed: a connector query is not run if its audit start record cannot be written. Agent output remains advisory and requires analyst review.
+Safety controls: maximum five tool calls (server-enforced; client cannot change the limit), read-only connector query allowlist, no shell/response/remediation tools, strict audit start and completion/failure records for every connector call, and a system-level prompt-injection guard that treats logs and tool results as untrusted data. Audit creation fails closed: a connector query is not run if its audit start record cannot be written. Agent output remains advisory and requires analyst review.
 
 
 ## Blue-team reporting and analyst workflows
