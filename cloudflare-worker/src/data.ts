@@ -87,7 +87,7 @@ export async function handleDataRoute(request: Request, env: DataEnv, path: stri
   if (actor.role === "service") {
     const serviceRead = request.method === "GET" && (
       path === "/api/cases" || /^\/api\/cases\/[^/]+$/.test(path) || path === "/api/records" ||
-      ["/api/alerts", "/api/investigations", "/api/evidence", "/api/audit", "/api/assets", "/api/rules", "/api/telemetry"].includes(path)
+      ["/api/alerts", "/api/investigations", "/api/evidence", "/api/audit", "/api/assets", "/api/rules", "/api/telemetry", "/api/approvals"].includes(path)
     );
     const serviceWrite = request.method === "POST" && (
       path === "/api/cases" || /^\/api\/cases\/[^/]+$/.test(path) || path === "/api/records"
