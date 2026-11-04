@@ -70,11 +70,19 @@ def main():
     while True:
         global CONFIG
         config_req=urllib.request.Request(args.url.rstrip("/")+"/api/collector/config",headers={"Authorization":"Bearer "+args.token,"User-Agent":"SentinelX-Collector/1.0"})
+        paused=False
         try:
             with urllib.request.urlopen(config_req,timeout=10) as config_response:
-                CONFIG=json.loads(config_response.read(32768).decode()).get("config", {})
+                config_payload=json.loads(config_response.read(32768).decode())
+                CONFIG=config_payload.get("config", {})
+                paused=bool(config_payload.get("paused", False))
         except (urllib.error.URLError, TimeoutError, ValueError):
             CONFIG={}
+        if paused:
+            print(now(),"collector paused by SentinelX; no health data sent")
+            if args.once: break
+            time.sleep(max(60,args.interval))
+            continue
         results=[fn() for fn in ADAPTERS.values()]
         payload=json.dumps({"observedAt":now(),"host":platform.node(),"platform":platform.system().lower(),"results":results}).encode()
         req=urllib.request.Request(endpoint,data=payload,headers={"Content-Type":"application/json","Authorization":"Bearer "+args.token,"User-Agent":"SentinelX-Collector/1.0"},method="POST")
