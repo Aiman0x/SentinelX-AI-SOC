@@ -46,9 +46,9 @@ async function createCollector(req: Request, env: CollectorEnv) {
 async function listCollectors(req: Request, env: CollectorEnv) {
   const actor = await currentUser(req, env as Parameters<typeof currentUser>[1]);
   if (!actor) return json({ error: "Authentication required" }, 401);
-  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at FROM host_collectors WHERE org_id=? ORDER BY created_at DESC")
-    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null}>();
-  return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
+  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at,is_paused FROM host_collectors WHERE org_id=? ORDER BY created_at DESC")
+    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null;is_paused:number}>();
+  return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.is_paused ? "paused" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
 }
 async function revokeCollector(req: Request, env: CollectorEnv, collectorId: string) {
   const actor = await admin(req, env);
@@ -56,6 +56,13 @@ async function revokeCollector(req: Request, env: CollectorEnv, collectorId: str
   const result = await env.DB.prepare("UPDATE host_collectors SET revoked_at=? WHERE id=? AND org_id=? AND revoked_at IS NULL")
     .bind(new Date().toISOString(), collectorId, actor.organization_id).run();
   return result.meta.changes ? json({ revoked: true }) : json({ error: "Collector not found or already revoked" }, 404);
+}
+async function setCollectorPaused(req: Request, env: CollectorEnv, collectorId: string, paused: boolean) {
+  const actor = await admin(req, env);
+  if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
+  const result = await env.DB.prepare("UPDATE host_collectors SET is_paused=? WHERE id=? AND org_id=? AND revoked_at IS NULL")
+    .bind(paused ? 1 : 0, collectorId, actor.organization_id).run();
+  return result.meta.changes ? json({ paused }) : json({ error: "Collector not found or revoked" }, 404);
 }
 
 function decode64(value: string): Uint8Array {
@@ -74,18 +81,18 @@ async function collectorContext(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  const row = await env.DB.prepare("SELECT id,org_id,is_paused FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string;is_paused:number}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
-  return json({ organizationId: row.org_id, collectorId: row.id, scopes: ["telemetry:ingest"] });
+  return json({ organizationId: row.org_id, collectorId: row.id, paused: !!row.is_paused, scopes: ["telemetry:ingest"] });
 }
 
 async function collectorConfig(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  const row = await env.DB.prepare("SELECT id,org_id,is_paused FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string;is_paused:number}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
   if (!env.CONFIG_ENCRYPTION_KEY) return json({ error: "Secure configuration is unavailable" }, 503);
   const config: Record<string, Record<string, string>> = {};
@@ -99,16 +106,17 @@ async function collectorConfig(req: Request, env: CollectorEnv) {
       config[integrationId] = safe;
     } catch { /* Ignore an unreadable config; do not leak its contents. */ }
   }
-  return json({ config, fetchedAt: new Date().toISOString() });
+  return json({ config, paused: !!row.is_paused, fetchedAt: new Date().toISOString() });
 }
 
 async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  const row = await env.DB.prepare("SELECT id,org_id,is_paused FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string;is_paused:number}>();
   if (!row) return json({ error: "Invalid or revoked collector token" }, 401);
+  if (row.is_paused) return json({ error: "Collector is paused", paused: true }, 423);
   const body = await readJson(req, 32768);
   if (!body || !Array.isArray(body.results) || body.results.length > 10) return json({ error: "Invalid heartbeat payload" }, 400);
   const observedAt = typeof body.observedAt === "string" && Number.isFinite(Date.parse(body.observedAt)) ? new Date(body.observedAt).toISOString() : new Date().toISOString();
@@ -145,9 +153,10 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
   const authorization = req.headers.get("Authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
-  const collector = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
-    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  const collector = await env.DB.prepare("SELECT id,org_id,is_paused FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string;is_paused:number}>();
   if (!collector) return json({ error: "Invalid or revoked collector token" }, 401);
+  if (collector.is_paused) return json({ error: "Collector is paused", paused: true }, 423);
   const body = await readJson(req, 262144);
   const integrationId = typeof body?.integrationId === "string" ? body.integrationId : "";
   if (!["sysmon", "suricata", "zeek", "windows_security"].includes(integrationId)) return json({ error: "integrationId must be sysmon, suricata, zeek or windows_security" }, 400);
@@ -201,6 +210,8 @@ export async function handleCollectorRoute(req: Request, env: CollectorEnv, path
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
   if (path === "/api/collector/events" && req.method === "POST") return receiveEvents(req, env);
   if (path === "/api/collector/config" && req.method === "GET") return collectorConfig(req, env);
+  const pauseMatch = path.match(/^\/api\/collectors\/([0-9a-f-]+)\/(pause|resume)$/);
+  if (pauseMatch && req.method === "POST") return setCollectorPaused(req, env, pauseMatch[1], pauseMatch[2] === "pause");
   const match = path.match(/^\/api\/collectors\/([0-9a-f-]+)$/);
   if (match && req.method === "DELETE") return revokeCollector(req, env, match[1]);
   return json({ error: "Not found" }, 404);
