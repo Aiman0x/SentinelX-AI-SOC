@@ -11,11 +11,11 @@ For every ActivePieces request to the Worker data APIs, send both:
 - `X-SentinelX-Org-Key: <tenant collector token>`
 - `X-SentinelX-Bridge-Key: <AP_BRIDGE_KEY>`
 
-The Worker hashes the collector token using the same SHA-256/base64url scheme used by collector enrollment, resolves its active `host_collectors` row, checks that it is not revoked, verifies the platform bridge secret, and binds the service actor to that collector's active organization.
+The Worker hashes the collector token using the same SHA-256/base64url scheme used by collector enrollment, resolves its active `host_collectors` row, checks that it is neither revoked nor paused, verifies the platform bridge secret, and binds the service actor to that collector's active organization.
 
 The old `X-SentinelX-Org-ID` contract remains supported for trusted internal service calls that already have a verified organization ID. It is not a substitute for the tenant token on externally triggered tenant workflows.
 
-**Important:** `X-SentinelX-Org-Key` must contain a real, non-revoked collector token created for that tenant. An arbitrary string or the old webhook secret is not accepted. The collector token alone cannot access general data APIs.
+**Important:** `X-SentinelX-Org-Key` must contain a real, non-revoked collector token created for that tenant. An arbitrary string, a paused/revoked collector token, or the old webhook secret is not accepted. The collector token alone cannot access general data APIs.
 
 ## Trust boundary
 
