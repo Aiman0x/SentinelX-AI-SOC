@@ -256,7 +256,7 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
 function hostAdapter(id:"sysmon"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
   const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
-    id,name,category:id==="sysmon"?"Endpoint":"Network",description,
+    id,name,category:id==="sysmon"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
     schema:{version:"1.0",fields:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped records reported by the enrolled host collector.",fields:[field("limit","Maximum records (1–100)","25")]}},
     async connect(context,values) {
       if(Object.keys(values).some(k=>!["sensor","source"].includes(k))) throw new Error("Unsupported configuration field.");
