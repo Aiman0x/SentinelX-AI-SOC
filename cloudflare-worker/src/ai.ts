@@ -50,7 +50,7 @@ async function unseal(raw: string, secret: string, _org: string): Promise<AISett
   const data = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(envelope.iv), additionalData: enc.encode(PLATFORM_AI_KEY) }, key, fromB64(envelope.data));
   const decoded = JSON.parse(new TextDecoder().decode(data)) as AISettings | ProviderConfig;
   // Backward-compatible migration from the original single-provider format.
-  if ("primary" in decoded) return decoded;
+  if ("primary" in decoded) return { ...decoded, primary: { ...decoded.primary, provider: "openai-compatible", model: OPENROUTER_MODEL, apiKey: decoded.primary.apiKey, baseUrl: OPENROUTER_BASE_URL }, fallbacks: [] };
   return { primary: decoded, fallbacks: [], maskSensitiveData: true, maxInputTokens: 6000 };
 }
 function json(data: unknown, status = 200) {
