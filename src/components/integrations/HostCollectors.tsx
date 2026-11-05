@@ -30,6 +30,35 @@ export function HostCollectors() {
   const [error, setError] = useState('');
   const [token, setToken] = useState('');
   const [copyState, setCopyState] = useState('');
+  const [mcpUrl, setMcpUrl] = useState('');
+  const [mcpToken, setMcpToken] = useState('');
+  const [mcpLabel, setMcpLabel] = useState('Security MCP');
+  const [mcpTools, setMcpTools] = useState<Array<{name:string;description?:string;readOnly:boolean;inputSchema?:unknown}>>([]);
+  const [mcpTool, setMcpTool] = useState('');
+  const [mcpArgs, setMcpArgs] = useState('{}');
+  const [mcpBusy, setMcpBusy] = useState(false);
+  const [mcpResult, setMcpResult] = useState('');
+
+  const saveMcp = async (event: FormEvent) => {
+    event.preventDefault(); setMcpBusy(true); setError('');
+    try { await apiPost('/api/mcp/connect', { label: mcpLabel, serverUrl: mcpUrl, bearerToken: mcpToken }); setMcpToken(''); setMcpResult('MCP endpoint saved. Discover tools to verify it.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not save MCP server.'); }
+    finally { setMcpBusy(false); }
+  };
+  const discoverMcp = async () => {
+    setMcpBusy(true); setError(''); setMcpResult('');
+    try { const response = await apiPost<{ok:boolean;data:{tools:Array<{name:string;description?:string;readOnly:boolean;inputSchema?:unknown}>;total:number;readOnlyTools:number}}>('/api/mcp/test', {}); setMcpTools(response.data.tools ?? []); setMcpTool(response.data.tools?.find(t => t.readOnly)?.name ?? ''); setMcpResult(`Discovered ${response.data.total} tools; ${response.data.readOnlyTools} explicitly marked read-only.`); }
+    catch (e) { setError(e instanceof Error ? e.message : 'MCP discovery failed.'); }
+    finally { setMcpBusy(false); }
+  };
+  const runMcpTool = async () => {
+    let args: unknown; try { args = JSON.parse(mcpArgs || '{}'); } catch { setError('Tool arguments must be valid JSON.'); return; }
+    if (!args || typeof args !== 'object' || Array.isArray(args)) { setError('Tool arguments must be a JSON object.'); return; }
+    setMcpBusy(true); setError('');
+    try { const response = await apiPost<{data:unknown}>('/api/mcp/call', { toolName: mcpTool, arguments: args }); setMcpResult(JSON.stringify(response.data, null, 2)); }
+    catch (e) { setError(e instanceof Error ? e.message : 'MCP tool call failed.'); }
+    finally { setMcpBusy(false); }
+  };
 
   const load = async () => {
     if (!isBackendConfigured) return;
@@ -124,6 +153,34 @@ export function HostCollectors() {
           <p className="mt-1 text-xs text-sx-mute">Each collector gets a unique organization-scoped token. Tokens are shown only once.</p>
         </div>
         <button className="btn" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+      </div>
+
+      <div className="mt-5 rounded-lg border border-sx-line bg-sx-bg/40 p-3">
+        <div className="text-sm font-semibold">MCP server — read-only discovery</div>
+        <p className="mt-1 text-xs text-sx-mute">Connect a customer-owned MCP Streamable HTTP endpoint. Private/local endpoints are reached through the enrolled Local Bridge; no tunnel or inbound port is required.</p>
+        <form onSubmit={saveMcp} className="mt-3 grid gap-2 sm:grid-cols-2">
+          <input className="input" value={mcpLabel} onChange={e => setMcpLabel(e.target.value)} placeholder="Server label" maxLength={80} />
+          <input className="input" type="url" value={mcpUrl} onChange={e => setMcpUrl(e.target.value)} placeholder="http://127.0.0.1:3000/mcp" required />
+          <input className="input sm:col-span-2" type="password" value={mcpToken} onChange={e => setMcpToken(e.target.value)} placeholder="Optional bearer token (leave blank to keep saved token)" autoComplete="new-password" />
+          <button className="btn btn-primary sm:col-span-2" type="submit" disabled={mcpBusy || !mcpUrl.trim()}>Save MCP endpoint</button>
+        </form>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" className="btn btn-gold" onClick={() => void discoverMcp()} disabled={mcpBusy}>Discover MCP tools</button>
+          <span className="self-center text-[10px] text-sx-mute">Only tools declaring annotations.readOnlyHint=true can be run.</span>
+        </div>
+        {mcpTools.length > 0 && <div className="mt-3 space-y-2">
+          <div className="text-xs font-semibold">Discovered tools</div>
+          {mcpTools.map(tool => <div key={tool.name} className="rounded border border-sx-line p-2 text-xs">
+            <div className="flex items-center justify-between gap-2"><span className="font-semibold">{tool.name}</span><span className={tool.readOnly ? 'text-sx-green' : 'text-sx-warn'}>{tool.readOnly ? 'Read-only' : 'Blocked · not marked read-only'}</span></div>
+            {tool.description && <p className="mt-1 text-[10px] text-sx-mute">{tool.description}</p>}
+          </div>)}
+          {mcpTools.some(t => t.readOnly) && <div className="grid gap-2 sm:grid-cols-2">
+            <select className="input" value={mcpTool} onChange={e => setMcpTool(e.target.value)}><option value="">Choose read-only tool</option>{mcpTools.filter(t => t.readOnly).map(t => <option key={t.name} value={t.name}>{t.name}</option>)}</select>
+            <textarea className="input min-h-20 font-mono text-xs sm:col-span-2" value={mcpArgs} onChange={e => setMcpArgs(e.target.value)} placeholder='{"key":"value"}' />
+            <button type="button" className="btn btn-gold sm:col-span-2" onClick={() => void runMcpTool()} disabled={mcpBusy || !mcpTool}>Run selected read-only tool</button>
+          </div>}
+        </div>}
+        {mcpResult && <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded border border-sx-line bg-sx-bg p-2 text-[10px]">{mcpResult}</pre>}
       </div>
 
       <div className="mt-5 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3">
