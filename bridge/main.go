@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -42,7 +42,7 @@ type WazuhAuth struct {
 	Token   string
 	Headers http.Header
 }
-var client = &http.Client{Timeout: 12 * time.Second}
+var client = &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 
 func main() {
 	configPath := flag.String("config", "sentinelx-bridge.json", "Path to bridge config JSON")
@@ -133,7 +133,7 @@ func execute(task Task) Result {
 func authenticate(cfg map[string]string) (WazuhAuth,error) {
 	apiURL:=strings.TrimRight(cfg["apiUrl"],"/")
 	if (!strings.HasPrefix(apiURL,"https://") && !strings.HasPrefix(apiURL,"http://")) || cfg["apiUser"]=="" || cfg["apiPassword"]=="" { return WazuhAuth{},errors.New("Wazuh Manager URL and read-only credentials are required") }
-	headers:=make(http.Header); headers.Set("Authorization","Basic "+basic(cfg["apiUser"],cfg["apiPassword"])); headers.Set("Accept","application/json")
+	headers:=make(http.Header); headers.Set("Authorization",basic(cfg["apiUser"],cfg["apiPassword"])); headers.Set("Accept","application/json")
 	if cfg["accessClientId"]!="" { headers.Set("CF-Access-Client-Id",cfg["accessClientId"]); headers.Set("CF-Access-Client-Secret",cfg["accessClientSecret"]) }
 	b,status,err:=do(apiURL+"/security/user/authenticate","POST",headers,nil); if err!=nil{return WazuhAuth{},err}; if status<200||status>=300{return WazuhAuth{},fmt.Errorf("Wazuh authentication failed (HTTP %d)",status)}
 	var payload struct { Data struct { Token string `json:"token"` } `json:"data"` }
@@ -141,9 +141,7 @@ func authenticate(cfg map[string]string) (WazuhAuth,error) {
 	headers.Set("Authorization","Bearer "+payload.Data.Token)
 	return WazuhAuth{Root:apiURL,Token:payload.Data.Token,Headers:headers},nil
 }
-func basic(user,password string) string { return "Basic "+base64(user+":"+password) }
-func base64(value string) string { return strings.TrimSpace(os.Getenv("SENTINELX_INTERNAL_BASE64_PREFIX")) + encodeBase64(value) }
-func encodeBase64(value string) string { return b64([]byte(value)) }
+func basic(user,password string) string { return "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+password)) }
 func b64(b []byte) string {
 	const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	var out strings.Builder
@@ -161,5 +159,3 @@ func do(url,method string,headers http.Header,body any)([]byte,int,error){
 }
 func fatal(err error){fmt.Fprintln(os.Stderr,err);os.Exit(1)}
 
-var _ = tls.VersionTLS12
-var _ = context.Canceled
