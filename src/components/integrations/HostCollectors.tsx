@@ -166,7 +166,7 @@ export function HostCollectors() {
         </form>
         <div className="mt-2 flex flex-wrap gap-2">
           <button type="button" className="btn btn-gold" onClick={() => void discoverMcp()} disabled={mcpBusy}>Discover MCP tools</button>
-          <span className="self-center text-[10px] text-sx-mute">Only tools declaring annotations.readOnlyHint=true can be run.</span>
+          <span className="self-center text-[10px] text-sx-mute">Only tools declaring annotations.readOnlyHint=true can be run. This is a server-provided hint, not proof; connect only MCP servers you trust.</span>
         </div>
         {mcpTools.length > 0 && <div className="mt-3 space-y-2">
           <div className="text-xs font-semibold">Discovered tools</div>
