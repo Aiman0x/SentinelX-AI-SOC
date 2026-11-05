@@ -56,7 +56,7 @@ jobs:
       - name: Format and compile-check
         working-directory: bridge
         run: |
-          gofmt -w main.go
+          gofmt -w *.go
           go test ./...
       - name: Build
         working-directory: bridge
