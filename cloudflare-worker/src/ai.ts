@@ -262,7 +262,6 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
         .bind(runAuditId, actor.organization_id, actor.id, "AI Agent", "agent_investigation_started", runAuditId, JSON.stringify({ promptLength: body.prompt.length, fixedAgent: "SentinelX SOC Investigator v1", model: OPENROUTER_MODEL, maxToolCalls: 5, availableToolCount: catalogResult.tools.length, accessMode: "read_only" }), "Started").run();
       const catalog = catalogResult.tools;
-      const safeTask = maskSensitive(body.prompt);
       const evidence: Array<{ step: number; tool: string; rationale: string; result: unknown; verification: EvidenceReview; attempts: number }> = [];
       const plan: string[] = [];
       let conclusion = "";
