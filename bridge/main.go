@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,6 +23,7 @@ type Config struct {
 	GatewayURL string `json:"gateway_url"`
 	Token      string `json:"token"`
 	PollMS     int    `json:"poll_ms"`
+	CAFile     string `json:"ca_cert_file,omitempty"`
 }
 type Task struct {
 	ID          string            `json:"id"`
@@ -50,6 +53,12 @@ func main() {
 	cfg, err := loadConfig(*configPath)
 	if err != nil { fatal(err) }
 	if cfg.PollMS < 500 { cfg.PollMS = 1500 }
+	if cfg.CAFile != "" {
+		pem, readErr := os.ReadFile(cfg.CAFile); if readErr != nil { fatal(fmt.Errorf("read CA certificate: %w", readErr)) }
+		roots, poolErr := x509.SystemCertPool(); if poolErr != nil || roots == nil { roots = x509.NewCertPool() }
+		if !roots.AppendCertsFromPEM(pem) { fatal(errors.New("ca_cert_file contains no valid PEM certificates")) }
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+	}
 	if !strings.HasPrefix(cfg.GatewayURL, "https://") { fatal(errors.New("gateway_url must use HTTPS")) }
 	if len(cfg.Token) < 40 { fatal(errors.New("bridge token is missing or invalid")) }
 
