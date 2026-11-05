@@ -68,7 +68,7 @@ func (c *MCPClient) post(ctx context.Context, payload any) (MCPEnvelope,error) {
   return out,nil
 }
 func (c *MCPClient) initialize(ctx context.Context) error {
-  response,err:=c.post(ctx,map[string]any{"jsonrpc":"2.0","id":1,"method":"initialize","params":map[string]any{"protocolVersion":c.protocol,"capabilities":map[string]any{},"clientInfo":map[string]any{"name":"SentinelX Local Bridge","version":"0.2.0"}}})
+  response,err:=c.post(ctx,map[string]any{"jsonrpc":"2.0","id":1,"method":"initialize","params":map[string]any{"protocolVersion":"2025-06-18","capabilities":map[string]any{},"clientInfo":map[string]any{"name":"SentinelX Local Bridge","version":"0.2.0"}}})
   if err!=nil{return err}
   if response.Result.ProtocolVersion!="" { c.protocol=response.Result.ProtocolVersion } else { c.protocol="2025-06-18" }
   _,err=c.post(ctx,map[string]any{"jsonrpc":"2.0","method":"notifications/initialized","params":map[string]any{}})
