@@ -1,0 +1,4 @@
+sentinelx-bridge.json
+sentinelx-bridge*
+!main.go
+!go.mod
