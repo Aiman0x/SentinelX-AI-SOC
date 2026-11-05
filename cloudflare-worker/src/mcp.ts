@@ -26,6 +26,22 @@ async function readConfig(env:Env,actor:Actor) {
   if(!raw) throw new Error("Connect an MCP server first.");
   return unseal(raw,env.CONFIG_ENCRYPTION_KEY,key);
 }
+async function audited(env:Env,actor:Actor,event:string,details:Record<string,unknown>,run:()=>Promise<unknown>) {
+  const id=crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+    .bind(id,actor.organization_id,actor.id,"Human Analyst",event,"mcp",JSON.stringify(details),"Started").run();
+  try {
+    const data=await run();
+    await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+      .bind("Success",JSON.stringify({...details,result:"returned"}),id,actor.organization_id).run();
+    return data;
+  } catch(error) {
+    const message=error instanceof Error?error.message.slice(0,240):"MCP request failed";
+    await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
+      .bind("Failure",JSON.stringify({...details,error:message}),id,actor.organization_id).run();
+    throw error;
+  }
+}
 async function dispatch(env:Env,actor:Actor,config:Record<string,string>,operation:"test"|"query",input:Record<string,unknown>={}) {
   const bridge=await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND bridge_enabled=1 AND revoked_at IS NULL AND last_seen_at>=? ORDER BY last_seen_at DESC LIMIT 1")
     .bind(actor.organization_id,new Date(Date.now()-90_000).toISOString()).first<{id:string}>();
