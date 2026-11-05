@@ -209,7 +209,7 @@ export function HostCollectors() {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[10px] text-sx-mute">The current bridge build supports read-only Wazuh queries. MCP server discovery is a separate next step and is not yet enabled.</p>
+        <p className="mt-2 text-[10px] text-sx-mute">The bridge supports read-only Wazuh queries and MCP Streamable HTTP discovery. MCP stdio servers are not supported yet.</p>
       </div>
 
       <form onSubmit={create} className="mt-4 grid gap-2 sm:grid-cols-[1fr_150px_auto]">
