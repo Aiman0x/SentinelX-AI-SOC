@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - feat/byo-llm-multi-tenant-integrations
+      - feat/cross-platform-local-bridge
   push:
     branches:
       - feat/cross-platform-local-bridge
