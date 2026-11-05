@@ -33,11 +33,12 @@ Create a local `sentinelx-bridge.json` using the one-time enrollment token:
 {
   "gateway_url": "https://YOUR-SENTINELX-WORKER",
   "token": "ONE_TIME_DISPLAYED_TOKEN",
-  "poll_ms": 1500
+  "poll_ms": 1500,
+  "ca_cert_file": "wazuh-ca.pem"
 }
 ```
 
-Run `sentinelx-bridge.exe -config sentinelx-bridge.json` on Windows, or `./sentinelx-bridge -config sentinelx-bridge.json` on Linux/macOS. Protect the config file with OS permissions. Do not commit it or share its token.
+Run `sentinelx-bridge.exe -config sentinelx-bridge.json` on Windows, or `./sentinelx-bridge -config sentinelx-bridge.json` on Linux/macOS. If Wazuh uses a private certificate authority, provide its PEM CA path as `ca_cert_file`; TLS verification remains enabled. Protect the config file with OS permissions. Do not commit it or share its token.
 
 ## Security boundaries
 
