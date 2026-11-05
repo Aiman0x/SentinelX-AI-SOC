@@ -98,7 +98,7 @@ export async function handleMcpRoute(req:Request,env:Env,path:string):Promise<Re
     }
     const config=await readConfig(env,actor);
     if(path==="/api/mcp/test"||path==="/api/mcp/tools") {
-      const data=await dispatch(env,actor,config,path.endsWith("/test")?"test":"query",{action:"list"});
+      const data=await audited(env,actor,"mcp_tools_discovered",{serverUrl:config.serverUrl,action:"list"},()=>dispatch(env,actor,config,path.endsWith("/test")?"test":"query",{action:"list"}));
       return json({ok:true,data});
     }
     if(path==="/api/mcp/call") {
@@ -107,7 +107,8 @@ export async function handleMcpRoute(req:Request,env:Env,path:string):Promise<Re
       let args:unknown={};
       if(body.arguments!==undefined) args=body.arguments;
       if(!args||typeof args!=="object"||Array.isArray(args)) return json({error:"Tool arguments must be a JSON object."},400);
-      const data=await dispatch(env,actor,config,"query",{action:"call",toolName,arguments:args});
+      if(JSON.stringify(args).length>32768) return json({error:"Tool arguments exceed the 32 KB limit."},413);
+      const data=await audited(env,actor,"mcp_tool_called",{serverUrl:config.serverUrl,toolName,mode:"read_only"},()=>dispatch(env,actor,config,"query",{action:"call",toolName,arguments:args}));
       return json({data});
     }
     return json({error:"Unknown MCP route"},404);
