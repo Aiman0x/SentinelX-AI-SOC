@@ -24,7 +24,7 @@ type MCPEnvelope struct {
   ID any `json:"id,omitempty"`
   Method string `json:"method,omitempty"`
   Params any `json:"params,omitempty"`
-  Result struct { Tools []MCPTool `json:"tools,omitempty"`; Content []any `json:"content,omitempty"`; IsError bool `json:"isError,omitempty"` } `json:"result,omitempty"`
+  Result struct { ProtocolVersion string `json:"protocolVersion,omitempty"`; Tools []MCPTool `json:"tools,omitempty"`; Content []any `json:"content,omitempty"`; IsError bool `json:"isError,omitempty"` } `json:"result,omitempty"`
   Error *struct { Code int `json:"code"`; Message string `json:"message"` } `json:"error,omitempty"`
 }
 type MCPClient struct { endpoint, token, session string; protocol string }
@@ -37,7 +37,7 @@ func newMCPClient(cfg map[string]string) (*MCPClient,error) {
   if u.Hostname()=="169.254.169.254" || strings.Contains(strings.ToLower(u.Hostname()),"metadata.") {
     return nil,errors.New("Cloud metadata endpoints are blocked")
   }
-  return &MCPClient{endpoint:endpoint,token:cfg["bearerToken"],protocol:"2025-06-18"},nil
+  return &MCPClient{endpoint:endpoint,token:cfg["bearerToken"]},nil
 }
 func (c *MCPClient) post(ctx context.Context, payload any) (MCPEnvelope,error) {
   var out MCPEnvelope
@@ -45,7 +45,7 @@ func (c *MCPClient) post(ctx context.Context, payload any) (MCPEnvelope,error) {
   req,err:=http.NewRequestWithContext(ctx,"POST",c.endpoint,bytes.NewReader(raw)); if err!=nil{return out,err}
   req.Header.Set("Content-Type","application/json")
   req.Header.Set("Accept","application/json, text/event-stream")
-  req.Header.Set("MCP-Protocol-Version",c.protocol)
+  if c.protocol!="" { req.Header.Set("MCP-Protocol-Version",c.protocol) }
   if c.token!="" { req.Header.Set("Authorization","Bearer "+c.token) }
   if c.session!="" { req.Header.Set("Mcp-Session-Id",c.session) }
   resp,err:=client.Do(req); if err!=nil{return out,err}; defer resp.Body.Close()
@@ -70,7 +70,7 @@ func (c *MCPClient) post(ctx context.Context, payload any) (MCPEnvelope,error) {
 func (c *MCPClient) initialize(ctx context.Context) error {
   response,err:=c.post(ctx,map[string]any{"jsonrpc":"2.0","id":1,"method":"initialize","params":map[string]any{"protocolVersion":c.protocol,"capabilities":map[string]any{},"clientInfo":map[string]any{"name":"SentinelX Local Bridge","version":"0.2.0"}}})
   if err!=nil{return err}
-  if response.Result.Tools!=nil { return errors.New("unexpected MCP initialize response") }
+  if response.Result.ProtocolVersion!="" { c.protocol=response.Result.ProtocolVersion } else { c.protocol="2025-06-18" }
   _,err=c.post(ctx,map[string]any{"jsonrpc":"2.0","method":"notifications/initialized","params":map[string]any{}})
   // Notifications may legitimately return HTTP 202/204 without a JSON body.
   if err!=nil && !strings.Contains(err.Error(),"invalid MCP JSON-RPC response") { return err }
