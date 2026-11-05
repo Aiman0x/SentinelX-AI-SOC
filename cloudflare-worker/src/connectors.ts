@@ -88,6 +88,41 @@ function validateIndicator(input: Record<string,unknown>) {
   } else throw new Error("Choose indicator type: ip, domain, url or hash.");
   return {type,value};
 }
+
+async function dispatchLocalBridge(context: AdapterContext, connectorId: string, operation: "test" | "query", config: Record<string,string>, input: Record<string,unknown> = {}) {
+  const bridge = await context.env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND bridge_enabled=1 AND revoked_at IS NULL AND last_seen_at>=? ORDER BY last_seen_at DESC LIMIT 1")
+    .bind(context.actor.organization_id, new Date(Date.now()-90_000).toISOString()).first<{id:string}>();
+  if (!bridge) throw new Error("No online SentinelX Local Bridge is connected to this workspace. Enroll and start a bridge on a machine that can reach Wazuh.");
+  const taskId = crypto.randomUUID();
+  const nowAt = new Date();
+  const expiresAt = new Date(nowAt.getTime()+30_000).toISOString();
+  await context.env.DB.prepare("INSERT INTO bridge_tasks(id,org_id,collector_id,actor_id,connector_id,request_json,status,created_at,expires_at) VALUES(?,?,?,?,?,?,'queued',?,?)")
+    .bind(taskId, context.actor.organization_id, bridge.id, context.actor.id, connectorId, JSON.stringify({operation,config,input}), nowAt.toISOString(), expiresAt).run();
+  const deadline = Date.now()+25_000;
+  while (Date.now()<deadline) {
+    const row = await context.env.DB.prepare("SELECT status,result_json FROM bridge_tasks WHERE id=? AND org_id=? AND collector_id=?")
+      .bind(taskId, context.actor.organization_id, bridge.id).first<{status:string;result_json:string|null}>();
+    if (row?.status === "completed" || row?.status === "failed") {
+      if (!row.result_json) throw new Error("Local Bridge returned an empty result.");
+      const result = JSON.parse(row.result_json) as {ok:boolean;message:string;data?:unknown};
+      if (!result.ok) throw new Error(result.message || "Local Bridge tool query failed.");
+      return result.data ?? {message:result.message};
+    }
+    if (row?.status === "expired") throw new Error("Local Bridge task expired before execution.");
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  await context.env.DB.prepare("UPDATE bridge_tasks SET status='expired' WHERE id=? AND status IN ('queued','claimed')").bind(taskId).run();
+  throw new Error("Local Bridge did not respond within 25 seconds. Check that the bridge process is running.");
+}
+function validBridgeEndpoint(value: string, allowedPort: string) {
+  try {
+    const u = new URL(value);
+    if (!["http:","https:"].includes(u.protocol) || u.username || u.password || u.search || u.hash) return false;
+    if (!u.hostname || ["169.254.169.254","metadata.google.internal","metadata.azure.internal"].includes(u.hostname.toLowerCase())) return false;
+    return !u.port || u.port === allowedPort;
+  } catch { return false; }
+}
+
 async function wazuhAuth(context: AdapterContext, values: Record<string,string>) {
   if (!publicHttps(values.apiUrl || "")) throw new Error("Wazuh requires a public HTTPS hostname (for example, a Cloudflare Tunnel protected by Access). Private IPs and plain HTTP are blocked.");
   if (!values.apiUser || !values.apiPassword) throw new Error("Wazuh API username and password are required.");
@@ -109,10 +144,11 @@ const field = (key:string,label:string,placeholder:string,type:FieldSchema["type
 const wazuh: ToolAdapter = {
   id:"wazuh",name:"Wazuh",category:"SIEM",description:"Connect Wazuh Manager and Indexer: agent inventory plus actual security alert search.",
   schema:{version:"1.0",fields:[
-    field("apiUrl","Wazuh Manager API URL","https://wazuh.example.com:55000","url",true,"Expose only through trusted HTTPS Cloudflare Tunnel / Access or a private bridge. Never open port 55000 publicly."),
+    field("connectionMode","Connection mode","direct","text",true,"direct = public HTTPS API; local_bridge = private/local API reached by your enrolled SentinelX Bridge."),
+    field("apiUrl","Wazuh Manager API URL","https://wazuh.example.com:55000","url",true,"Direct mode requires public HTTPS. Local Bridge mode accepts a private/local Wazuh URL reachable from the bridge machine; never expose port 55000 publicly."),
     field("apiUser","Read-only Manager API username","sentinelx-readonly","text",true),
     field("apiPassword","Manager API password","Enter your Wazuh API password","password",true),
-    field("indexerUrl","Wazuh Indexer HTTPS URL","https://wazuh-indexer.example.com:9200","url",true,"Required for querying real Wazuh alert documents. Keep the indexer private behind Cloudflare Access."),
+    field("indexerUrl","Wazuh Indexer URL","https://wazuh-indexer.example.com:9200","url",true,"Required for alert search. In Local Bridge mode this may be a private/local address reachable from the bridge."),
     field("indexerUser","Read-only Indexer username","sentinelx-indexer-readonly","text",true),
     field("indexerPassword","Indexer password","Enter your Indexer password","password",true),
     field("accessClientId","Cloudflare Access Client ID","Service token ID","password"),
@@ -125,9 +161,13 @@ const wazuh: ToolAdapter = {
   async connect(context,values) {
     const allowed=["apiUrl","apiUser","apiPassword","indexerUrl","indexerUser","indexerPassword","accessClientId","accessClientSecret"];
     for(const k of Object.keys(values)) if(!allowed.includes(k)) throw new Error("Unsupported Wazuh configuration field: "+k);
-    if(!publicHttps(values.apiUrl||"")) throw new Error("A public HTTPS Wazuh Manager API URL is required. Use Cloudflare Tunnel/Access or a private bridge.");
+    const mode=values.connectionMode||"direct";
+    if(mode!=="direct"&&mode!=="local_bridge") throw new Error("Choose direct or local_bridge connection mode.");
+    if(mode==="direct"&&!publicHttps(values.apiUrl||"")) throw new Error("Direct Wazuh connections require a public HTTPS hostname. Choose Local Bridge for private/local addresses.");
+    if(mode==="local_bridge"&&(!validBridgeEndpoint(values.apiUrl||"","55000")||!validBridgeEndpoint(values.indexerUrl||"","9200"))) throw new Error("Local Bridge URLs must use HTTP/HTTPS and the Wazuh Manager port 55000 / Indexer port 9200.");
     if(!values.apiUser||!values.apiPassword) throw new Error("Wazuh Manager API username and password are required.");
-    if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("A public HTTPS Wazuh Indexer URL and read-only username/password are required to query alerts.");
+    if(mode==="direct"&&!publicHttps(values.indexerUrl||"")) throw new Error("Direct Wazuh connections require a public HTTPS Indexer hostname.");
+    if(!values.indexerUrl||!values.indexerUser||!values.indexerPassword) throw new Error("Wazuh Indexer URL and read-only username/password are required to query alerts.");
     if(Boolean(values.accessClientId)!==Boolean(values.accessClientSecret)) throw new Error("Provide both Cloudflare Access service token fields, or leave both blank.");
     const key=storageKey(context.actor,this.id),old=await context.env.INTEGRATION_CONFIGS.get(key);
     const previous=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
@@ -139,6 +179,11 @@ const wazuh: ToolAdapter = {
     const at=now();
     try {
       const values=await saved(context,this.id);
+      if((values.connectionMode||"direct")==="local_bridge") {
+        const data=await dispatchLocalBridge(context,this.id,"test",values,{});
+        const result={ok:true,message:"Wazuh Manager verified through the SentinelX Local Bridge.",checkedAt:at,details:{bridge:true}};
+        await health(context,this.id,result); return result;
+      }
       const auth=await wazuhAuth(context,values);
       const agents=await fetchJson(auth.root+"/agents?limit=1",{headers:auth.headers});
       if(!agents.response.ok) throw new Error("Wazuh Manager authenticated, but agent inventory returned HTTP "+agents.response.status+".");
@@ -157,6 +202,7 @@ const wazuh: ToolAdapter = {
   },
   async query(context,input) {
     const values=await saved(context,this.id);
+    if((values.connectionMode||"direct")==="local_bridge") return dispatchLocalBridge(context,this.id,"query",values,input);
     const auth=await wazuhAuth(context,values);
     const resource=String(input.resource||"agents");
     if(resource==="alerts") {
