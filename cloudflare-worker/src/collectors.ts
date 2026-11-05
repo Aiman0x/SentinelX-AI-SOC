@@ -164,9 +164,100 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
   return json({ accepted, received: events.length, integrationId, collectorId: collector.id, organizationScoped: true });
 }
 
+
+
+async function encryptBridgePayload(value: unknown, secret: string, aad: string): Promise<string> {
+  if (!/^[0-9a-fA-F]{64}$/.test(secret)) throw new Error("Encryption key unavailable");
+  const keyBytes = Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x, 16));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(aad) }, key, new TextEncoder().encode(JSON.stringify(value)));
+  return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(cipher)) });
+}
+async function decryptBridgePayload(envelopeText: string, secret: string, aad: string): Promise<Record<string, unknown>> {
+  if (!/^[0-9a-fA-F]{64}$/.test(secret)) throw new Error("Encryption key unavailable");
+  const keyBytes = Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x, 16));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const envelope = JSON.parse(envelopeText) as { iv: string; data: string };
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode64(envelope.iv), additionalData: new TextEncoder().encode(aad) }, key, decode64(envelope.data));
+  return JSON.parse(new TextDecoder().decode(plain)) as Record<string, unknown>;
+}
+
+async function createBridge(req: Request, env: CollectorEnv) {
+  const actor = await admin(req, env);
+  if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
+  const body = await readJson(req, 4096);
+  const name = typeof body?.name === "string" ? body.name.trim().slice(0, 80) : "";
+  const platform = typeof body?.platform === "string" ? body.platform : "";
+  if (name.length < 2 || !["windows", "linux", "macos"].includes(platform)) return json({ error: "Bridge name and Windows/Linux/macOS platform are required." }, 400);
+  const existing = await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND bridge_enabled=1 AND revoked_at IS NULL LIMIT 1").bind(actor.organization_id).first<{id:string}>();
+  if (existing) return json({ error: "This workspace already has a local bridge. Revoke it before enrolling a replacement; one bridge currently serves all private tools in the workspace." }, 409);
+  const bridgeId = id();
+  const token = "sxbridge_" + bridgeId.replace(/-/g, "") + "_" + b64(crypto.getRandomValues(new Uint8Array(32)));
+  await env.DB.prepare("INSERT INTO host_collectors(id,org_id,name,platform,token_hash,bridge_enabled) VALUES(?,?,?,?,?,1)")
+    .bind(bridgeId, actor.organization_id, name, platform, await sha(token)).run();
+  await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
+    .bind(id(), actor.organization_id, actor.id, "Human Admin", "local_bridge_enrolled", bridgeId, JSON.stringify({ platform, name }), "Success").run();
+  return json({ created: true, bridge: { id: bridgeId, name, platform, status: "pending", createdAt: new Date().toISOString() }, token, warning: "Copy this token now. It will not be shown again." }, 201);
+}
+async function listBridges(req: Request, env: CollectorEnv) {
+  const actor = await currentUser(req, env as Parameters<typeof currentUser>[1]);
+  if (!actor) return json({ error: "Authentication required" }, 401);
+  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at FROM host_collectors WHERE org_id=? AND bridge_enabled=1 ORDER BY created_at DESC")
+    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null}>();
+  return json({ bridges: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 90_000 ? "online" : row.last_seen_at ? "offline" : "pending" })) });
+}
+async function revokeBridge(req: Request, env: CollectorEnv, bridgeId: string) {
+  const actor = await admin(req, env);
+  if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
+  const result = await env.DB.prepare("UPDATE host_collectors SET revoked_at=? WHERE id=? AND org_id=? AND bridge_enabled=1 AND revoked_at IS NULL")
+    .bind(new Date().toISOString(), bridgeId, actor.organization_id).run();
+  return result.meta.changes ? json({ revoked: true }) : json({ error: "Bridge not found or already revoked" }, 404);
+}
+async function bridgeAuth(req: Request, env: CollectorEnv) {
+  const authorization = req.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (token.length < 40 || token.length > 256) return null;
+  return env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND bridge_enabled=1 AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
+}
+async function bridgePoll(req: Request, env: CollectorEnv) {
+  const bridge = await bridgeAuth(req, env);
+  if (!bridge) return json({ error: "Invalid or revoked bridge token" }, 401);
+  await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), bridge.id).run();
+  const task = await env.DB.prepare("SELECT id,connector_id,request_json FROM bridge_tasks WHERE collector_id=? AND status='queued' AND expires_at>? ORDER BY created_at LIMIT 1")
+    .bind(bridge.id, new Date().toISOString()).first<{id:string;connector_id:string;request_json:string}>();
+  if (!task) return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  const claimed = await env.DB.prepare("UPDATE bridge_tasks SET status='claimed',claimed_at=? WHERE id=? AND collector_id=? AND status='queued'")
+    .bind(new Date().toISOString(), task.id, bridge.id).run();
+  if (claimed.meta.changes !== 1) return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  let payload: Record<string, unknown> = {};
+  try { payload = await decryptBridgePayload(task.request_json, env.CONFIG_ENCRYPTION_KEY, "bridge-task:"+task.id); } catch { return json({ error: "Bridge task could not be decrypted" }, 500); }
+  return json({ task: { id: task.id, connectorId: task.connector_id, ...payload } });
+}
+async function bridgeResult(req: Request, env: CollectorEnv, taskId: string) {
+  const bridge = await bridgeAuth(req, env);
+  if (!bridge) return json({ error: "Invalid or revoked bridge token" }, 401);
+  const body = await readJson(req, 1_048_576);
+  if (!body || typeof body.ok !== "boolean" || typeof body.message !== "string") return json({ error: "A bounded bridge result is required" }, 400);
+  const safe = await encryptBridgePayload({ ok: body.ok, message: body.message.slice(0, 500), data: scrubSecrets(body.data) }, env.CONFIG_ENCRYPTION_KEY, "bridge-result:"+taskId);
+  const result = await env.DB.prepare("UPDATE bridge_tasks SET status=?,result_json=?,completed_at=? WHERE id=? AND collector_id=? AND status='claimed' AND expires_at>?")
+    .bind(body.ok ? "completed" : "failed", safe, new Date().toISOString(), taskId, bridge.id, new Date().toISOString()).run();
+  if (result.meta.changes !== 1) return json({ error: "Task is missing, expired or already completed" }, 409);
+  await env.DB.prepare("UPDATE host_collectors SET last_seen_at=? WHERE id=?").bind(new Date().toISOString(), bridge.id).run();
+  return json({ accepted: true });
+}
+
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events") return null;
+  if (!path.startsWith("/api/collectors") && !path.startsWith("/api/bridges") && !path.startsWith("/api/bridge/") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
+  if (path === "/api/bridges" && req.method === "POST") return createBridge(req, env);
+  if (path === "/api/bridges" && req.method === "GET") return listBridges(req, env);
+  if (path === "/api/bridge/poll" && req.method === "GET") return bridgePoll(req, env);
+  const bridgeResultMatch = path.match(/^\/api\/bridge\/result\/([0-9a-f-]+)$/);
+  if (bridgeResultMatch && req.method === "POST") return bridgeResult(req, env, bridgeResultMatch[1]);
+  const bridgeDeleteMatch = path.match(/^\/api\/bridges\/([0-9a-f-]+)$/);
+  if (bridgeDeleteMatch && req.method === "DELETE") return revokeBridge(req, env, bridgeDeleteMatch[1]);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
