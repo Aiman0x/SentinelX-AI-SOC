@@ -159,7 +159,7 @@ const wazuh: ToolAdapter = {
     field("limit","Alert result limit (1–100)","25")
   ]}},
   async connect(context,values) {
-    const allowed=["apiUrl","apiUser","apiPassword","indexerUrl","indexerUser","indexerPassword","accessClientId","accessClientSecret"];
+    const allowed=["connectionMode","apiUrl","apiUser","apiPassword","indexerUrl","indexerUser","indexerPassword","accessClientId","accessClientSecret"];
     for(const k of Object.keys(values)) if(!allowed.includes(k)) throw new Error("Unsupported Wazuh configuration field: "+k);
     const mode=values.connectionMode||"direct";
     if(mode!=="direct"&&mode!=="local_bridge") throw new Error("Choose direct or local_bridge connection mode.");
