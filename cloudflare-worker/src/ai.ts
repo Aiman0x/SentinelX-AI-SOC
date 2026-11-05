@@ -92,9 +92,21 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
     }
     if (!response.ok) {
       const status = response.status;
-      if (status === 401 || status === 403) throw new Error("Provider rejected the API key or permissions (HTTP " + status + ").");
-      if (status === 429) throw new Error("Provider rate limit or quota reached (HTTP 429).");
-      throw new Error("Provider request failed (HTTP " + status + ").");
+      const errorBody = await response.text();
+      let providerMessage = "";
+      try {
+        const parsed = JSON.parse(errorBody) as { error?: { message?: unknown }; message?: unknown };
+        const candidate = parsed.error?.message ?? parsed.message;
+        if (typeof candidate === "string") providerMessage = candidate;
+      } catch { /* Do not expose unstructured upstream response bodies. */ }
+      providerMessage = providerMessage
+        .replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "[REDACTED]")
+        .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [REDACTED]")
+        .slice(0, 240);
+      const detail = providerMessage ? ": " + providerMessage : ".";
+      if (status === 401 || status === 403) throw new Error("Provider rejected the API key or permissions (HTTP " + status + ")" + detail);
+      if (status === 429) throw new Error("Provider rate limit or quota reached (HTTP 429)" + detail);
+      throw new Error("Provider request failed (HTTP " + status + ")" + detail);
     }
     const payload = await response.json() as any;
     const text = config.provider === "anthropic" ? payload.content?.find((x: any) => x.type === "text")?.text :
