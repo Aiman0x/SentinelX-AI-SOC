@@ -180,7 +180,7 @@ const wazuh: ToolAdapter = {
     try {
       const values=await saved(context,this.id);
       if((values.connectionMode||"direct")==="local_bridge") {
-        const data=await dispatchLocalBridge(context,this.id,"test",values,{});
+        await dispatchLocalBridge(context,this.id,"test",values,{});
         const result={ok:true,message:"Wazuh Manager verified through the SentinelX Local Bridge.",checkedAt:at,details:{bridge:true}};
         await health(context,this.id,result); return result;
       }
