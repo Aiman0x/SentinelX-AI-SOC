@@ -10,7 +10,7 @@ type ConfigResponse = {
   maxInputTokens?: number;
 };
 
-const FIXED_MODEL = "nvidia/nemotron-3-ultra:free";
+const FIXED_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
 
 export function AIProviderSettings() {
   const [apiKey, setApiKey] = useState("");
