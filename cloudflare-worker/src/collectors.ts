@@ -165,6 +165,24 @@ async function receiveEvents(req: Request, env: CollectorEnv) {
 }
 
 
+
+async function encryptBridgePayload(value: unknown, secret: string, aad: string): Promise<string> {
+  if (!/^[0-9a-fA-F]{64}$/.test(secret)) throw new Error("Encryption key unavailable");
+  const keyBytes = Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x, 16));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(aad) }, key, new TextEncoder().encode(JSON.stringify(value)));
+  return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(cipher)) });
+}
+async function decryptBridgePayload(envelopeText: string, secret: string, aad: string): Promise<Record<string, unknown>> {
+  if (!/^[0-9a-fA-F]{64}$/.test(secret)) throw new Error("Encryption key unavailable");
+  const keyBytes = Uint8Array.from(secret.match(/.{2}/g)!, x => parseInt(x, 16));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const envelope = JSON.parse(envelopeText) as { iv: string; data: string };
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode64(envelope.iv), additionalData: new TextEncoder().encode(aad) }, key, decode64(envelope.data));
+  return JSON.parse(new TextDecoder().decode(plain)) as Record<string, unknown>;
+}
+
 async function createBridge(req: Request, env: CollectorEnv) {
   const actor = await admin(req, env);
   if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
@@ -212,7 +230,7 @@ async function bridgePoll(req: Request, env: CollectorEnv) {
     .bind(new Date().toISOString(), task.id, bridge.id).run();
   if (claimed.meta.changes !== 1) return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   let payload: Record<string, unknown> = {};
-  try { payload = JSON.parse(task.request_json) as Record<string, unknown>; } catch {}
+  try { payload = await decryptBridgePayload(task.request_json, env.CONFIG_ENCRYPTION_KEY, "bridge-task:"+task.id); } catch { return json({ error: "Bridge task could not be decrypted" }, 500); }
   return json({ task: { id: task.id, connectorId: task.connector_id, ...payload } });
 }
 async function bridgeResult(req: Request, env: CollectorEnv, taskId: string) {
@@ -220,7 +238,7 @@ async function bridgeResult(req: Request, env: CollectorEnv, taskId: string) {
   if (!bridge) return json({ error: "Invalid or revoked bridge token" }, 401);
   const body = await readJson(req, 1_048_576);
   if (!body || typeof body.ok !== "boolean" || typeof body.message !== "string") return json({ error: "A bounded bridge result is required" }, 400);
-  const safe = JSON.stringify({ ok: body.ok, message: body.message.slice(0, 500), data: scrubSecrets(body.data) });
+  const safe = await encryptBridgePayload({ ok: body.ok, message: body.message.slice(0, 500), data: scrubSecrets(body.data) }, env.CONFIG_ENCRYPTION_KEY, "bridge-result:"+taskId);
   const result = await env.DB.prepare("UPDATE bridge_tasks SET status=?,result_json=?,completed_at=? WHERE id=? AND collector_id=? AND status='claimed' AND expires_at>?")
     .bind(body.ok ? "completed" : "failed", safe, new Date().toISOString(), taskId, bridge.id, new Date().toISOString()).run();
   if (result.meta.changes !== 1) return json({ error: "Task is missing, expired or already completed" }, 409);
