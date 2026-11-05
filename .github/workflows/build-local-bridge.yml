@@ -2,6 +2,9 @@ name: Build SentinelX Local Bridge
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/byo-llm-multi-tenant-integrations
   push:
     branches:
       - feat/cross-platform-local-bridge
@@ -13,6 +16,18 @@ permissions:
   contents: read
 
 jobs:
+  validate-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx --yes wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml
+
   build:
     runs-on: ubuntu-latest
     strategy:
