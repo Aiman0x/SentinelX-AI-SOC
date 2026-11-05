@@ -77,7 +77,7 @@ export async function handleMcpRoute(req:Request,env:Env,path:string):Promise<Re
       const key=keyFor(actor);
       const old=await env.INTEGRATION_CONFIGS.get(key);
       const previous=old?await unseal(old,env.CONFIG_ENCRYPTION_KEY,key):{};
-      await env.INTEGRATION_CONFIGS.put(key,await seal({serverUrl,bearerToken,label,...previous},env.CONFIG_ENCRYPTION_KEY,key));
+      await env.INTEGRATION_CONFIGS.put(key,await seal({...previous,serverUrl,label,bearerToken:bearerToken||previous.bearerToken||""},env.CONFIG_ENCRYPTION_KEY,key));
       return json({saved:true,label,serverUrl,bearerTokenSaved:!!bearerToken,secretsHidden:true});
     }
     const config=await readConfig(env,actor);
