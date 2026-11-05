@@ -128,7 +128,7 @@ func execute(task Task) Result {
 		if !strings.HasPrefix(indexer,"https://") && !strings.HasPrefix(indexer,"http://") { return Result{OK:false,Message:"Indexer URL is required"} }
 		limit := 25
 		if n, ok := task.Input["limit"].(float64); ok && n>=1 && n<=100 { limit=int(n) }
-		headers := make(http.Header); headers.Set("Authorization","Basic "+basic(task.Config["indexerUser"],task.Config["indexerPassword"])); headers.Set("Content-Type","application/json")
+		headers := make(http.Header); headers.Set("Authorization",basic(task.Config["indexerUser"],task.Config["indexerPassword"])); headers.Set("Content-Type","application/json")
 		if task.Config["accessClientId"]!="" { headers.Set("CF-Access-Client-Id",task.Config["accessClientId"]); headers.Set("CF-Access-Client-Secret",task.Config["accessClientSecret"]) }
 		body := map[string]any{"size":limit,"track_total_hits":false,"sort":[]any{map[string]any{"timestamp":map[string]any{"order":"desc"}}},"query":map[string]any{"match_all":map[string]any{}}}
 		b,status,err:=do(indexer+"/wazuh-alerts-*/_search","POST",headers,body)
