@@ -20,6 +20,7 @@ const icons: Record<string, LucideIcon> = {
 const initialQuery = (fields: IntegrationField[] = []) => Object.fromEntries(fields.map(f => [f.key, f.key === 'limit' ? '25' : f.key === 'resource' ? 'agents' : f.key === 'type' ? 'ip' : '']));
 const FieldControl = ({ field, value, onChange, disabled = false }: { field: IntegrationField; value: string; onChange: (v: string) => void; disabled?: boolean }) => {
   if (field.key === 'type') return <select className="input mono" value={value || 'ip'} onChange={e => onChange(e.target.value)}><option value="ip">IP address</option><option value="domain">Domain</option><option value="url">URL</option><option value="hash">File hash</option></select>;
+  if (field.key === 'connectionMode') return <select className="input mono" value={value || 'direct'} onChange={e => onChange(e.target.value)}><option value="direct">Direct HTTPS</option><option value="local_bridge">Local Bridge (private/local)</option></select>;
   if (field.key === 'resource') return <select className="input mono" value={value || 'agents'} onChange={e => onChange(e.target.value)}><option value="agents">List agents</option><option value="agent">Get one agent</option><option value="manager">Manager info</option><option value="alerts">Recent Wazuh alerts</option></select>;
   return <input className="input mono" type={field.type === 'password' || field.secret ? 'password' : field.type === 'url' ? 'url' : 'text'} value={value ?? ''} placeholder={field.placeholder} onChange={e => onChange(e.target.value)} autoComplete="off" disabled={disabled} />;
 };
@@ -65,11 +66,11 @@ export default function Integrations() {
 
   return (
     <>
-      <PageHeader title="Connect your tools" subtitle="A dynamic connector registry — each user connects their own security tools and API keys." />
+      <PageHeader title="Connect your tools" subtitle="A dynamic connector registry — connect cloud APIs directly or reach private/local tools through an optional outbound Local Bridge." />
       <HostCollectors />
       <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
         {isBackendConfigured
-          ? 'Credentials are encrypted at rest and scoped to your signed-in user and organization. A saved key is not a verified connection; use Test Connection.'
+          ? 'Credentials are encrypted at rest and scoped to your signed-in account. Direct HTTPS and Local Bridge connections are supported; saved configuration is not a verified connection.'
           : 'Connectors require the SentinelX backend. Demo mode never stores API keys or secrets.'}
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-3">
@@ -133,7 +134,7 @@ export default function Integrations() {
                 {f.help && <p className="mt-1 text-[10px] text-sx-mute">{f.help}</p>}
               </Field>
             ))}
-            <div className="rounded border border-sx-line bg-sx-bg p-2 text-[10px] text-sx-mute">Wazuh security: keep API 55000 private. Use a trusted HTTPS Cloudflare Tunnel with Access service credentials or a private bridge; never expose the Manager API publicly.</div>
+            <div className="rounded border border-sx-line bg-sx-bg p-2 text-[10px] text-sx-mute">Wazuh security: keep Manager port 55000 and Indexer port 9200 private. Choose Local Bridge to reach private/local endpoints without a public URL or Cloudflare Tunnel. Direct HTTPS remains available for cloud-hosted deployments.</div>
             <div className="flex justify-end gap-2"><button className="btn" onClick={() => setEditing(null)}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={!isBackendConfigured}>{'Save encrypted credentials'}</button></div>
           </div>
         )}
