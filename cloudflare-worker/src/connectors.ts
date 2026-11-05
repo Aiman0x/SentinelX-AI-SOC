@@ -97,14 +97,14 @@ async function dispatchLocalBridge(context: AdapterContext, connectorId: string,
   const nowAt = new Date();
   const expiresAt = new Date(nowAt.getTime()+30_000).toISOString();
   await context.env.DB.prepare("INSERT INTO bridge_tasks(id,org_id,collector_id,actor_id,connector_id,request_json,status,created_at,expires_at) VALUES(?,?,?,?,?,?,'queued',?,?)")
-    .bind(taskId, context.actor.organization_id, bridge.id, context.actor.id, connectorId, JSON.stringify({operation,config,input}), nowAt.toISOString(), expiresAt).run();
+    .bind(taskId, context.actor.organization_id, bridge.id, context.actor.id, connectorId, await seal({operation,config,input}, context.env.CONFIG_ENCRYPTION_KEY, "bridge-task:"+taskId), nowAt.toISOString(), expiresAt).run();
   const deadline = Date.now()+25_000;
   while (Date.now()<deadline) {
     const row = await context.env.DB.prepare("SELECT status,result_json FROM bridge_tasks WHERE id=? AND org_id=? AND collector_id=?")
       .bind(taskId, context.actor.organization_id, bridge.id).first<{status:string;result_json:string|null}>();
     if (row?.status === "completed" || row?.status === "failed") {
       if (!row.result_json) throw new Error("Local Bridge returned an empty result.");
-      const result = JSON.parse(row.result_json) as {ok:boolean;message:string;data?:unknown};
+      const result = await unseal(row.result_json, context.env.CONFIG_ENCRYPTION_KEY, "bridge-result:"+taskId) as unknown as {ok:boolean;message:string;data?:unknown};
       if (!result.ok) throw new Error(result.message || "Local Bridge tool query failed.");
       return result.data ?? {message:result.message};
     }
