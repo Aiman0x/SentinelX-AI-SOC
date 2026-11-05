@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - feat/cross-platform-local-bridge
+      - feat/mcp-readonly-discovery
     paths:
       - "bridge/**"
       - ".github/workflows/build-local-bridge.yml"
