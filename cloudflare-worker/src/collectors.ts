@@ -234,9 +234,9 @@ export async function handleCollectorRoute(req: Request, env: CollectorEnv, path
   if (path === "/api/bridges" && req.method === "POST") return createBridge(req, env);
   if (path === "/api/bridges" && req.method === "GET") return listBridges(req, env);
   if (path === "/api/bridge/poll" && req.method === "GET") return bridgePoll(req, env);
-  const bridgeResultMatch = path.match(/^\\/api\\/bridge\\/result\\/([0-9a-f-]+)$/);
+  const bridgeResultMatch = path.match(/^\/api\/bridge\/result\/([0-9a-f-]+)$/);
   if (bridgeResultMatch && req.method === "POST") return bridgeResult(req, env, bridgeResultMatch[1]);
-  const bridgeDeleteMatch = path.match(/^\\/api\\/bridges\\/([0-9a-f-]+)$/);
+  const bridgeDeleteMatch = path.match(/^\/api\/bridges\/([0-9a-f-]+)$/);
   if (bridgeDeleteMatch && req.method === "DELETE") return revokeBridge(req, env, bridgeDeleteMatch[1]);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
