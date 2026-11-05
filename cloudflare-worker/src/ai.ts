@@ -84,11 +84,11 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
   try {
     let response: Response;
     if (config.provider === "anthropic") {
-      response = await fetch(url, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, system: systemPrompt, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, system: systemPrompt, messages: [{ role: "user", content: prompt }] }), signal: controller.signal, redirect: "follow" });
     } else if (config.provider === "gemini") {
-      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens } }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens } }), signal: controller.signal, redirect: "follow" });
     } else {
-      response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }] }), signal: controller.signal, redirect: "error" });
+      response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }] }), signal: controller.signal, redirect: "follow" });
     }
     if (!response.ok) {
       const status = response.status;
