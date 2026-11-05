@@ -190,6 +190,8 @@ async function createBridge(req: Request, env: CollectorEnv) {
   const name = typeof body?.name === "string" ? body.name.trim().slice(0, 80) : "";
   const platform = typeof body?.platform === "string" ? body.platform : "";
   if (name.length < 2 || !["windows", "linux", "macos"].includes(platform)) return json({ error: "Bridge name and Windows/Linux/macOS platform are required." }, 400);
+  const existing = await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND bridge_enabled=1 AND revoked_at IS NULL LIMIT 1").bind(actor.organization_id).first<{id:string}>();
+  if (existing) return json({ error: "This workspace already has a local bridge. Revoke it before enrolling a replacement; one bridge currently serves all private tools in the workspace." }, 409);
   const bridgeId = id();
   const token = "sxbridge_" + bridgeId.replace(/-/g, "") + "_" + b64(crypto.getRandomValues(new Uint8Array(32)));
   await env.DB.prepare("INSERT INTO host_collectors(id,org_id,name,platform,token_hash,bridge_enabled) VALUES(?,?,?,?,?,1)")
