@@ -4,7 +4,7 @@ import { apiPost, isBackendConfigured } from "../../services/apiClient";
 type AgentResult = {
   agent: string;
   plan: string[];
-  steps: { step: number; tool: string; rationale: string; result: unknown }[];
+  steps: { step: number; tool: string; rationale: string; result: unknown; attempts?: number; verification?: { status: "consistent" | "partial" | "unverified"; summary: string; supportedFindings: string[]; gaps: string[]; contradictions: string[] } }[];
   conclusion: string;
   provider: string;
   model: string;
@@ -14,6 +14,8 @@ type AgentResult = {
   estimatedInputTokens?: number;
   inputTokenBudget?: number;
   inputTruncated?: boolean;
+  retries?: number;
+  evidenceAssessment?: { consistent: number; partial: number; unverified: number; method: string };
 };
 
 const AGENT_NAME = "SentinelX SOC Investigator v1";
@@ -37,7 +39,7 @@ export function AgentInvestigationPanel() {
   return <section className="panel space-y-3 p-4">
     <div>
       <h2 className="text-sm font-semibold">Autonomous SOC Agent</h2>
-      <p className="mt-1 text-[11px] text-sx-mute">{AGENT_NAME} is the single centrally trained SentinelX investigation agent. It plans the investigation, selects only tools connected to your account, collects read-only evidence and produces an evidence-backed conclusion.</p>
+      <p className="mt-1 text-[11px] text-sx-mute">{AGENT_NAME} is the single centrally managed SentinelX investigation agent. It plans the investigation, selects only tools connected to your account, collects read-only evidence and produces an evidence-backed conclusion.</p>
     </div>
     {!isBackendConfigured && <p className="text-xs text-sx-warn">Connect the SentinelX backend to run the agent.</p>}
     <div className="flex flex-wrap gap-2">
@@ -49,13 +51,13 @@ export function AgentInvestigationPanel() {
     </label>
     <div className="flex flex-wrap items-end gap-3">
       <button className="btn btn-primary btn-sm" onClick={run} disabled={!isBackendConfigured||busy||!prompt.trim()}>{busy ? "Investigating…" : "Run agent investigation"}</button>
-      <span className="text-[10px] text-sx-mute">Fixed agent · Fixed model · Read-only · Server hard limit: 5 tool calls</span>
+      <span className="text-[10px] text-sx-mute">Fixed agent · Fixed model · Read-only · 5 total connector attempts · 1 controlled retry</span>
     </div>
     {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
     {result && <div className="space-y-3 border-t border-sx-line pt-3">
-      <div className="flex flex-wrap gap-2 text-[10px] text-sx-mute"><span>{result.agent || AGENT_NAME}</span><span>{result.provider} · {result.model}</span><span>{result.toolCalls}/{result.maxSteps} tool calls</span><span>{result.accessMode}</span>{result.estimatedInputTokens !== undefined && <span>~{result.estimatedInputTokens} input tokens</span>}{result.inputTruncated && <span className="text-sx-warn">Evidence was truncated to budget</span>}</div>
+      <div className="flex flex-wrap gap-2 text-[10px] text-sx-mute"><span>{result.agent || AGENT_NAME}</span><span>{result.provider} · {result.model}</span><span>{result.toolCalls}/{result.maxSteps} connector attempts</span><span>{result.retries || 0} retries</span><span>{result.accessMode}</span>{result.estimatedInputTokens !== undefined && <span>~{result.estimatedInputTokens} input tokens</span>}{result.inputTruncated && <span className="text-sx-warn">Evidence was truncated to budget</span>}</div>
       {result.plan.length>0 && <div><h3 className="label">Agent plan</h3><ol className="mt-1 list-decimal space-y-1 pl-4 text-xs">{result.plan.map((p,i)=><li key={i}>{p}</li>)}</ol></div>}
-      {result.steps.length>0 && <div><h3 className="label">Collected evidence</h3><div className="mt-1 space-y-2">{result.steps.map(step=><details key={step.step} className="rounded border border-sx-line p-2"><summary className="cursor-pointer text-xs">{step.step}. {step.tool} — {step.rationale}</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[10px] text-sx-mute">{JSON.stringify(step.result,null,2)}</pre></details>)}</div></div>}
+      {result.evidenceAssessment && <div className="rounded border border-sx-line p-2 text-[10px] text-sx-mute"><h3 className="label">Evidence review</h3><p className="mt-1">Consistent: {result.evidenceAssessment.consistent} · Partial: {result.evidenceAssessment.partial} · Unverified: {result.evidenceAssessment.unverified}</p><p className="mt-1">{result.evidenceAssessment.method}</p></div>}{result.steps.length>0 && <div><h3 className="label">Collected evidence & verification</h3><div className="mt-1 space-y-2">{result.steps.map(step=><details key={step.step} className="rounded border border-sx-line p-2"><summary className="cursor-pointer text-xs">{step.step}. {step.tool} — {step.rationale} · {step.verification?.status || "unverified"} · {step.attempts || 1} attempt(s)</summary><p className="mt-2 text-[10px] text-sx-mute">{step.verification?.summary || "No evidence review returned."}</p>{Boolean(step.verification?.supportedFindings.length) && <p className="mt-1 text-[10px]">Supported: {step.verification?.supportedFindings.join("; ")}</p>}{Boolean(step.verification?.gaps.length) && <p className="mt-1 text-[10px] text-sx-warn">Gaps: {step.verification?.gaps.join("; ")}</p>}{Boolean(step.verification?.contradictions.length) && <p className="mt-1 text-[10px] text-sx-red">Contradictions: {step.verification?.contradictions.join("; ")}</p><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[10px] text-sx-mute">{JSON.stringify(step.result,null,2)}</pre></details>)}</div></div>}
       <div><h3 className="label">Conclusion</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{result.conclusion}</p></div>
       <p className="text-[10px] text-sx-mute">Every tool call is audit logged. Tool calls are read-only. Conclusions require analyst verification; no containment or remediation is executed.</p>
     </div>}
