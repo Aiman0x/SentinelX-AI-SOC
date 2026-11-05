@@ -1,4 +1,5 @@
 import { currentUser } from "./auth";
+import { handleMcpRoute } from "./mcp";
 
 interface CollectorEnv {
   DB: D1Database;
@@ -249,6 +250,7 @@ async function bridgeResult(req: Request, env: CollectorEnv, taskId: string) {
 }
 
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
+  if (path.startsWith("/api/mcp/")) return handleMcpRoute(req, env, path);
   if (!path.startsWith("/api/collectors") && !path.startsWith("/api/bridges") && !path.startsWith("/api/bridge/") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
   if (path === "/api/bridges" && req.method === "POST") return createBridge(req, env);

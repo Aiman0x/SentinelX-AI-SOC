@@ -5,9 +5,11 @@ on:
   pull_request:
     branches:
       - feat/byo-llm-multi-tenant-integrations
+      - feat/cross-platform-local-bridge
   push:
     branches:
       - feat/cross-platform-local-bridge
+      - feat/mcp-readonly-discovery
     paths:
       - "bridge/**"
       - ".github/workflows/build-local-bridge.yml"
@@ -56,7 +58,7 @@ jobs:
       - name: Format and compile-check
         working-directory: bridge
         run: |
-          gofmt -w main.go
+          gofmt -w *.go
           go test ./...
       - name: Build
         working-directory: bridge

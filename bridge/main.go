@@ -104,7 +104,7 @@ func pollOnce(ctx context.Context, cfg Config) error {
 	return nil
 }
 func execute(task Task) Result {
-	if task.ConnectorID != "wazuh" { return Result{OK:false,Message:"This bridge build currently supports Wazuh only; MCP adapter support is the next connector module."} }
+	if task.ConnectorID == "mcp" { return executeMCP(task) }; if task.ConnectorID != "wazuh" { return Result{OK:false,Message:"Unsupported bridge connector"} }
 	if task.Operation != "query" && task.Operation != "test" { return Result{OK:false,Message:"Unsupported read-only operation"} }
 	auth, err := authenticate(task.Config); if err != nil { return Result{OK:false,Message:err.Error()} }
 	if task.Operation == "test" {
