@@ -101,7 +101,17 @@ func execute(task Task) Result {
 	if task.Operation == "test" {
 		b, status, err := do(auth.Root+"/agents?limit=1", "GET", auth.Headers, nil)
 		if err != nil { return Result{OK:false,Message:err.Error()} }; if status < 200 || status >= 300 { return Result{OK:false,Message:fmt.Sprintf("Wazuh Manager returned HTTP %d",status)} }
-		return Result{OK:true,Message:"Local Wazuh Manager API authenticated.",Data:json.RawMessage(b)}
+		indexer := strings.TrimRight(task.Config["indexerUrl"], "/")
+		if indexer == "" { return Result{OK:false,Message:"Wazuh Indexer URL is required for alert search"} }
+		indexerHeaders := make(http.Header)
+		indexerHeaders.Set("Authorization", basic(task.Config["indexerUser"], task.Config["indexerPassword"]))
+		indexerHeaders.Set("Content-Type", "application/json")
+		if task.Config["accessClientId"] != "" { indexerHeaders.Set("CF-Access-Client-Id", task.Config["accessClientId"]); indexerHeaders.Set("CF-Access-Client-Secret", task.Config["accessClientSecret"]) }
+		searchBody := map[string]any{"size":1,"query":map[string]any{"match_all":map[string]any{}}}
+		alerts, indexerStatus, indexerErr := do(indexer+"/wazuh-alerts-*/_search?size=1", "POST", indexerHeaders, searchBody)
+		if indexerErr != nil { return Result{OK:false,Message:"Manager succeeded but Indexer failed: "+indexerErr.Error()} }
+		if indexerStatus < 200 || indexerStatus >= 300 { return Result{OK:false,Message:fmt.Sprintf("Manager succeeded but Indexer returned HTTP %d",indexerStatus)} }
+		return Result{OK:true,Message:"Local Wazuh Manager and Indexer verified.",Data:map[string]any{"manager":json.RawMessage(b),"indexer":json.RawMessage(alerts)}}
 	}
 	resource, _ := task.Input["resource"].(string); if resource == "" { resource = "agents" }
 	path := ""
