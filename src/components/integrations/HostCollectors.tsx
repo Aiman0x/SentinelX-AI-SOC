@@ -157,7 +157,7 @@ export function HostCollectors() {
 
       <div className="mt-5 rounded-lg border border-sx-line bg-sx-bg/40 p-3">
         <div className="text-sm font-semibold">MCP server — read-only discovery</div>
-        <p className="mt-1 text-xs text-sx-mute">Connect a customer-owned MCP Streamable HTTP endpoint. Private/local endpoints are reached through the enrolled Local Bridge; no tunnel or inbound port is required.</p>
+        <p className="mt-1 text-xs text-sx-mute">Connect a customer-owned MCP Streamable HTTP endpoint. Remote servers must use HTTPS; HTTP is allowed only for localhost on the enrolled bridge machine (for example, 127.0.0.1). Other private-LAN MCP addresses are blocked in this security phase.</p>
         <form onSubmit={saveMcp} className="mt-3 grid gap-2 sm:grid-cols-2">
           <input className="input" value={mcpLabel} onChange={e => setMcpLabel(e.target.value)} placeholder="Server label" maxLength={80} />
           <input className="input" type="url" value={mcpUrl} onChange={e => setMcpUrl(e.target.value)} placeholder="http://127.0.0.1:3000/mcp" required />

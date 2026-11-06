@@ -1,16 +1,18 @@
 # SentinelX Local Bridge
 
-The bridge is a small outbound-only Go service for reaching tools that are installed on a customer's private LAN or workstation. It supports Windows, Linux and macOS from one codebase. No inbound firewall port and no Cloudflare Tunnel are required.
+The bridge is a small outbound-only Go service for reaching security tools from a customer's workstation or private network. It supports Windows, Linux and macOS from one codebase. No inbound firewall port and no Cloudflare Tunnel are required.
 
 ## Current implementation scope
 
 - Secure HTTPS polling to the SentinelX Worker.
 - Tenant-bound bridge token (the token is shown once by the enrollment API).
 - Read-only Wazuh Manager agent/manager queries and Wazuh Indexer alert searches.
-- MCP Streamable HTTP discovery and read-only tool calls through the same outbound bridge. Only MCP tools that explicitly set `annotations.readOnlyHint: true` are callable.
+- MCP Streamable HTTP discovery and read-only tool calls through the same outbound bridge.
+- MCP remote endpoints must use HTTPS. Plain HTTP is permitted only for localhost on the enrolled bridge machine (for example, `http://127.0.0.1:3000/mcp`).
+- MCP private-LAN IP addresses and non-loopback local hostnames are blocked in this security phase. A future explicit per-endpoint network allowlist is needed before enabling those destinations safely.
 - Local or private HTTP/HTTPS Wazuh endpoints are contacted by the bridge, never by the Cloudflare Worker.
 - Tool calls are queued per enrolled bridge and expire if not claimed in time.
-- MCP currently supports the Streamable HTTP transport (HTTP/HTTPS endpoints). Local stdio-launched MCP servers are not supported in this slice.
+- MCP currently supports Streamable HTTP. Local stdio-launched MCP servers are not supported in this slice.
 
 ## Build
 
@@ -44,9 +46,11 @@ Run `sentinelx-bridge.exe -config sentinelx-bridge.json` on Windows, or `./senti
 ## Security boundaries
 
 - Bridge token is stored server-side only as a SHA-256 hash and can be revoked.
-- Requests are HTTPS outbound only; the bridge does not listen on a port.
-- Only allowlisted read-only Wazuh operations and MCP tools explicitly annotated `readOnlyHint: true` are accepted in this build.
+- Requests to SentinelX are HTTPS outbound only; the bridge does not listen on a port.
+- MCP endpoint redirects are disabled; DNS results are checked at connection time to block private, loopback, link-local, reserved and metadata targets, with a localhost-only exception.
+- Remote MCP bearer tokens are sent only over HTTPS. HTTP is allowed only to loopback services on the bridge machine.
+- Only MCP tools advertising `annotations.readOnlyHint: true` can be called. This annotation is supplied by the MCP server and is not a cryptographic guarantee; connect only servers you trust and invoke tools deliberately.
 - MCP server URLs and bearer tokens are supplied by an authenticated workspace user; bearer tokens are encrypted at rest and never returned to the browser.
-- No shell command execution, arbitrary URL forwarding, response actions, or write operations.
+- No shell command execution, arbitrary URL forwarding, response actions, or write operations are added by this connector.
 - Use a dedicated read-only Wazuh API and Indexer account.
 - Never expose Wazuh Manager port 55000 or Indexer port 9200 to the public internet.

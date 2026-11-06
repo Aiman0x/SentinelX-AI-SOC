@@ -36,9 +36,9 @@ async function audited(env:Env,actor:Actor,event:string,details:Record<string,un
       .bind("Success",JSON.stringify({...details,result:"returned"}),id,actor.organization_id).run();
     return data;
   } catch(error) {
-    const message=error instanceof Error?error.message.slice(0,240):"MCP request failed";
+    // Provider exception text may contain request metadata or secrets. Keep it out of audit logs.
     await env.DB.prepare("UPDATE audit_logs SET outcome=?,details=? WHERE id=? AND org_id=?")
-      .bind("Failure",JSON.stringify({...details,error:message}),id,actor.organization_id).run();
+      .bind("Failure",JSON.stringify({...details,error:"MCP operation failed; inspect the user-facing error."}),id,actor.organization_id).run();
     throw error;
   }
 }
@@ -65,13 +65,23 @@ async function dispatch(env:Env,actor:Actor,config:Record<string,string>,operati
   await env.DB.prepare("UPDATE bridge_tasks SET status='expired' WHERE id=? AND status IN ('queued','claimed')").bind(taskId).run();
   throw new Error("Local Bridge did not respond within 25 seconds.");
 }
+
 function validEndpoint(value:string) {
   try {
     const u=new URL(value);
-    return ["http:","https:"].includes(u.protocol)&&!!u.hostname&&!u.username&&!u.password&&!u.search&&!u.hash&&
-      !["169.254.169.254","metadata.google.internal","metadata.azure.internal"].includes(u.hostname.toLowerCase());
+    const host=u.hostname.toLowerCase().replace(/^\[|\]$/g,"");
+    if(u.username||u.password||u.search||u.hash||!host) return false;
+    const local=host==="localhost"||host==="127.0.0.1"||host==="::1";
+    if(u.protocol==="http:") return local;
+    if(u.protocol!=="https:") return false;
+    if(local||host.endsWith(".localhost")||host.endsWith(".local")||host.endsWith(".internal")) return false;
+    if(/^(?:0|10|127|169\.254|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2}$/.test(host)) return false;
+    if(host==="::"||host==="::1"||host.startsWith("fc")||host.startsWith("fd")||host.startsWith("fe80:")) return false;
+    if(host==="169.254.169.254"||host==="metadata.google.internal"||host==="metadata.azure.internal") return false;
+    return true;
   } catch { return false; }
 }
+
 export async function handleMcpRoute(req:Request,env:Env,path:string):Promise<Response|null> {
   if(!path.startsWith("/api/mcp/")) return null;
   const origin=req.headers.get("Origin")||"";
@@ -88,7 +98,7 @@ export async function handleMcpRoute(req:Request,env:Env,path:string):Promise<Re
       const serverUrl=typeof body.serverUrl==="string"?body.serverUrl.trim():"";
       const bearerToken=typeof body.bearerToken==="string"?body.bearerToken.trim():"";
       const label=typeof body.label==="string"?body.label.trim().slice(0,80):"MCP server";
-      if(!validEndpoint(serverUrl)) return json({error:"Enter a valid HTTP/HTTPS MCP endpoint without embedded credentials, query or fragment."},400);
+      if(!validEndpoint(serverUrl)) return json({error:"Use HTTPS for remote MCP servers. HTTP is supported only for localhost on the enrolled bridge machine; private and reserved addresses are blocked."},400);
       if(bearerToken.length>2048) return json({error:"Bearer token is too long."},400);
       const key=keyFor(actor);
       const old=await env.INTEGRATION_CONFIGS.get(key);
