@@ -14,6 +14,21 @@ The bridge is a small outbound-only Go service for reaching security tools from 
 - Tool calls are queued per enrolled bridge and expire if not claimed in time.
 - MCP currently supports Streamable HTTP, paginated tool discovery (up to 1,000 tools), and bounded responses (512 KB per MCP response). Local stdio-launched MCP servers are not supported in this slice.
 
+## Windows quick start
+
+1. Open the SentinelX app at [sentinelx-api-gateway](https://sentinelx-api-gateway.aiman132046.workers.dev), sign in, and open **Integrations**.
+2. Under **Local Bridge**, choose Windows, enter a name, and select **Enroll bridge**.
+3. Select **Copy bridge config**. Paste the JSON into Notepad and save it as `sentinelx-bridge.json`.
+4. Download the `sentinelx-bridge-windows-amd64.exe` artifact from the [successful bridge build](https://github.com/Aiman0x/SentinelX-AI-SOC/actions/runs/42357198444), then extract it.
+5. Put `sentinelx-bridge.json` in the same folder as the executable.
+6. Open PowerShell in that folder and run:
+
+```powershell
+.\sentinelx-bridge-windows-amd64.exe -config .\sentinelx-bridge.json
+```
+
+Keep that PowerShell window open. Back in **Integrations**, save the MCP endpoint and choose **Discover MCP tools**. For a local server, use its localhost Streamable HTTP URL (for example `http://127.0.0.1:3000/mcp`); for a remote server, use HTTPS. Local stdio-only servers and other private-LAN addresses are not supported in this phase.
+
 ## Build
 
 Install Go 1.22+ on a build machine, then run:
