@@ -12,7 +12,7 @@ The bridge is a small outbound-only Go service for reaching security tools from 
 - MCP private-LAN IP addresses and non-loopback local hostnames are blocked in this security phase. A future explicit per-endpoint network allowlist is needed before enabling those destinations safely.
 - Local or private HTTP/HTTPS Wazuh endpoints are contacted by the bridge, never by the Cloudflare Worker.
 - Tool calls are queued per enrolled bridge and expire if not claimed in time.
-- MCP currently supports Streamable HTTP. Local stdio-launched MCP servers are not supported in this slice.
+- MCP currently supports Streamable HTTP, paginated tool discovery (up to 1,000 tools), and bounded responses (512 KB per MCP response). Local stdio-launched MCP servers are not supported in this slice.
 
 ## Build
 
