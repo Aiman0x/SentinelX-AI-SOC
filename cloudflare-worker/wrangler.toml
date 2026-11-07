@@ -35,3 +35,16 @@ binding = "DB"
 database_name = "sentinelx-auth-users"
 database_id = "5d1561a8-8e32-475d-b45e-67a0424b44f2"
 migrations_dir = "migrations"
+
+[[queues.producers]]
+binding = "EVENTS_QUEUE"
+queue = "sentinelx-events"
+
+[[queues.consumers]]
+queue = "sentinelx-events"
+max_batch_size = 50
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "sentinelx-events-dlq"
+max_concurrency = 2
+retry_delay = 10
