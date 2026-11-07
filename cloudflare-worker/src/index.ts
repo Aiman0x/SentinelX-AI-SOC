@@ -3,6 +3,8 @@ import { handleAIRoute, runScheduledAIReport, runScheduledMonitoring } from "./a
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
+import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
+import { handleDetectionRoute } from "./detections";
 export interface Env {
   ALLOWED_ORIGIN: string;
   DB: D1Database;
@@ -12,6 +14,7 @@ export interface Env {
   AP_BRIDGE_KEY: string;
   CONFIG_ENCRYPTION_KEY: string;
   INTEGRATION_CONFIGS: KVNamespace;
+  EVENTS_QUEUE: Queue<NormalizedSecurityEvent>;
   LOGIN_RATE_LIMITER: { limit: (input: { key: string }) => Promise<{ success: boolean }> };
   AP_READ_DETECTION_FINDINGS_URL: string;
   AP_READ_INVESTIGATIONS_URL: string;
@@ -304,6 +307,14 @@ export default {
     const collectorResponse = await handleCollectorRoute(request, env, url.pathname);
     if (collectorResponse) return new Response(collectorResponse.body, { status: collectorResponse.status, headers: { ...Object.fromEntries(collectorResponse.headers), ...cors } });
 
+    const eventResponse = await handleEventRoute(request, env, url.pathname);
+    if (eventResponse) return new Response(eventResponse.body, { status: eventResponse.status, headers: { ...Object.fromEntries(eventResponse.headers), ...cors } });
+
+    if (url.pathname.startsWith("/api/incidents") || url.pathname.startsWith("/api/detections/")) {
+      const detectionResponse = await handleDetectionRoute(request, env, url.pathname);
+      if (detectionResponse) return new Response(detectionResponse.body, { status: detectionResponse.status, headers: { ...Object.fromEntries(detectionResponse.headers), ...cors } });
+    }
+
     const aiResponse = await handleAIRoute(request, env, url.pathname);
     if (aiResponse) return new Response(aiResponse.body, { status: aiResponse.status, headers: { ...Object.fromEntries(aiResponse.headers), ...cors } });
 
@@ -429,6 +440,9 @@ export default {
     } catch {
       return reply({ error: "Could not reach upstream workflow" }, 502, cors);
     }
+  },
+  async queue(batch: MessageBatch<NormalizedSecurityEvent>, env: Env): Promise<void> {
+    await consumeEventBatch(batch, env);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env)]).then(() => undefined));
