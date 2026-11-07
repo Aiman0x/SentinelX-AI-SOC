@@ -24,6 +24,7 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    if: contains(github.event.head_commit.message, '[deploy-mcp]')
     runs-on: ubuntu-latest
     environment:
       name: sentinelx-api
