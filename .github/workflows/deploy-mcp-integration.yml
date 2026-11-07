@@ -1,0 +1,90 @@
+name: Deploy SentinelX MCP Integration
+
+on:
+  push:
+    branches:
+      - feat/byo-llm-multi-tenant-integrations
+    paths:
+      - "src/**"
+      - "public/**"
+      - "cloudflare-worker/**"
+      - "package.json"
+      - "package-lock.json"
+      - "index.html"
+      - "vite.config.*"
+      - "tsconfig*.json"
+      - ".github/workflows/deploy-mcp-integration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinelx-mcp-integration-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: sentinelx-api
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SentinelX GUI for Workers
+        env:
+          VITE_API_BASE_URL: https://sentinelx-api-gateway.aiman132046.workers.dev
+          VITE_ENVIRONMENT_LABEL: SENTINELX PRODUCTION
+        run: npm run build
+
+      - name: Apply Local Bridge schema safely
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: f3d939d4d22c2ce55786566917f3f15b
+        run: |
+          set -euo pipefail
+          columns="$(npx --yes wrangler@4 d1 execute DB --remote --json --command "PRAGMA table_info(host_collectors)" --config cloudflare-worker/wrangler.toml)"
+          if printf '%s' "$columns" | grep -q 'bridge_enabled'; then
+            tables="$(npx --yes wrangler@4 d1 execute DB --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name='bridge_tasks'" --config cloudflare-worker/wrangler.toml)"
+            if ! printf '%s' "$tables" | grep -q 'bridge_tasks'; then
+              echo "::error::Partial Local Bridge schema detected. Refusing to mutate production automatically."
+              exit 1
+            fi
+            echo "Local Bridge schema is already present; no migration needed."
+          else
+            npx --yes wrangler@4 d1 execute DB --remote --file=cloudflare-worker/migrations/0006_local_bridge.sql --yes --config cloudflare-worker/wrangler.toml
+          fi
+
+      - name: Deploy GUI assets and API gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: f3d939d4d22c2ce55786566917f3f15b
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Add CLOUDFLARE_API_TOKEN as a GitHub Actions secret."
+            exit 1
+          fi
+          npx --yes wrangler@4 deploy --config cloudflare-worker/wrangler.toml
+
+      - name: Smoke test MCP route
+        run: |
+          status="$(curl --silent --show-error --output /tmp/mcp-smoke.json --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            https://sentinelx-api-gateway.aiman132046.workers.dev/api/mcp/test)"
+          cat /tmp/mcp-smoke.json
+          if [ "$status" != "401" ]; then
+            echo "::error::Expected unauthenticated MCP route to return 401, got $status."
+            exit 1
+          fi
+          echo "MCP route is deployed and correctly requires authentication."
