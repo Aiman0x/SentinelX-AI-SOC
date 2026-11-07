@@ -123,8 +123,22 @@ export function HostCollectors() {
   };
 
   const copyBridge = async () => {
-    try { await navigator.clipboard.writeText(bridgeToken); setCopyState('Copied'); }
+    try { await navigator.clipboard.writeText(bridgeToken); setCopyState('Token copied.'); }
     catch { setCopyState('Select and copy the token manually.'); }
+  };
+
+  const copyBridgeConfig = async () => {
+    const config = {
+      gateway_url: 'https://sentinelx-api-gateway.aiman132046.workers.dev',
+      token: bridgeToken,
+      poll_ms: 1500,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+      setCopyState('Config copied. Paste it into Notepad and save as sentinelx-bridge.json beside the executable.');
+    } catch {
+      setCopyState('Could not copy config. Copy the token and create the JSON config manually.');
+    }
   };
 
   const copy = async () => {
@@ -196,9 +210,13 @@ export function HostCollectors() {
         {bridgeToken && <div className="mt-3 rounded border border-sx-gold/30 p-2">
           <div className="text-xs font-semibold text-sx-gold">Bridge token — copy once</div>
           <code className="mt-2 block break-all rounded bg-sx-bg p-2 text-[11px]">{bridgeToken}</code>
-          <button type="button" className="btn btn-gold mt-2" onClick={() => void copyBridge()}><Copy className="h-3.5 w-3.5" /> Copy token</button>
-          <span className="ml-2 text-[11px] text-sx-mute">{copyState}</span>
-          <p className="mt-2 text-[11px] text-sx-mute">Store this token in the bridge config file. It will not be displayed again.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="btn btn-gold" onClick={() => void copyBridge()}><Copy className="h-3.5 w-3.5" /> Copy token</button>
+            <button type="button" className="btn" onClick={() => void copyBridgeConfig()}><Copy className="h-3.5 w-3.5" /> Copy bridge config</button>
+            <a className="btn" href="https://github.com/Aiman0x/SentinelX-AI-SOC/actions/runs/42357198444" target="_blank" rel="noreferrer">Download bridge executable</a>
+          </div>
+          <p className="mt-2 text-[11px] text-sx-mute">{copyState}</p>
+          <p className="mt-2 text-[11px] text-sx-mute">Download and unzip the Windows artifact, paste the copied config into Notepad, and save it as sentinelx-bridge.json in the same folder. Then run the executable with <code>-config .\\sentinelx-bridge.json</code> from PowerShell. Keep the bridge running while using MCP.</p>
         </div>}
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[460px] text-left text-xs">
