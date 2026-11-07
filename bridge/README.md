@@ -18,7 +18,7 @@ The bridge is a small outbound-only Go service for reaching security tools from 
 
 1. Open the SentinelX app at [sentinelx-api-gateway](https://sentinelx-api-gateway.aiman132046.workers.dev), sign in, and open **Integrations**.
 2. Under **Local Bridge**, choose Windows, enter a name, and select **Enroll bridge**.
-3. Select **Copy bridge config**. Paste the JSON into Notepad and save it as `sentinelx-bridge.json`.
+3. Select **Copy bridge config**. Paste the JSON into Notepad. Use **Save As**, set **Save as type** to **All files (*.*)**, and save the exact filename `sentinelx-bridge.json` (not `.txt`).
 4. Download the `sentinelx-bridge-windows-amd64.exe` artifact from the [successful bridge build](https://github.com/Aiman0x/SentinelX-AI-SOC/actions/runs/42357198444), then extract it.
 5. Put `sentinelx-bridge.json` in the same folder as the executable.
 6. Open PowerShell in that folder and run:
