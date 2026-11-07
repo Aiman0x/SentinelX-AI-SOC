@@ -31,6 +31,7 @@ type MCPEnvelope struct {
 	Result  struct {
 		ProtocolVersion string `json:"protocolVersion,omitempty"`
 		Tools           []MCPTool `json:"tools,omitempty"`
+		NextCursor      string `json:"nextCursor,omitempty"`
 		Content         []any `json:"content,omitempty"`
 		IsError         bool `json:"isError,omitempty"`
 	} `json:"result,omitempty"`
@@ -177,9 +178,15 @@ func (c *MCPClient) post(ctx context.Context, payload any) (MCPEnvelope, error) 
 	if sid := resp.Header.Get("Mcp-Session-Id"); sid != "" {
 		c.session = sid
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	// Keep bridge results comfortably below the Worker result endpoint's 1 MiB
+	// request limit, including JSON framing and encryption overhead.
+	const maxMCPResponseBytes = 512 << 10
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMCPResponseBytes+1))
 	if err != nil {
 		return out, err
+	}
+	if len(body) > maxMCPResponseBytes {
+		return out, errors.New("MCP server response exceeds the 512 KB safety limit")
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(contentType, "text/event-stream") {
@@ -249,11 +256,35 @@ func (c *MCPClient) initialize(ctx context.Context) error {
 }
 
 func (c *MCPClient) listTools(ctx context.Context) ([]MCPTool, error) {
-	response, err := c.post(ctx, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{}})
-	if err != nil {
-		return nil, err
+	const maxPages = 100
+	const maxTools = 1000
+	cursor := ""
+	seenCursors := make(map[string]struct{})
+	tools := make([]MCPTool, 0)
+	for page := 0; page < maxPages; page++ {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		response, err := c.post(ctx, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": params})
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, response.Result.Tools...)
+		if len(tools) > maxTools {
+			return nil, errors.New("MCP server exposed more than the 1000-tool safety limit")
+		}
+		next := response.Result.NextCursor
+		if next == "" {
+			return tools, nil
+		}
+		if _, exists := seenCursors[next]; exists {
+			return nil, errors.New("MCP server returned a repeated pagination cursor")
+		}
+		seenCursors[next] = struct{}{}
+		cursor = next
 	}
-	return response.Result.Tools, nil
+	return nil, errors.New("MCP tools/list exceeded the 100-page safety limit")
 }
 
 func executeMCP(task Task) Result {
