@@ -46,16 +46,47 @@ async function createCollector(req: Request, env: CollectorEnv) {
 async function listCollectors(req: Request, env: CollectorEnv) {
   const actor = await currentUser(req, env as Parameters<typeof currentUser>[1]);
   if (!actor) return json({ error: "Authentication required" }, 401);
-  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,revoked_at,is_paused FROM host_collectors WHERE org_id=? ORDER BY created_at DESC")
-    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;revoked_at:string|null;is_paused:number}>();
-  return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.revoked_at ? "revoked" : row.is_paused ? "paused" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
+  // Remove legacy revoked rows left by earlier versions so the list stays clean.
+  const legacy = await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NOT NULL")
+    .bind(actor.organization_id).all<{id:string}>();
+  for (const row of legacy.results) await removeCollector(env, row.id, actor.organization_id);
+  const rows = await env.DB.prepare("SELECT id,name,platform,created_at,last_seen_at,is_paused FROM host_collectors WHERE org_id=? AND revoked_at IS NULL ORDER BY created_at DESC")
+    .bind(actor.organization_id).all<{id:string;name:string;platform:string;created_at:string;last_seen_at:string|null;is_paused:number}>();
+  return json({ collectors: rows.results.map(row => ({ id: row.id, name: row.name, platform: row.platform, createdAt: row.created_at, lastSeenAt: row.last_seen_at, status: row.is_paused ? "paused" : row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 10 * 60_000 ? "online" : row.last_seen_at ? "stale" : "pending" })) });
+}
+async function removeCollector(env: CollectorEnv, collectorId: string, organizationId: string): Promise<boolean> {
+  const row = await env.DB.prepare("SELECT id FROM host_collectors WHERE id=? AND org_id=?")
+    .bind(collectorId, organizationId).first<{id:string}>();
+  if (!row) return false;
+  // Remove only health snapshots produced by this collector; leave other hosts' data intact.
+  for (const integrationId of supported) {
+    const key = organizationId + ":" + integrationId + ":health";
+    const raw = await env.INTEGRATION_CONFIGS.get(key);
+    if (!raw) continue;
+    try {
+      const health = JSON.parse(raw) as { sensorId?: string };
+      if (health.sensorId === collectorId) await env.INTEGRATION_CONFIGS.delete(key);
+    } catch { /* Ignore malformed health cache entries. */ }
+  }
+  await env.DB.prepare("DELETE FROM host_collectors WHERE id=? AND org_id=?")
+    .bind(collectorId, organizationId).run();
+  return true;
 }
 async function revokeCollector(req: Request, env: CollectorEnv, collectorId: string) {
   const actor = await admin(req, env);
   if (!actor) return json({ error: "Authentication required or admin permission missing" }, 403);
-  const result = await env.DB.prepare("UPDATE host_collectors SET revoked_at=? WHERE id=? AND org_id=? AND revoked_at IS NULL")
-    .bind(new Date().toISOString(), collectorId, actor.organization_id).run();
-  return result.meta.changes ? json({ revoked: true }) : json({ error: "Collector not found or already revoked" }, 404);
+  const removed = await removeCollector(env, collectorId, actor.organization_id);
+  return removed ? json({ removed: true }) : json({ error: "Collector not found" }, 404);
+}
+async function stopCollector(req: Request, env: CollectorEnv) {
+  const authorization = req.headers.get("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (token.length < 40 || token.length > 256) return json({ error: "Collector authentication required" }, 401);
+  const row = await env.DB.prepare("SELECT id,org_id FROM host_collectors WHERE token_hash=? AND revoked_at IS NULL")
+    .bind(await sha(token)).first<{id:string;org_id:string}>();
+  if (!row) return json({ error: "Invalid or already removed collector token" }, 401);
+  await removeCollector(env, row.id, row.org_id);
+  return json({ stopped: true, removed: true });
 }
 async function setCollectorPaused(req: Request, env: CollectorEnv, collectorId: string, paused: boolean) {
   const actor = await admin(req, env);
@@ -139,9 +170,10 @@ async function receiveHeartbeat(req: Request, env: CollectorEnv) {
   return json({ accepted, collectorId: row.id, receivedAt: new Date().toISOString() });
 }
 export async function handleCollectorRoute(req: Request, env: CollectorEnv, path: string): Promise<Response | null> {
-  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events" && path !== "/api/collector/context") return null;
+  if (!path.startsWith("/api/collectors") && path !== "/api/collector/heartbeat" && path !== "/api/collector/config" && path !== "/api/collector/events" && path !== "/api/collector/context" && path !== "/api/collector/stop") return null;
   if (!allowedOrigin(req, env)) return json({ error: "Origin not allowed" }, 403);
   if (path === "/api/collector/context" && req.method === "GET") return collectorContext(req, env);
+  if (path === "/api/collector/stop" && req.method === "POST") return stopCollector(req, env);
   if (path === "/api/collectors" && req.method === "POST") return createCollector(req, env);
   if (path === "/api/collectors" && req.method === "GET") return listCollectors(req, env);
   if (path === "/api/collector/heartbeat" && req.method === "POST") return receiveHeartbeat(req, env);
