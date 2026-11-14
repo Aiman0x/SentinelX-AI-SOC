@@ -52,8 +52,6 @@ export async function handleIncidentReportRoute(request: Request, env: Env, path
   const detection = parse<Record<string, unknown>>(incident.detection_json, {});
   const mitre = parse<Array<{ id?: string; name?: string }>>(incident.mitre_json, []);
   const events = eventRows.results;
-  const first = events[0];
-  const last = events[events.length - 1];
   const timeline = events.length
     ? events.map(e => `- ${clean(e.observed_at)} — ${clean(e.event_type)} | ${clean(e.host)} | user: ${clean(e.username)} | source IP: ${clean(e.source_ip)} | ${clean(e.message, 240)}`).join("\n")
     : "- No linked event rows were available at report generation time.";
