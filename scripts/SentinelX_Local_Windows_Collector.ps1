@@ -1,7 +1,5 @@
-# SentinelX read-only Windows Security 4625 collector
-# Requires an elevated PowerShell session with permission to read the Security log.
-# Reads failed logons only. It does not modify Windows security settings or respond to incidents.
-
+# SentinelX read-only Windows Security + Sysmon event collector
+# Sends selected security telemetry over outbound HTTPS. It never changes endpoint settings.
 [CmdletBinding()]
 param(
     [switch]$Continuous,
@@ -12,27 +10,53 @@ param(
 $ErrorActionPreference = 'Stop'
 $CollectorApiUrl = $env:SENTINELX_COLLECTOR_API_URL
 $CollectorToken = $env:SENTINELX_COLLECTOR_TOKEN
-
 if ([string]::IsNullOrWhiteSpace($CollectorApiUrl) -or [string]::IsNullOrWhiteSpace($CollectorToken)) {
-    throw 'Set SENTINELX_COLLECTOR_API_URL and SENTINELX_COLLECTOR_TOKEN in the current PowerShell session before running the collector.'
+    throw 'Set SENTINELX_COLLECTOR_API_URL and SENTINELX_COLLECTOR_TOKEN before running the collector.'
 }
 if ($CollectorApiUrl -notmatch '^https://') { throw 'SENTINELX_COLLECTOR_API_URL must use HTTPS.' }
 if ($CollectorToken.Length -lt 40 -or $CollectorToken.Length -gt 256) { throw 'Collector token length is invalid.' }
+
 $CollectorEventsUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/events'
 $CollectorConfigUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/config'
+$StateDirectory = Join-Path $env:LOCALAPPDATA 'SentinelX'
+New-Item -ItemType Directory -Path $StateDirectory -Force | Out-Null
 
 function Test-CollectorPaused {
     $config = Invoke-RestMethod -Uri $CollectorConfigUrl -Method Get -Headers @{ Authorization = "Bearer $CollectorToken"; Accept = 'application/json' } -TimeoutSec 10
     return [bool]$config.paused
 }
 
-$StateDirectory = Join-Path $env:LOCALAPPDATA 'SentinelX'
-$CheckpointPath = Join-Path $StateDirectory 'last-security-record-id.txt'
-New-Item -ItemType Directory -Path $StateDirectory -Force | Out-Null
+function Get-EventType {
+    param([string]$Channel, [int]$EventId)
+    if ($Channel -eq 'Security') {
+        switch ($EventId) {
+            4624 { return 'windows_successful_login' }
+            4625 { return 'windows_failed_login' }
+            4688 { return 'windows_process_created' }
+            4697 { return 'windows_service_installed' }
+            4720 { return 'windows_user_created' }
+            { $_ -in 4728, 4732 } { return 'windows_group_member_added' }
+            1102 { return 'windows_audit_log_cleared' }
+        }
+    } else {
+        switch ($EventId) {
+            1  { return 'sysmon_process_created' }
+            3  { return 'sysmon_network_connection' }
+            7  { return 'sysmon_image_loaded' }
+            10 { return 'sysmon_process_access' }
+            11 { return 'sysmon_file_created' }
+            12 { return 'sysmon_registry_object_created' }
+            13 { return 'sysmon_registry_value_set' }
+            22 { return 'sysmon_dns_query' }
+            23 { return 'sysmon_file_deleted' }
+            26 { return 'sysmon_file_delete_detected' }
+        }
+    }
+    return 'windows_security_event'
+}
 
 function Get-EventFields {
-    param([System.Diagnostics.Eventing.Reader.EventRecord]$Record)
-
+    param([System.Diagnostics.Eventing.Reader.EventRecord]$Record, [string]$Channel)
     [xml]$xml = $Record.ToXml()
     $fields = @{}
     foreach ($node in @($xml.Event.EventData.Data)) {
@@ -42,72 +66,57 @@ function Get-EventFields {
     }
 
     $system = $xml.Event.System
+    $eventId = [int]$Record.Id
     $time = [DateTime]::Parse([string]$system.TimeCreated.SystemTime).ToUniversalTime()
     $computer = [string]$system.Computer
     if ([string]::IsNullOrWhiteSpace($computer)) { $computer = $env:COMPUTERNAME }
 
-    $targetUser = [string]$fields['TargetUserName']
-    if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -eq '-') {
-        $targetUser = [string]$fields['SubjectUserName']
+    $username = [string]$fields['TargetUserName']
+    if ([string]::IsNullOrWhiteSpace($username) -or $username -eq '-') { $username = [string]$fields['SubjectUserName'] }
+    if ([string]::IsNullOrWhiteSpace($username) -or $username -eq '-') { $username = [string]$fields['User'] }
+    if ($username -eq '-') { $username = '' }
+
+    $sourceIp = [string]$fields['IpAddress']
+    if ([string]::IsNullOrWhiteSpace($sourceIp) -or $sourceIp -in @('-', '127.0.0.1', '::1', '0.0.0.0')) {
+        $sourceIp = [string]$fields['SourceIp']
     }
-    if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -eq '-') { $targetUser = '' }
+    $destinationIp = [string]$fields['DestinationIp']
+    $eventType = Get-EventType -Channel $Channel -EventId $eventId
+    $severity = 'info'
+    if ($eventId -in @(4625, 4720, 4728, 4732)) { $severity = 'medium' }
+    if ($eventId -in @(4697, 1102)) { $severity = 'high' }
 
-    $ip = [string]$fields['IpAddress']
-    if ($ip -in @('-', '127.0.0.1', '::1', '0.0.0.0', '')) { $ip = '' }
+    $eventData = [ordered]@{}
+    foreach ($key in $fields.Keys) { $eventData[$key] = [string]$fields[$key] }
+    $eventData['EventID'] = $eventId
+    $eventData['Channel'] = $Channel
+    $eventData['RecordId'] = [long]$Record.RecordId
+    $eventData['Provider'] = [string]$Record.ProviderName
 
-    $eventData = [ordered]@{
-        EventID = 4625
-        LogName = 'Security'
-        TargetUserName = [string]$fields['TargetUserName']
-        TargetDomainName = [string]$fields['TargetDomainName']
-        SubjectUserName = [string]$fields['SubjectUserName']
-        SubjectDomainName = [string]$fields['SubjectDomainName']
-        LogonType = [string]$fields['LogonType']
-        Status = [string]$fields['Status']
-        SubStatus = [string]$fields['SubStatus']
-        IpAddress = [string]$fields['IpAddress']
-        IpPort = [string]$fields['IpPort']
-        WorkstationName = [string]$fields['WorkstationName']
-        ProcessName = [string]$fields['ProcessName']
-        AuthenticationPackageName = [string]$fields['AuthenticationPackageName']
-        FailureReason = [string]$fields['FailureReason']
-        RecordId = [long]$Record.RecordId
-        Provider = [string]$Record.ProviderName
-    }
-
+    $detailText = (($fields.GetEnumerator() | Select-Object -First 18 | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '; ')
+    $message = "$eventType | $detailText"
     return [pscustomobject]@{
-        event_id = ('win4625-{0}-{1}' -f $computer, $Record.RecordId)
-        event_type = 'windows_failed_login'
-        timestamp = $time.ToString('o')
+        eventId = ('win-{0}-{1}-{2}' -f $Channel.ToLower().Replace('/', '-'), $computer, $Record.RecordId)
+        eventType = $eventType
+        observedAt = $time.ToString('o')
         host = $computer
-        username = $targetUser
-        source_ip = $ip
-        source_integration = 'Windows Security Event Log'
-        data_origin = 'LOCAL_WINDOWS'
-        event_data = $eventData
+        username = $username
+        sourceIp = $sourceIp
+        destinationIp = $destinationIp
+        severity = $severity
+        message = $message
+        sourceIntegration = $Channel
+        dataOrigin = 'LOCAL_WINDOWS'
+        eventData = $eventData
     }
 }
 
 function Send-Record {
-    param([object]$Payload)
-    $event = @{
-        eventId = [string]$Payload.event_id
-        observedAt = [string]$Payload.timestamp
-        payload = @{
-            eventId = [string]$Payload.event_id
-            eventType = [string]$Payload.event_type
-            host = [string]$Payload.host
-            username = [string]$Payload.username
-            sourceIp = [string]$Payload.source_ip
-            source = [string]$Payload.source_integration
-            dataOrigin = [string]$Payload.data_origin
-            eventData = $Payload.event_data
-        }
-    }
+    param([object]$Payload, [string]$IntegrationId)
     $body = @{
-        integrationId = 'windows_security'
-        events = @($event)
-    } | ConvertTo-Json -Depth 10 -Compress
+        integrationId = $IntegrationId
+        events = @($Payload)
+    } | ConvertTo-Json -Depth 12 -Compress
     $response = Invoke-RestMethod -Uri $CollectorEventsUrl -Method Post -Headers @{
         Authorization = "Bearer $CollectorToken"
         Accept = 'application/json'
@@ -117,45 +126,51 @@ function Send-Record {
     }
 }
 
-do {
-    if (Test-CollectorPaused) {
-        Write-Host 'Collector is paused by SentinelX; no Windows events will be sent.'
-        if ($Continuous) { Start-Sleep -Seconds $IntervalSeconds; continue }
-        break
-    }
-
+function Invoke-ChannelCollection {
+    param([string]$Channel, [int[]]$EventIds, [string]$IntegrationId)
+    $checkpointPath = Join-Path $StateDirectory ("last-" + $IntegrationId + "-record-id.txt")
     $lastRecordId = 0L
-    $hasCheckpoint = Test-Path -LiteralPath $CheckpointPath
+    $hasCheckpoint = Test-Path -LiteralPath $checkpointPath
     if ($hasCheckpoint) {
-        $rawCheckpoint = (Get-Content -LiteralPath $CheckpointPath -Raw).Trim()
+        $rawCheckpoint = (Get-Content -LiteralPath $checkpointPath -Raw).Trim()
         if ($rawCheckpoint -match '^\d+$') { $lastRecordId = [long]$rawCheckpoint }
     }
 
-    $filter = @{ LogName = 'Security'; Id = 4625 }
-    if ($hasCheckpoint) {
-        $filter['StartTime'] = (Get-Date).AddDays(-7)
-    } else {
-        $filter['StartTime'] = (Get-Date).AddMinutes(-$InitialLookbackMinutes)
-    }
-
+    $filter = @{ LogName = $Channel; Id = $EventIds }
+    $filter['StartTime'] = if ($hasCheckpoint) { (Get-Date).AddDays(-7) } else { (Get-Date).AddMinutes(-$InitialLookbackMinutes) }
     $records = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue |
         Where-Object { [long]$_.RecordId -gt $lastRecordId } |
         Sort-Object { [long]$_.RecordId })
 
     foreach ($record in $records) {
-        $payload = Get-EventFields -Record $record
+        $payload = Get-EventFields -Record $record -Channel $Channel
         try {
-            Send-Record -Payload $payload
-            # Advance only after the intake endpoint accepts the event.
-            [System.IO.File]::WriteAllText($CheckpointPath, [string]$record.RecordId)
-            Write-Host ('Sent EventID 4625 | Host={0} | User={1} | Record={2}' -f $payload.host, $(if ($payload.username) {$payload.username} else {'(not present)'}), $record.RecordId)
+            Send-Record -Payload $payload -IntegrationId $IntegrationId
+            # Advance the channel-specific checkpoint only after the gateway accepts the event.
+            [System.IO.File]::WriteAllText($checkpointPath, [string]$record.RecordId)
+            Write-Host ('Sent {0} EventID {1} | Host={2} | Record={3}' -f $Channel, $record.Id, $payload.host, $record.RecordId)
         } catch {
-            Write-Warning ('Send failed for Windows record {0}; checkpoint was not advanced. {1}' -f $record.RecordId, $_.Exception.Message)
+            Write-Warning ('Send failed for {0} record {1}; checkpoint was not advanced. {2}' -f $Channel, $record.RecordId, $_.Exception.Message)
             break
         }
     }
+}
 
-    if ($Continuous) {
-        Start-Sleep -Seconds $IntervalSeconds
+do {
+    try {
+        if (Test-CollectorPaused) {
+            Write-Host 'Collector is paused by SentinelX; no Windows events will be sent.'
+        } else {
+            Invoke-ChannelCollection -Channel 'Security' -EventIds @(4624,4625,4688,4697,4720,4728,4732,1102) -IntegrationId 'windows_security'
+            try {
+                Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational' -ErrorAction Stop | Out-Null
+                Invoke-ChannelCollection -Channel 'Microsoft-Windows-Sysmon/Operational' -EventIds @(1,3,7,10,11,12,13,22,23,26) -IntegrationId 'sysmon'
+            } catch {
+                Write-Host 'Sysmon channel not available; Security events will continue to be collected.'
+            }
+        }
+    } catch {
+        Write-Warning ('Collector cycle failed: ' + $_.Exception.Message)
     }
+    if ($Continuous) { Start-Sleep -Seconds $IntervalSeconds }
 } while ($Continuous)
