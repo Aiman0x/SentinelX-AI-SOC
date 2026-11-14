@@ -4,6 +4,7 @@ import { demoRules } from '../data/demoDetectionRules';
 import { demoPlaybooks } from '../data/demoPlaybooks';
 import { buildTrend, type TrendRange } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
+import type { Severity } from '../types/alert';
 import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
 import { apiGet, delay, isBackendConfigured } from './apiClient';
 import { rowsFrom, mapAsset, mapAudit, mapInvestigation, mapEvidence } from './backendMappers';
