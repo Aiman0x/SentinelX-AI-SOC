@@ -10,8 +10,58 @@ export const casesStore = createLocalStore<SecurityCase[]>('sentinelx.demo.cases
 const nowIso = () => new Date().toISOString();
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
+function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
+  const severityText = String(row.severity ?? 'medium').toLowerCase();
+  const severity: SecurityCase['severity'] = severityText === 'critical' ? 'critical'
+    : severityText === 'high' ? 'high' : severityText === 'low' ? 'low' : 'medium';
+  const statusText = String(row.status ?? 'open').toLowerCase();
+  const status: CaseStatus = statusText === 'resolved' ? 'resolved'
+    : statusText === 'investigating' ? 'investigating'
+    : statusText === 'false_positive' ? 'closed' : 'open';
+  const evidenceCount = Number(row.evidence_count ?? 0);
+  const eventCount = Number(row.event_count ?? 0);
+  const host = typeof row.host === 'string' ? row.host : '';
+  const sourceIp = typeof row.source_ip === 'string' ? row.source_ip : '';
+  const ruleKey = typeof row.incident_key === 'string' ? row.incident_key.split('|')[1] || row.incident_key : 'detection';
+  const firstSeen = String(row.first_seen ?? nowIso());
+  const lastSeen = String(row.last_seen ?? firstSeen);
+  return {
+    id: String(row.id ?? 'incident-unknown'),
+    title: String(row.title ?? 'Security detection incident'),
+    severity, status, assignee: 'Unassigned',
+    assets: host ? [host] : [],
+    createdAt: firstSeen, updatedAt: lastSeen,
+    overview: String(row.description ?? 'A detection rule matched incoming security telemetry.')
+      + ` Confidence: ${Number(row.confidence ?? 0)}%. Events: ${eventCount}. Source IP: ${sourceIp || 'not recorded'}.`,
+    notes: [],
+    evidence: evidenceCount ? [`${evidenceCount} evidence snapshot(s) stored with SHA-256 integrity hashes.`] : [],
+    alertIds: [],
+    timeline: [{
+      id: String(row.id ?? 'incident') + '-detection',
+      time: firstSeen,
+      title: 'Detection rule matched',
+      detail: `${ruleKey} · ${eventCount} linked event(s) · last seen ${lastSeen}`,
+      kind: 'detection',
+    }],
+    recommended: [
+      'Confirm whether the activity was authorized with the host or account owner.',
+      'Review surrounding authentication, endpoint and network events for this host and account.',
+      'Validate the source records before considering any containment action.',
+    ],
+    detectionIncident: true,
+  };
+}
+
 export async function loadCases(): Promise<SecurityCase[]> {
-  if (isBackendConfigured) return rowsFrom(await apiGet<unknown>('/api/cases')).map(mapCase);
+  if (isBackendConfigured) {
+    const [incidentPayload, legacyPayload] = await Promise.all([
+      apiGet<unknown>('/api/incidents?limit=100'),
+      apiGet<unknown>('/api/cases'),
+    ]);
+    const incidents = rowsFrom(incidentPayload).map((row) => mapSecurityIncident(row));
+    const legacyCases = rowsFrom(legacyPayload).map(mapCase);
+    return [...incidents, ...legacyCases];
+  }
   await delay(200);
   return casesStore.getSnapshot();
 }
