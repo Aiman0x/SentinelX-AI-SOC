@@ -18,6 +18,7 @@ if ($CollectorToken.Length -lt 40 -or $CollectorToken.Length -gt 256) { throw 'C
 
 $CollectorEventsUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/events'
 $CollectorConfigUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/config'
+$CollectorStopUrl = $CollectorApiUrl.TrimEnd('/') + '/api/collector/stop'
 $StateDirectory = Join-Path $env:LOCALAPPDATA 'SentinelX'
 New-Item -ItemType Directory -Path $StateDirectory -Force | Out-Null
 
@@ -156,21 +157,36 @@ function Invoke-ChannelCollection {
     }
 }
 
-do {
-    try {
-        if (Test-CollectorPaused) {
-            Write-Host 'Collector is paused by SentinelX; no Windows events will be sent.'
-        } else {
-            Invoke-ChannelCollection -Channel 'Security' -EventIds @(4624,4625,4688,4697,4720,4728,4732,1102) -IntegrationId 'windows_security'
-            try {
-                Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational' -ErrorAction Stop | Out-Null
-                Invoke-ChannelCollection -Channel 'Microsoft-Windows-Sysmon/Operational' -EventIds @(1,3,7,10,11,12,13,22,23,26) -IntegrationId 'sysmon'
-            } catch {
-                Write-Host 'Sysmon channel not available; Security events will continue to be collected.'
+try {
+    do {
+        try {
+            if (Test-CollectorPaused) {
+                Write-Host 'Collector is paused by SentinelX; no Windows events will be sent.'
+            } else {
+                Invoke-ChannelCollection -Channel 'Security' -EventIds @(4624,4625,4688,4697,4720,4728,4732,1102) -IntegrationId 'windows_security'
+                try {
+                    Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational' -ErrorAction Stop | Out-Null
+                    Invoke-ChannelCollection -Channel 'Microsoft-Windows-Sysmon/Operational' -EventIds @(1,3,7,10,11,12,13,22,23,26) -IntegrationId 'sysmon'
+                } catch {
+                    Write-Host 'Sysmon channel not available; Security events will continue to be collected.'
+                }
             }
+        } catch {
+            Write-Warning ('Collector cycle failed: ' + $_.Exception.Message)
         }
-    } catch {
-        Write-Warning ('Collector cycle failed: ' + $_.Exception.Message)
+        if ($Continuous) { Start-Sleep -Seconds $IntervalSeconds }
+    } while ($Continuous)
+} finally {
+    # Ctrl+C / normal shutdown removes this enrollment. A fresh run needs a fresh token.
+    if ($Continuous) {
+        try {
+            Invoke-RestMethod -Uri $CollectorStopUrl -Method Post -Headers @{
+                Authorization = "Bearer $CollectorToken"
+                Accept = 'application/json'
+            } -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
+            Write-Host 'SentinelX host enrollment removed. Enroll again to start a fresh session.'
+        } catch {
+            Write-Warning 'Could not notify SentinelX that the collector stopped. Remove this host from the dashboard if it remains listed.'
+        }
     }
-    if ($Continuous) { Start-Sleep -Seconds $IntervalSeconds }
-} while ($Continuous)
+}
