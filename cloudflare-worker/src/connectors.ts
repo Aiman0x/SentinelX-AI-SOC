@@ -57,7 +57,7 @@ async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = 10000)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {...init, signal:controller.signal, redirect:"error"});
+    const response = await fetch(url, {...init, signal:controller.signal, redirect:"manual"});
     const raw = await response.text();
     let data: any = null;
     try { data = raw ? JSON.parse(raw) : null; } catch { data = { message: "Provider returned a non-JSON response." }; }
