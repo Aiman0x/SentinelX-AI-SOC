@@ -1,7 +1,8 @@
-import { Microscope, Send, X } from 'lucide-react';
-import { useState } from 'react';
+import { FileText, Microscope, Send, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { apiPost } from '../../services/apiClient';
 import { ANALYSTS, addNote, setAssignee, setCaseStatus } from '../../services/casesService';
 import type { Alert } from '../../types/alert';
 import type { CaseStatus, SecurityCase } from '../../types/case';
@@ -17,8 +18,26 @@ export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: Secur
   const { toast, analyst, openAlert } = useApp();
   const navigate = useNavigate();
   const [note, setNote] = useState('');
+  const [report, setReport] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  useEffect(() => { setReport(null); setReportError(null); }, [c.id]);
   const linked = c.alertIds.map((id) => alerts.find((a) => a.id === id || a.eventId === id || a.evidence.includes(id))).filter(Boolean) as Alert[];
   const primaryAlertId = linked[0]?.id ?? c.alertIds.find((id) => alerts.some((a) => a.id === id));
+
+  const generateReport = async () => {
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const result = await apiPost<{ markdown: string }>(`/api/incidents/${encodeURIComponent(c.id)}/report`, {});
+      setReport(result.markdown);
+      toast('Detection report generated and saved to the SentinelX audit trail.', 'success');
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : 'Could not generate detection report.');
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   const submit = () => {
     if (!note.trim()) return;
@@ -56,6 +75,7 @@ export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: Secur
         {readOnly && <p className="mt-3 text-[11px] text-sx-mute">Read-only backend record. Case updates and assignment controls will be enabled when the write API is ready.</p>}
         <div className="mt-4 flex gap-2">
           <button className="btn btn-primary" onClick={() => primaryAlertId && navigate(`/investigation?alert=${encodeURIComponent(primaryAlertId)}`)} disabled={!primaryAlertId}><Microscope className="h-3.5 w-3.5" /> Open in Investigation</button>
+          {c.detectionIncident && <button className="btn btn-gold" onClick={generateReport} disabled={reportLoading}><FileText className="h-3.5 w-3.5" /> {reportLoading ? 'Generating report…' : 'Generate detection report'}</button>}
         </div>
       </Panel>
 
@@ -105,6 +125,8 @@ export function CaseDetails({ c, alerts, onClose, readOnly = false }: { c: Secur
         </ul>
         <p className="mt-3 text-[11px] text-sx-mute">{readOnly ? 'Backend case notes are read-only until the notes API is implemented.' : 'Prototype note: cases are saved in this browser’s local storage, which is not a secure database.'}</p>
       </Panel>
+      {reportError && <Panel title="Report error" bodyClass="p-3"><p className="text-xs text-sx-red">{reportError}</p></Panel>}
+      {report && <Panel title="SentinelX detection report" bodyClass="p-4"><pre className="whitespace-pre-wrap break-words text-xs leading-6 text-sx-ink">{report}</pre></Panel>}
     </div>
   );
 }

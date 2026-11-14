@@ -57,14 +57,14 @@ export default function Cases() {
       <PageHeader title="Incidents & Cases" subtitle="Track investigations from detection to closure."
         actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" /> New demo case</button> : undefined} />
 
-      {isBackendConfigured && (remoteCases.loading ? <div className="mb-3 text-xs text-sx-mute">Loading cases from SentinelX backend…</div> : remoteCases.error ? <div className="mb-3 text-xs text-sx-red">Backend cases unavailable: {remoteCases.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only incident records from the SentinelX backend. Case updates and notes will be enabled after write APIs are complete.</div>)}
+      {isBackendConfigured && (remoteCases.loading ? <div className="mb-3 text-xs text-sx-mute">Loading cases from SentinelX backend…</div> : remoteCases.error ? <div className="mb-3 text-xs text-sx-red">Backend cases unavailable: {remoteCases.error}</div> : <div className="mb-3 text-xs text-sx-mute">Live detection incidents and backend case records. Detection reports are generated from linked event evidence; response actions remain manual.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-3 border-b border-sx-line p-3">
           <Segmented<Filter> label="Filter by status" value={filter} onChange={setFilter}
             options={(['all', 'open', 'investigating', 'contained', 'resolved', 'closed'] as Filter[]).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))} />
           <SearchInput className="w-full sm:ml-auto sm:w-64" value={q} onChange={setQ} placeholder="Search cases" label="Search cases" />
         </div>
-        {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description={isBackendConfigured ? "No backend case records match the current filter." : "Change the filter or create a new demo case."} /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
+        {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description={isBackendConfigured ? "No incidents have matched the active detection rules yet. Normal events can be stored without creating an incident." : "Change the filter or create a new demo case."} /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
       </Panel>
 
       {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} readOnly={isBackendConfigured} /></div>}

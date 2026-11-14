@@ -5,6 +5,7 @@ import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
 import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
 import { handleDetectionRoute } from "./detections";
+import { handleIncidentReportRoute } from "./incidentReports";
 // Detection, correlation and evidence processing is part of the event-ingestion runtime.
 export interface Env {
   ALLOWED_ORIGIN: string;
@@ -301,6 +302,9 @@ export default {
         : reply({ error: "Origin not allowed" }, 403);
     }
     if (origin && !isAllowedOrigin(origin, env)) return reply({ error: "Origin not allowed" }, 403);
+
+    const reportResponse = await handleIncidentReportRoute(request, env, url.pathname);
+    if (reportResponse) return new Response(reportResponse.body, { status: reportResponse.status, headers: { ...Object.fromEntries(reportResponse.headers), ...cors } });
 
     const detectionResponse = await handleDetectionRoute(request, env, url.pathname);
     if (detectionResponse) return new Response(detectionResponse.body, { status: detectionResponse.status, headers: { ...Object.fromEntries(detectionResponse.headers), ...cors } });
