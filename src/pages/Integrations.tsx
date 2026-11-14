@@ -39,7 +39,7 @@ export default function Integrations() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All tools');
-  const [showCollectors, setShowCollectors] = useState(false);
+  const [showCollectors, setShowCollectors] = useState(true);
 
   const tools = data ?? [];
   const connectedTools = tools.filter(i => i.configured || i.verified || i.state === 'connected');
@@ -173,7 +173,7 @@ export default function Integrations() {
 
       <section className="mt-5">
         <button className="flex w-full items-center justify-between rounded-xl border border-sx-line bg-sx-panel px-4 py-3 text-left" onClick={() => setShowCollectors(v => !v)} aria-expanded={showCollectors}>
-          <span><span className="block text-sm font-semibold">Host agents</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll Windows or Linux machines that send telemetry to SentinelX.</span></span>
+          <span><span className="block text-sm font-semibold">Windows hosts</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll a Windows PC to stream Security and Sysmon events.</span></span>
           <ChevronDown className={`h-4 w-4 text-sx-mute transition-transform ${showCollectors ? 'rotate-180' : ''}`} />
         </button>
         {showCollectors && <div className="mt-3"><HostCollectors /></div>}
