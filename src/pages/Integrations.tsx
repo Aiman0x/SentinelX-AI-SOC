@@ -14,7 +14,7 @@ import { isBackendConfigured } from '../services/apiClient';
 import { HostCollectors } from '../components/integrations/HostCollectors';
 
 const icons: Record<string, LucideIcon> = {
-  activepieces: Workflow, wazuh: Shield, sysmon: Radar, suricata: Network, zeek: Network,
+  activepieces: Workflow, wazuh: Shield, windows_security: Shield, sysmon: Radar, suricata: Network, zeek: Network,
   virustotal: ScanSearch, abuseipdb: Shield, urlscan: Globe, clamav: Bug, yara: ScanSearch,
 };
 const categories = ['All tools', 'SIEM', 'Endpoint', 'Network', 'Threat Intelligence', 'Malware', 'Orchestration'];
@@ -90,7 +90,7 @@ export default function Integrations() {
   const toolCard = (i: Integration, compact = false) => {
     const Icon = icons[i.id] ?? Shield;
     const querySchema = i.schema?.query;
-    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
+    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['windows_security', 'sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
     return (
       <Panel key={i.id} bodyClass={compact ? 'flex h-full flex-col p-3' : 'flex h-full flex-col p-4'} className="flex flex-col">
         <div className="flex items-start justify-between gap-3">
