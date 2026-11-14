@@ -119,7 +119,7 @@ export async function handleIncidentReportRoute(request: Request, env: Env, path
     verifiedEvidenceCount: verified, evidenceChecks, reportMode: "rule_based_not_llm"
   });
   await env.DB.prepare(
-    "INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,payload_json) VALUES(?,?,?,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP"
+    "INSERT INTO soc_records(id,org_id,entity_type,source_table,source_record_id,payload_json) VALUES(?,?,?,?,?,?) ON CONFLICT(org_id,entity_type,source_table,source_record_id) DO UPDATE SET id=excluded.id,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP"
   ).bind(reportId, actor.organization_id, "detection_report", "security_incidents", incident.id, payload).run();
   await env.DB.prepare(
     "INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)"
