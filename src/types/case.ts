@@ -32,4 +32,6 @@ export interface SecurityCase {
   alertIds: string[];
   timeline: TimelineEntry[];
   recommended: string[];
+  /** True when this record comes from the rule-based security_incidents engine. */
+  detectionIncident?: boolean;
 }
