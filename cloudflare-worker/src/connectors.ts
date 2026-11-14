@@ -164,9 +164,12 @@ const wazuh: ToolAdapter = {
       const indexer=new URL(values.indexerUrl);
       const indexerHeaders:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
       if(values.accessClientId&&values.accessClientSecret){indexerHeaders["CF-Access-Client-Id"]=values.accessClientId;indexerHeaders["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"timestamp":{order:"desc"}}]})});
+      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,track_total_hits:true,query:{match_all:{}},sort:[{"timestamp":{order:"desc"}}]})});
       if(!alerts.response.ok) throw new Error("Wazuh Manager works, but Indexer alert search failed (HTTP "+alerts.response.status+").");
-      const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,alertIndexReachable:true}};
+      const alertTotal=alerts.data?.hits?.total;
+      const indexedAlertCount=typeof alertTotal==="number"?alertTotal:typeof alertTotal?.value==="number"?alertTotal.value:null;
+      const latestAlertTimestamp=alerts.data?.hits?.hits?.[0]?._source?.timestamp??null;
+      const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,indexedAlertCount,latestAlertTimestamp,alertIndexReachable:true}};
       await health(context,this.id,result); return result;
     } catch(e) {
       const result={ok:false,message:e instanceof Error?e.message:"Wazuh connection failed.",checkedAt:at};
@@ -187,9 +190,27 @@ const wazuh: ToolAdapter = {
       if(!result.response.ok) throw new Error("Wazuh alert search failed (HTTP "+result.response.status+").");
       return result.data;
     }
+    if(resource==="agents") {
+      // Wazuh returns a maximum of 100 agents per page. Retrieve up to five
+      // pages so medium-sized deployments do not silently appear incomplete.
+      const allAgents:any[]=[];
+      let totalAffectedItems:number|null=null;
+      let totalFailedItems=0;
+      for(let offset=0;offset<500;offset+=100) {
+        const page=await fetchJson(auth.root+"/agents?limit=100&offset="+offset+"&select=id,name,status,ip,version,node_name",{headers:auth.headers});
+        if(!page.response.ok) throw new Error("Wazuh agent inventory query failed (HTTP "+page.response.status+").");
+        const items=Array.isArray(page.data?.data?.affected_items)?page.data.data.affected_items:[];
+        allAgents.push(...items);
+        const pageTotal=page.data?.data?.total_affected_items;
+        if(typeof pageTotal==="number") totalAffectedItems=pageTotal;
+        const failed=page.data?.data?.total_failed_items;
+        if(typeof failed==="number") totalFailedItems=failed;
+        if(items.length===0 || (totalAffectedItems!==null && allAgents.length>=totalAffectedItems) || items.length<100) break;
+      }
+      return {data:{affected_items:allAgents,total_affected_items:totalAffectedItems??allAgents.length,total_failed_items:totalFailedItems},meta:{returned:allAgents.length,truncated:totalAffectedItems!==null&&allAgents.length<totalAffectedItems}};
+    }
     let path="";
-    if(resource==="agents") path="/agents?limit=100&select=id,name,status,ip,version,node_name";
-    else if(resource==="agent") {
+    if(resource==="agent") {
       const id=String(input.agentId||"");
       if(!/^[0-9]{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
       path="/agents/"+id;
