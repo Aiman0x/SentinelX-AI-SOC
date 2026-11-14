@@ -50,6 +50,10 @@ function mitreFor(e:EventRow):Array<{id:string;name:string}>{
  if(/powershell|script.?interpreter|wscript|cscript/.test(t))out.push({id:"T1059",name:"Command and Scripting Interpreter"});
  if(/scheduled.?task|registry.?run|persistence|service.?install/.test(t))out.push({id:"T1053",name:"Scheduled Task/Job"});
  if(/dns|outbound|network.?connection|beacon/.test(t))out.push({id:"T1071",name:"Application Layer Protocol"});
+ if(/audit_log_cleared|security_log_cleared|1102/.test(t))out.push({id:"T1070.001",name:"Clear Windows Event Logs"});
+ if(/user_created|4720/.test(t))out.push({id:"T1136.001",name:"Create Account: Local Account"});
+ if(/group_member_added|4728|4732/.test(t))out.push({id:"T1098",name:"Account Manipulation"});
+ if(/service_installed|4697/.test(t))out.push({id:"T1543.003",name:"Windows Service"});
  return out;
 }
 function sigmaMitre(yaml:string):Array<{id:string;name:string}>{
@@ -70,6 +74,10 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  if(/runonce|currentversion\\run|scheduled.?task|service.?install/.test(text))out.push({key:"SX-END-002",title:"Persistence-Related Configuration Change",description:"Event indicates a persistence-related configuration change.",severity:"high",confidence:80,mitre:[{id:"T1053",name:"Scheduled Task/Job"}]});
  if(/remote.?service|psexec|admin\$|remote.?logon/.test(text))out.push({key:"SX-END-003",title:"Unexpected Remote Service Logon",description:"Event contains remote service or administrative-share activity.",severity:"high",confidence:75,mitre:[{id:"T1021",name:"Remote Services"}]});
  if(/periodic|beacon|repeated outbound|regular outbound/.test(text))out.push({key:"SX-NET-001",title:"Potential Periodic Outbound Communication",description:"Network event matched a beacon-like or repeated outbound communication pattern.",severity:"medium",confidence:65,mitre:[{id:"T1071",name:"Application Layer Protocol"}]});
+ if(/windows_audit_log_cleared|security_log_cleared|event.?log.?cleared|1102/.test(text))out.push({key:"SX-WIN-001",title:"Windows Security Audit Log Cleared",description:"Windows reported that the Security audit log was cleared. Validate whether this was an authorized administrative action.",severity:"high",confidence:92,mitre:[{id:"T1070.001",name:"Clear Windows Event Logs"}]});
+ if(/windows_service_installed|service_installed|4697/.test(text))out.push({key:"SX-WIN-002",title:"Windows Service Installed",description:"A new Windows service was installed. Verify the service name, binary path and installer context.",severity:"high",confidence:82,mitre:[{id:"T1543.003",name:"Windows Service"}]});
+ if(/windows_user_created|user_created|4720/.test(text))out.push({key:"SX-WIN-003",title:"Windows User Account Created",description:"A new local or domain user account was created. Verify the initiating account and authorization.",severity:"medium",confidence:78,mitre:[{id:"T1136.001",name:"Create Account: Local Account"}]});
+ if(/windows_group_member_added|group_member_added|4728|4732/.test(text))out.push({key:"SX-WIN-004",title:"Windows Security Group Membership Changed",description:"A user was added to a security-enabled group. Verify whether the membership change was approved.",severity:"medium",confidence:80,mitre:[{id:"T1098",name:"Account Manipulation"}]});
  void ev;return out;
 }
 async function addFinding(env:Env,e:EventRow,rule:{key:string;title:string;description:string;severity:Severity;confidence:number;mitre:Array<{id:string;name:string}>},sourceRuleType="builtin"){
