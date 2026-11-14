@@ -24,6 +24,12 @@ export const demoIntegrations: Integration[] = [
     ],
   },
   {
+    id: 'windows_security', name: 'Windows Security Logs', category: 'Endpoint',
+    purpose: 'Authentication, process creation, account changes and Windows audit events from your enrolled PC.',
+    state: 'demo', configured: false, verified: false,
+    fields: [],
+  },
+  {
     id: 'sysmon', name: 'Windows Sysmon', category: 'Endpoint',
     purpose: 'Detailed Windows process, network and registry telemetry.',
     state: 'demo', configured: false, verified: false,

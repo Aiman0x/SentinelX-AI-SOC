@@ -37,20 +37,32 @@ function severity(v:unknown):NormalizedSecurityEvent["severity"]{
 }
 async function normalize(org:string,collectorId:string|null,source:string,value:unknown):Promise<NormalizedSecurityEvent>{
  if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Each event must be a JSON object.");
- const e=value as Record<string,unknown>, raw=scrub(e) as Record<string,unknown>;
- const observedRaw=str(e.observedAt??e.timestamp??e["@timestamp"],80);
+ const outer=value as Record<string,unknown>;
+ const nested=outer.payload&&typeof outer.payload==="object"&&!Array.isArray(outer.payload)?outer.payload as Record<string,unknown>:{};
+ // Accept both flat collector events and the legacy { payload: {...} } envelope.
+ const e={...outer,...nested};
+ const raw=scrub(outer) as Record<string,unknown>;
+ const eventData=e.eventData??e.event_data??e.EventData??{};
+ const observedRaw=str(e.observedAt??outer.observedAt??e.timestamp??e.timeCreated??outer.timestamp??e["@timestamp"],80);
  const time=observedRaw?Date.parse(observedRaw):Date.now();
  if(!Number.isFinite(time))throw new Error("Event timestamp must be a valid date/time.");
  const observedAt=new Date(time).toISOString();
  const rule=e.rule&&typeof e.rule==="object"?e.rule as Record<string,unknown>:{};
  const user=e.user&&typeof e.user==="object"?(e.user as Record<string,unknown>).name:e.user;
- const eventType=str(e.eventType??e.type??rule.description??e.category??"security_event",120);
- const eventId=str(e.eventId??e.id??e._id,180)||await hash(source+":"+observedAt+":"+JSON.stringify(raw));
+ const eventId=str(e.eventId??outer.eventId??e.id??e._id,180)||await hash(source+":"+observedAt+":"+JSON.stringify(raw));
  const dedupKey=await hash(org+":"+source+":"+eventId);
  const host=e.host&&typeof e.host==="object"?(e.host as Record<string,unknown>).name:e.host;
- const sev=severity(e.severity??e.level??e.risk);
- const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:str(e.sourceIp??e.srcIp??e.src_ip??e.source_ip,80)||null,destinationIp:str(e.destinationIp??e.dstIp??e.dest_ip??e.destination_ip,80)||null,username:str(e.username??user,255)||null,message:str(e.message??e.description??e.summary??eventType,4000)};
- return {organizationId:org,collectorId,eventId,dedupKey,source,eventType,severity:sev,observedAt,receivedAt:new Date().toISOString(),host:normalized.host as string|null,sourceIp:normalized.sourceIp as string|null,destinationIp:normalized.destinationIp as string|null,username:normalized.username as string|null,message:String(normalized.message),normalized,raw};
+ const eventType=str(e.eventType??e.event_type??e.type??rule.description??e.category??"security_event",120);
+ const eventNumber=str((eventData as Record<string,unknown>)?.EventID??(eventData as Record<string,unknown>)?.event_id??e.eventCode??e.event_code,12);
+ const severityValue=e.severity??e.level??e.risk??(eventNumber==="1102"||eventNumber==="4697"?"high":eventNumber==="4625"?"medium":"info");
+ const sev=severity(severityValue);
+ const srcIp=str(e.sourceIp??e.srcIp??e.src_ip??e.source_ip??e.ipAddress??e.IpAddress,80)||null;
+ const dstIp=str(e.destinationIp??e.dstIp??e.dest_ip??e.destination_ip??e.DestinationIp,80)||null;
+ const username=str(e.username??e.TargetUserName??e.targetUserName??user??e.SubjectUserName,255)||null;
+ const details=eventData&&typeof eventData==="object"?Object.entries(eventData as Record<string,unknown>).slice(0,24).map(([k,v])=>k+"="+str(v,180)).join(" "):"";
+ const message=str(e.message??e.description??e.summary??[eventType,details].filter(Boolean).join(" | "),4000);
+ const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:srcIp,destinationIp:dstIp,username,message,sourceIntegration:str(e.sourceIntegration??e.source_integration??source,160),dataOrigin:str(e.dataOrigin??e.data_origin??"UNVERIFIED",40),eventData:scrub(eventData)};
+ return {organizationId:org,collectorId,eventId,dedupKey,source,eventType,severity:sev,observedAt,receivedAt:new Date().toISOString(),host:normalized.host as string|null,sourceIp:srcIp,destinationIp:dstIp,username,message,normalized,raw};
 }
 async function collector(req:Request,env:EventEnv,header="Authorization"):Promise<CollectorRow|null>{
  const h=req.headers.get(header)||"",token=header==="Authorization"?(h.startsWith("Bearer ")?h.slice(7):""):h;
