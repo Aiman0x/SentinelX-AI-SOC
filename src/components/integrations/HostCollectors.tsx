@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost, isBackendConfigured } from '../../services/apiClient';
 
-type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'paused' | 'revoked' };
+type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'paused' };
 export function HostCollectors() {
   const [items, setItems] = useState<Collector[]>([]);
   const [name, setName] = useState('My Windows PC');
@@ -39,7 +39,7 @@ Invoke-WebRequest -Uri "${scriptUrl}" -OutFile $script
   const revoke = async (id: string) => {
     setActionBusyId(id); setError('');
     try { await apiDelete('/api/collectors/' + id); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not revoke collector.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not remove collector.'); }
     finally { setActionBusyId(''); }
   };
   return <section className="panel mb-5 p-4">
@@ -57,18 +57,16 @@ Invoke-WebRequest -Uri "${scriptUrl}" -OutFile $script
         <p className="mt-1 text-[10px] text-sx-mute">Open PowerShell as Administrator on that Windows PC. This command contains its private collector token; do not share it.</p>
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-sx-bg p-2 text-[10px]">{installCommand}</pre>
         <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(installCommand)}>Copy setup command</button>
-        <p className="mt-2 text-[10px] text-sx-mute">The collector starts continuous monitoring. Stop it with Ctrl+C. Pause/Resume and Revoke are available below.</p>
+        <p className="mt-2 text-[10px] text-sx-mute">The collector starts continuous monitoring. Stop it with Ctrl+C to remove this host enrollment automatically. A fresh run requires a new enrollment command. Use Pause/Resume only when you want to keep the same enrollment.</p>
       </div>}
       {error && <p className="mt-2 text-xs text-sx-warn">{error}</p>}
       <div className="mt-4 space-y-2">
         {items.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-sx-line bg-sx-bg p-2 text-xs">
           <div><span className="font-medium">{item.name}</span><span className="ml-2 text-sx-mute">Windows</span><div className="mt-1 text-[10px] text-sx-mute">Last event/heartbeat: {item.lastSeenAt ? new Date(item.lastSeenAt).toLocaleString() : 'Waiting for first event'}</div></div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={item.status==='online'?'text-sx-green':item.status==='revoked'?'text-sx-red':item.status==='paused'?'text-sx-mute':'text-sx-warn'}>{item.status}</span>
-            {item.status!=='revoked' && <>
-              <button className="btn" disabled={actionBusyId===item.id} onClick={()=>void togglePause(item.id,item.status==='paused')}>{actionBusyId===item.id?'Updating…':item.status==='paused'?'Resume':'Pause'}</button>
-              <button className="btn" disabled={actionBusyId===item.id} onClick={()=>void revoke(item.id)}>Revoke</button>
-            </>}
+            <span className={item.status==='online'?'text-sx-green':item.status==='paused'?'text-sx-mute':'text-sx-warn'}>{item.status}</span>
+            <button className="btn" disabled={actionBusyId===item.id} onClick={()=>void togglePause(item.id,item.status==='paused')}>{actionBusyId===item.id?'Updating…':item.status==='paused'?'Resume':'Pause'}</button>
+            <button className="btn" disabled={actionBusyId===item.id} onClick={()=>void revoke(item.id)}>Remove</button>
           </div>
         </div>)}
         {!items.length && <p className="text-xs text-sx-mute">No Windows hosts enrolled yet.</p>}
