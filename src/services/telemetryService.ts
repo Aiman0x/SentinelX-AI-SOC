@@ -1,50 +1,63 @@
 import { apiGet, isBackendConfigured } from './apiClient';
-import { rowsFrom } from './backendMappers';
-
-const LOCAL_AGENT = 'http://127.0.0.1:8765';
-const LOCAL_HEADERS = { Accept: 'application/json', 'Content-Type': 'application/json', 'X-SentinelX-Local-Agent': 'sentinelx-gui-v1' };
-
-export interface LocalCollectorStatus {
-  agent: 'online';
-  collector: 'running' | 'stopped';
-  processId: number | null;
-  eventScope: string;
-}
-
-async function localAgentRequest<T>(path: string, method: 'GET' | 'POST' = 'GET'): Promise<T> {
-  const response = await fetch(LOCAL_AGENT + path, {
-    method, mode: 'cors', cache: 'no-store', headers: LOCAL_HEADERS,
-    signal: AbortSignal.timeout(2500),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { error?: string };
-    throw new Error(payload.error || 'Local agent request failed (' + response.status + ').');
-  }
-  return response.json() as Promise<T>;
-}
-export const getLocalCollectorStatus = () => localAgentRequest<LocalCollectorStatus>('/status');
-export const startLocalCollector = () => localAgentRequest<LocalCollectorStatus>('/collector/start', 'POST');
-export const stopLocalCollector = () => localAgentRequest<LocalCollectorStatus>('/collector/stop', 'POST');
 
 export interface WindowsTelemetryEvent {
-  id: string; eventId: string; eventType: string; eventTime: string; receivedAt: string;
-  host: string; username: string; sourceIp: string; source: string; dataOrigin: string;
-  validationStatus: string; notes: string; raw: string;
+  id: string;
+  eventId: string;
+  eventType: string;
+  eventTime: string;
+  receivedAt: string;
+  host: string;
+  username: string;
+  sourceIp: string;
+  source: string;
+  severity: string;
+  dataOrigin: string;
+  message: string;
+  raw: string;
 }
-const value = (row: Record<string, unknown>, key: string, fallback = '—') => {
-  const cells = row.cells && typeof row.cells === 'object' ? row.cells as Record<string, unknown> : {};
-  const v = cells[key] ?? row[key];
-  return v === undefined || v === null || v === '' ? fallback : String(v);
+
+type SecurityEventRow = {
+  id?: string;
+  event_id?: string;
+  source?: string;
+  event_type?: string;
+  severity?: string;
+  observed_at?: string;
+  received_at?: string;
+  host?: string | null;
+  username?: string | null;
+  source_ip?: string | null;
+  message?: string;
+  normalized?: Record<string, unknown>;
 };
+
+const text = (value: unknown, fallback = '—'): string =>
+  value === undefined || value === null || value === '' ? fallback : String(value);
+
 export async function getWindowsTelemetry(): Promise<WindowsTelemetryEvent[]> {
   if (!isBackendConfigured) throw new Error('SentinelX backend is not configured.');
-  const payload = await apiGet<unknown>('/api/telemetry');
-  return rowsFrom(payload).map((row, index) => ({
-    id: String(row.id ?? index), eventId: value(row, 'Source Event ID', value(row, 'Event ID')),
-    eventType: value(row, 'Event Type'), eventTime: value(row, 'Event Time'),
-    receivedAt: value(row, 'Received At'), host: value(row, 'Host'), username: value(row, 'Username'),
-    sourceIp: value(row, 'Source IP'), source: value(row, 'Source Integration'),
-    dataOrigin: value(row, 'Data Origin'), validationStatus: value(row, 'Validation Status'),
-    notes: value(row, 'Notes', ''), raw: value(row, 'Normalized Event JSON', ''),
-  }));
+  const payload = await apiGet<{ data?: SecurityEventRow[] }>('/api/events?limit=100');
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  return rows.map((row, index) => {
+    const normalized = row.normalized && typeof row.normalized === 'object' ? row.normalized : {};
+    const eventData = normalized.eventData && typeof normalized.eventData === 'object'
+      ? normalized.eventData as Record<string, unknown> : {};
+    const windowsId = eventData.EventID ?? eventData.event_id ?? normalized.eventCode ?? '';
+    const sourceEventId = normalized.eventId ?? row.event_id ?? '';
+    return {
+      id: text(row.id, String(index)),
+      eventId: text(windowsId || sourceEventId),
+      eventType: text(normalized.eventType ?? row.event_type),
+      eventTime: text(row.observed_at),
+      receivedAt: text(row.received_at),
+      host: text(row.host ?? normalized.host),
+      username: text(row.username ?? normalized.username),
+      sourceIp: text(row.source_ip ?? normalized.sourceIp),
+      source: text(row.source ?? normalized.sourceIntegration),
+      severity: text(row.severity ?? normalized.severity, 'unknown'),
+      dataOrigin: text(normalized.dataOrigin, 'UNVERIFIED'),
+      message: text(row.message ?? normalized.message, ''),
+      raw: JSON.stringify(normalized),
+    };
+  });
 }
