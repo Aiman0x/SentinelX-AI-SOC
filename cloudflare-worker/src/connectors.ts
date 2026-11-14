@@ -253,8 +253,8 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
     }
   };
 }
-function hostAdapter(id:"sysmon"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
-  const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
+function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
+  const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",windows_security:"Windows Security Event Log",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
     id,name,category:id==="sysmon"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
     schema:{version:"1.0",fields:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped records reported by the enrolled host collector.",fields:[field("limit","Maximum records (1–100)","25")]}},
@@ -288,9 +288,13 @@ function hostAdapter(id:"sysmon"|"suricata"|"zeek"|"clamav"|"yara",name:string,d
     },
     async query(context,input) {
       const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
-      const pattern="%"+id+"%";
-      const rows=await context.env.DB.prepare("SELECT entity_type,source_table,source_record_id,payload_json,created_at FROM soc_records WHERE org_id=? AND (lower(entity_type) LIKE ? OR lower(source_table) LIKE ? OR lower(payload_json) LIKE ?) ORDER BY created_at DESC LIMIT ?").bind(context.actor.organization_id,pattern,pattern,pattern,limit).all();
-      return {data:rows.results};
+      const source=id==="sysmon"?"sysmon":id==="windows_security"?"windows_security":id;
+      const eventType=typeof input.eventType==="string"?input.eventType.trim().slice(0,120):"";
+      const sinceMinutes=Math.min(10080,Math.max(1,Number(input.sinceMinutes)||1440));
+      const rows=await context.env.DB.prepare(
+        "SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND source=? AND observed_at>=datetime('now',?) AND (?='' OR event_type=?) ORDER BY observed_at DESC LIMIT ?"
+      ).bind(context.actor.organization_id,source,"-"+sinceMinutes+" minutes",eventType,eventType,limit).all<Record<string,unknown>>();
+      return {data:rows.results.map(row=>{let event:unknown={};try{event=JSON.parse(String(row.normalized_json));}catch{}return {...row,event};}),count:rows.results.length,source,windowMinutes:sinceMinutes};
     }
   };
 }
@@ -350,7 +354,8 @@ const cloudflareResponse: ToolAdapter = {
 const adapters: ToolAdapter[] = [
   cloudflareResponse,
   activepieces,wazuh,
-  hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry and driver events delivered by the SentinelX host collector."),
+  hostAdapter("windows_security","Windows Security Logs","Windows authentication, process creation, account, group and audit events delivered by the enrolled endpoint collector."),
+  hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry, DNS and image events delivered by the enrolled endpoint collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
   hostAdapter("zeek","Zeek","Network connection, DNS, HTTP and TLS metadata via a network sensor collector."),
   hostAdapter("clamav","ClamAV","Malware scan results and daemon health delivered by the enrolled host collector."),
@@ -365,7 +370,10 @@ export async function getAgentToolCatalog(request: Request, env: ConnectorEnv) {
   for (const adapter of adapters) {
     if (!adapter.schema.query.supported) continue;
     const key = storageKey(actor, adapter.id);
-    const configured = Boolean(await env.INTEGRATION_CONFIGS.get(key));
+    const collectorBacked = adapter.id === "windows_security" || adapter.id === "sysmon"
+      ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+      : false;
+    const configured = collectorBacked || Boolean(await env.INTEGRATION_CONFIGS.get(key));
     if (!configured) continue;
     const healthRaw = await env.INTEGRATION_CONFIGS.get(key + ":health");
     let healthState: "verified" | "unverified" | "failed" = "unverified";
@@ -381,7 +389,10 @@ export async function runAgentTool(request: Request, env: ConnectorEnv, actor: A
   const adapter = adapters.find(x => x.id === connectorId && x.schema.query.supported);
   if (!adapter) throw new Error("Tool is not in the read-only allowlist.");
   const key = storageKey(actor, connectorId);
-  if (!(await env.INTEGRATION_CONFIGS.get(key))) throw new Error("This tool is not connected for your user account.");
+  const collectorBacked = connectorId === "windows_security" || connectorId === "sysmon"
+    ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+    : false;
+  if (!collectorBacked && !(await env.INTEGRATION_CONFIGS.get(key))) throw new Error("This tool is not connected for your account or organization.");
   const auditId = crypto.randomUUID();
   // Fail closed: do not call a connector unless the audit start record is persisted.
   await env.DB.prepare("INSERT INTO audit_logs(id,org_id,actor_id,actor_type,event_type,target_id,details,outcome) VALUES(?,?,?,?,?,?,?,?)")
@@ -481,12 +492,15 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
     for(const adapter of adapters) {
       const key=storageKey(actor,adapter.id);
       const raw=await env.INTEGRATION_CONFIGS.get(key);
+      const collectorBacked=(adapter.id==="windows_security"||adapter.id==="sysmon")
+        ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+        : false;
       const healthRaw=await env.INTEGRATION_CONFIGS.get(key+":health");
       const health=healthRaw?JSON.parse(healthRaw):null;
       let configuredKeys:string[]=[];
       if(raw) { try { configuredKeys=Object.keys(await unseal(raw,env.CONFIG_ENCRYPTION_KEY,key)); } catch {} }
       const capabilities = ["schema", "connect", "test", "disconnect", ...(adapter.schema.query.supported ? ["query"] : [])];
-      data.push({id:adapter.id,name:adapter.name,category:adapter.category,purpose:adapter.description,description:adapter.description,schema:adapter.schema,fields:adapter.schema.fields,capabilities,configured:!!raw,configuredKeys,verified:health?.ok===true,state:health?.ok===true?"connected":raw?"disconnected":"not_configured",lastHealthCheck:health?.checkedAt||null,health:health?{ok:health.ok===true,message:health.message,checkedAt:health.checkedAt}:null});
+      data.push({id:adapter.id,name:adapter.name,category:adapter.category,purpose:adapter.description,description:adapter.description,schema:adapter.schema,fields:adapter.schema.fields,capabilities,configured:!!raw||collectorBacked,configuredKeys,verified:health?.ok===true,state:health?.ok===true?"connected":raw||collectorBacked?"disconnected":"not_configured",lastHealthCheck:health?.checkedAt||null,health:health?{ok:health.ok===true,message:health.message,checkedAt:health.checkedAt}:null});
     }
     return json({data,registryVersion:"1.0"});
   }
