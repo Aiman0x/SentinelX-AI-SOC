@@ -257,7 +257,7 @@ function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"
   const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",windows_security:"Windows Security Event Log",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
     id,name,category:id==="sysmon"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
-    schema:{version:"1.0",fields:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped records reported by the enrolled host collector.",fields:[field("limit","Maximum records (1–100)","25")]}},
+    schema:{version:"1.0",fields:id==="windows_security"?[]:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped endpoint or sensor events.",fields:[field("limit","Maximum records (1–100)","25"),field("eventType","Filter by event type (optional)","windows_failed_login"),field("sinceMinutes","Look-back window in minutes","1440")]}},
     async connect(context,values) {
       if(Object.keys(values).some(k=>!["sensor","source"].includes(k))) throw new Error("Unsupported configuration field.");
       const key=storageKey(context.actor,id),old=await context.env.INTEGRATION_CONFIGS.get(key);
@@ -298,7 +298,7 @@ function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"
       const eventType=typeof input.eventType==="string"?input.eventType.trim().slice(0,120):"";
       const sinceMinutes=Math.min(10080,Math.max(1,Number(input.sinceMinutes)||1440));
       const rows=await context.env.DB.prepare(
-        "SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND source=? AND observed_at>=datetime('now',?) AND (?='' OR event_type=?) ORDER BY observed_at DESC LIMIT ?"
+        "SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND source=? AND observed_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?) AND (?='' OR event_type=?) ORDER BY observed_at DESC LIMIT ?"
       ).bind(context.actor.organization_id,source,"-"+sinceMinutes+" minutes",eventType,eventType,limit).all<Record<string,unknown>>();
       return {data:rows.results.map(row=>{let event:unknown={};try{event=JSON.parse(String(row.normalized_json));}catch{}return {...row,event};}),count:rows.results.length,source,windowMinutes:sinceMinutes};
     }
