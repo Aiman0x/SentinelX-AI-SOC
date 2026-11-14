@@ -272,6 +272,12 @@ function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"
     },
     async disconnect(context) { await disconnectStored(context, id); },
     async test(context) {
+      if(id==="windows_security") {
+        const latest=await context.env.DB.prepare("SELECT observed_at,event_type,host FROM security_events WHERE org_id=? AND source='windows_security' ORDER BY observed_at DESC LIMIT 1").bind(context.actor.organization_id).first<{observed_at:string;event_type:string;host:string|null}>();
+        const age=latest?Date.now()-Date.parse(latest.observed_at):Number.POSITIVE_INFINITY;
+        const result={ok:!!latest&&age>=0&&age<10*60_000,message:!latest?"No Windows Security events received yet. Start the enrolled Windows collector.":age>=10*60_000?"Windows Security telemetry is stale.":"Windows Security events are arriving from the enrolled host.",checkedAt:now(),details:latest?{lastEventAt:latest.observed_at,eventType:latest.event_type,host:latest.host}:undefined};
+        await health(context,id,result); return result;
+      }
       const raw=await context.env.INTEGRATION_CONFIGS.get(context.actor.organization_id+":"+id+":health");
       if(!raw) {
         const missing={ok:false,message:"No recent host collector health report. Install/enroll the collector on the sensor first.",checkedAt:now()};
