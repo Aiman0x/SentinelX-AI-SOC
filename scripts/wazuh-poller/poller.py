@@ -158,8 +158,8 @@ def main():
     query = {
         "size": batch_size,
         "track_total_hits": True,
-        "sort": [{"@timestamp": {"order": "asc"}}],
-        "query": {"range": {"@timestamp": {"gte": start.isoformat(), "lte": now.isoformat()}}},
+        "sort": [{"timestamp": {"order": "asc"}}],
+        "query": {"range": {"timestamp": {"gte": start.isoformat(), "lte": now.isoformat()}}},
     }
     result = request_json(
         indexer_url + "/wazuh-alerts-*/_search",
@@ -192,6 +192,31 @@ def main():
         )
         accepted += int(response.get("accepted", 0))
 
+    heartbeat = request_json(
+        gateway + "/api/collector/heartbeat",
+        method="POST",
+        headers={
+            "Authorization": "Bearer " + collector_token,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        body={
+            "observedAt": now.isoformat(),
+            "results": [{
+                "integrationId": "wazuh",
+                "status": "healthy",
+                "checks": [
+                    {"name": "manager_api", "status": "pass", "detail": "Authenticated; agent inventory available"},
+                    {"name": "indexer_alert_search", "status": "pass", "detail": "Recent alert search completed"},
+                    {"name": "sentinelx_ingest", "status": "pass", "detail": "Alert batch forwarded to SentinelX"}
+                ],
+                "version": "wazuh-poller/1.0",
+                "metrics": {"agentCount": agent_count, "alertsMatched": len(hits), "alertsSubmitted": accepted}
+            }]
+        },
+        context=context,
+    )
+
     total = hits_obj.get("total", 0)
     if isinstance(total, dict):
         total = total.get("value", 0)
@@ -200,6 +225,7 @@ def main():
         "agentCount": agent_count,
         "alertsMatched": int(total or 0),
         "alertsSubmitted": accepted,
+        "heartbeat": heartbeat.get("accepted", []),
         "windowMinutes": lookback,
         "checkedAt": now.isoformat(),
     }))
