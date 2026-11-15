@@ -339,7 +339,7 @@ export default {
       if (!actor) return reply({ error: "Authentication required" }, 401, cors);
       if (actor.role !== "owner" && actor.role !== "admin") return reply({ error: "Admin permission required" }, 403, cors);
       const integrationId = url.pathname.split("/")[3];
-      if (!["activepieces", "sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId)) return reply({ error: "Unknown integration" }, 404, cors);
+      if (!["activepieces", "wazuh", "sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId)) return reply({ error: "Unknown integration" }, 404, cors);
       if (integrationId === "activepieces") {
         if (!env.AP_READ_SECURITY_INTEGRATIONS_URL || !env.AP_BRIDGE_KEY) return reply({ ok: false, unavailable: true, message: "ActivePieces read webhook or bridge credential is not configured." }, 200, cors);
         try {
@@ -356,6 +356,19 @@ export default {
           } finally { clearTimeout(timeout); }
         } catch (error) {
           return reply({ ok: false, message: error && error.name === "AbortError" ? "ActivePieces health check timed out after 10 seconds." : "Could not reach the ActivePieces webhook." }, 200, cors);
+        }
+      }
+      if (integrationId === "wazuh") {
+        if (!env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure integration health storage is unavailable." }, 200, cors);
+        const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey(actor.organization_id, "wazuh") + ":health");
+        if (!rawHealth) return reply({ ok: false, unavailable: true, message: "No Wazuh poller heartbeat received yet. Enroll your Linux Wazuh VM and start the poller." }, 200, cors);
+        try {
+          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; message?: string; metrics?: Record<string, unknown>; checks?: unknown[]; version?: string };
+          const age = health.checkedAt ? Date.now() - Date.parse(health.checkedAt) : Number.POSITIVE_INFINITY;
+          if (!Number.isFinite(age) || age < 0 || age > 10 * 60_000) return reply({ ok: false, unavailable: true, message: "Wazuh poller heartbeat is stale. Check the Linux service and timer.", checkedAt: health.checkedAt || null, metrics: health.metrics || {} }, 200, cors);
+          return reply({ ok: health.status === "healthy" && health.ok === true, message: health.message || "Wazuh poller health report.", checkedAt: health.checkedAt, version: health.version || null, checks: health.checks || [], metrics: health.metrics || {} }, 200, cors);
+        } catch {
+          return reply({ ok: false, unavailable: true, message: "Stored Wazuh poller health report is invalid." }, 200, cors);
         }
       }
       if (integrationId !== "wazuh") {
