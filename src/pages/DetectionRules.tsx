@@ -62,7 +62,7 @@ export default function DetectionRules() {
       <PageHeader title="Detection Rules" subtitle="Manage detection logic and validation status."
         actions={!isBackendConfigured ? <button className="btn btn-primary" onClick={() => setEditor(true)}><Plus className="h-3.5 w-3.5" /> New rule</button> : undefined} />
 
-      {isBackendConfigured && (remoteRules.loading ? <div className="mb-3 text-xs text-sx-mute">Loading detection rules from SentinelX backend…</div> : remoteRules.error ? <div className="mb-3 text-xs text-sx-red">Backend rules unavailable: {remoteRules.error}</div> : <div className="mb-3 text-xs text-sx-mute">Read-only rules from the SentinelX backend. Rule editing and deployment are disabled until write APIs are complete.</div>)}
+      {isBackendConfigured && (remoteRules.loading ? <div className="mb-3 text-xs text-sx-mute">Loading detection rules from SentinelX backend…</div> : remoteRules.error ? <div className="mb-3 text-xs text-sx-red">Backend rules unavailable: {remoteRules.error}</div> : <div className="mb-3 text-xs text-sx-mute">Runtime rules returned by the SentinelX Worker detection engine. Built-in rules are active; custom Sigma rule management is not exposed in this GUI yet.</div>)}
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-sx-line p-3">
           <SearchInput className="w-full sm:w-72" value={q} onChange={setQ} placeholder="Search name, ID, category, MITRE" label="Search rules" />
@@ -96,7 +96,7 @@ export default function DetectionRules() {
       </Panel>
 
       <Drawer open={!!sel} onClose={() => setSel(null)} title={sel?.name} subtitle={<span className="mono">{sel?.id} · {sel?.category}</span>}
-        footer={isBackendConfigured ? <span className="text-[11px] text-sx-mute">Backend rule record · write and deployment APIs pending.</span> : <><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
+        footer={isBackendConfigured ? <span className="text-[11px] text-sx-mute">Runtime rule record. Custom Sigma editing and rule lifecycle controls are not exposed in this GUI yet.</span> : <><button className="btn" onClick={() => toast('Backend required: rule validation and deployment run server-side.', 'warn')}>Validate</button><button className="btn btn-gold" onClick={() => toast('Backend required: deployment to Wazuh/ActivePieces is not available in the prototype.', 'warn')}>Deploy</button></>}>
         {sel && (
           <div className="space-y-4 text-xs">
             <div className="flex flex-wrap gap-2"><SeverityBadge severity={sel.severity} /><StatusBadge value={sel.status} /><StatusBadge value={sel.maturity} /></div>
