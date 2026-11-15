@@ -6,10 +6,10 @@ import { useData } from './useData';
 import { useLocalStore } from './useLocalStore';
 
 /** Alerts from the backend when configured, otherwise from local demo data (clearly flagged by `isDemo`). */
-export function useAlerts(): { alerts: Alert[]; loading: boolean; error: string | null; reload: () => void; isDemo: boolean } {
+export function useAlerts(view: 'active' | 'archived' = 'active'): { alerts: Alert[]; loading: boolean; error: string | null; reload: () => void; isDemo: boolean } {
   const { refreshKey } = useApp();
-  const state = useData(getAlerts, [refreshKey]);
+  const state = useData(() => getAlerts(view), [refreshKey, view]);
   const local = useLocalStore(alertsStore);
-  const alerts = isBackendConfigured ? state.data?.data ?? [] : state.loading ? [] : local;
-  return { alerts, loading: state.loading, error: state.error, reload: state.reload, isDemo: !isBackendConfigured };
+  const alerts = isBackendConfigured ? state.data?.data ?? [] : [];
+  return { alerts, loading: state.loading, error: state.error, reload: state.reload, isDemo: false };
 }
