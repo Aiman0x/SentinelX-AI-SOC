@@ -109,9 +109,17 @@ export async function handleEventRoute(req:Request,env:EventEnv,path:string):Pro
  if(path==="/api/events/ingest"&&req.method==="POST")return webhookIngest(req,env);
  if(path==="/api/events"&&req.method==="GET"){
   const actor=await currentUser(req,env as Parameters<typeof currentUser>[1]);if(!actor)return json({error:"Authentication required."},401);
-  const limit=Math.min(200,Math.max(1,Number(new URL(req.url).searchParams.get("limit")||100)||100));
-  const rows=await env.DB.prepare("SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? ORDER BY received_at DESC LIMIT ?").bind(actor.organization_id,limit).all<Record<string,unknown>>();
-  return json({data:rows.results.map(r=>{let normalized:unknown={};try{normalized=JSON.parse(String(r.normalized_json));}catch{}return {...r,normalized};})});
+  const params=new URL(req.url).searchParams;
+  const limit=Math.min(200,Math.max(1,Number(params.get("limit")||100)||100));
+  const status=(params.get("status")||"active").toLowerCase();
+  const source=str(params.get("source"),64).toLowerCase();
+  if(!["active","archived","all"].includes(status))return json({error:"status must be active, archived or all."},400);
+  const ageFilter=status==="active"?"julianday(received_at)>=julianday('now','-24 hours')":
+   status==="archived"?"julianday(received_at)<julianday('now','-24 hours') AND julianday(received_at)>=julianday('now','-30 days')":
+   "julianday(received_at)>=julianday('now','-30 days')";
+  const rows=await env.DB.prepare("SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND ("+ageFilter+") AND (?='' OR lower(source)=?) ORDER BY received_at DESC LIMIT ?")
+   .bind(actor.organization_id,source,source,limit).all<Record<string,unknown>>();
+  return json({data:rows.results.map(r=>{let normalized:unknown={};try{normalized=JSON.parse(String(r.normalized_json));}catch{}return {...r,normalized};}),retention:{view:status,activeHours:24,totalDays:30,source:source||"all"}});
  }
  return null;
 }
@@ -129,4 +137,15 @@ export async function consumeEventBatch(batch:MessageBatch<NormalizedSecurityEve
    message.retry({delaySeconds:Math.min(300,5*Math.max(1,message.attempts))});
   }
  }
+}
+
+
+/** Daily retention: keep events for 30 days; the API exposes the first 24h as active and the remainder as archived. */
+export async function runScheduledRetention(env: EventEnv): Promise<void> {
+ const results = await env.DB.batch([
+  env.DB.prepare("DELETE FROM security_events WHERE julianday(received_at)<julianday('now','-30 days')"),
+  env.DB.prepare("DELETE FROM security_incidents WHERE julianday(last_seen)<julianday('now','-30 days') AND NOT EXISTS (SELECT 1 FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=security_incidents.org_id AND ie.incident_id=security_incidents.id AND julianday(e.received_at)>=julianday('now','-30 days'))"),
+  env.DB.prepare("DELETE FROM security_incidents WHERE NOT EXISTS (SELECT 1 FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=security_incidents.org_id AND ie.incident_id=security_incidents.id)")
+ ]);
+ console.log("SentinelX retention cleanup completed", { statements: results.length });
 }
