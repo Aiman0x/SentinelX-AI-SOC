@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiPost, isBackendConfigured } from "../../services/apiClient";
+import { apiGet, apiPost, isBackendConfigured } from "../../services/apiClient";
 
 type AgentResult = {
   agent: string;
@@ -20,6 +20,17 @@ type AgentResult = {
   caseId?: string | null;
 };
 
+type SavedAgentRun = {
+  runId: string;
+  caseId?: string | null;
+  generatedAt: string;
+  conclusion: string;
+  toolCalls: number;
+  provider?: string;
+  model?: string;
+  evidenceAssessment?: { consistent: number; partial: number; unverified: number; method: string };
+};
+
 const AGENT_NAME = "SentinelX SOC Investigator v1";
 
 export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
@@ -27,6 +38,16 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<AgentResult | null>(null);
+  const [history, setHistory] = useState<SavedAgentRun[]>([]);
+
+  useEffect(() => {
+    if (!caseId || !isBackendConfigured) { setHistory([]); return; }
+    let active = true;
+    apiGet<{ data?: SavedAgentRun[] }>(`/api/ai/agent/runs?caseId=${encodeURIComponent(caseId)}`)
+      .then(response => { if (active) setHistory(response.data ?? []); })
+      .catch(() => { if (active) setHistory([]); });
+    return () => { active = false; };
+  }, [caseId]);
 
   useEffect(() => {
     if (caseId) {
@@ -41,6 +62,7 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
     try {
       const response = await apiPost<AgentResult>("/api/ai/agent", { prompt, caseId });
       setResult(response);
+      if (response.runId) setHistory(previous => [response as SavedAgentRun, ...previous.filter(item => item.runId !== response.runId)]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Agent investigation failed.");
     } finally { setBusy(false); }
@@ -64,6 +86,16 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
       <button className="btn btn-primary btn-sm" onClick={run} disabled={!isBackendConfigured||busy||!prompt.trim()}>{busy ? "Investigating…" : "Run agent investigation"}</button>
       <span className="text-[10px] text-sx-mute">Fixed agent · Fixed model · Read-only · 5 total connector attempts · 1 controlled retry</span>
     </div>
+    {caseId && history.length > 0 && <div className="space-y-2 border-t border-sx-line pt-3">
+      <h3 className="label">Saved investigation history ({history.length})</h3>
+      {history.filter(item => item.runId !== result?.runId).slice(0, 5).map(item => (
+        <details key={item.runId} className="rounded border border-sx-line p-2">
+          <summary className="cursor-pointer text-xs">{new Date(item.generatedAt).toLocaleString()} · {item.toolCalls} tool call(s) · {item.evidenceAssessment?.consistent ?? 0} consistent / {item.evidenceAssessment?.partial ?? 0} partial / {item.evidenceAssessment?.unverified ?? 0} unverified</summary>
+          <p className="mt-2 whitespace-pre-wrap text-xs text-sx-mute">{item.conclusion}</p>
+          <p className="mono mt-2 text-[9px] text-sx-mute">Run {item.runId}</p>
+        </details>
+      ))}
+    </div>}
     {error && <p role="alert" className="text-xs text-sx-red">{error}</p>}
     {result && <div className="space-y-3 border-t border-sx-line pt-3">
       <div className="flex flex-wrap gap-2 text-[10px] text-sx-mute">{result.runId && <span className="mono">Saved run {result.runId}</span>}<span>{result.agent || AGENT_NAME}</span><span>{result.provider} · {result.model}</span><span>{result.toolCalls}/{result.maxSteps} connector attempts</span><span>{result.retries || 0} retries</span><span>{result.accessMode}</span>{result.estimatedInputTokens !== undefined && <span>~{result.estimatedInputTokens} input tokens</span>}{result.inputTruncated && <span className="text-sx-warn">Evidence was truncated to budget</span>}</div>
