@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "\${EUID}" -ne 0 ]]; then
+if [[ "${EUID}" -ne 0 ]]; then
   echo "Run with sudo: sudo bash /tmp/sentinelx-wazuh-upgrade.sh" >&2
   exit 1
 fi
@@ -35,8 +35,8 @@ else
 fi
 
 echo "Updating SentinelX Wazuh poller without changing its saved credentials..."
-"\${FETCH[@]}" "$BASE/scripts/wazuh-poller/poller.py" > "$TMP_DIR/poller.py"
-"\${FETCH[@]}" "$BASE/deploy/systemd/sentinelx-wazuh-poller.service" > "$TMP_DIR/sentinelx-wazuh-poller.service"
+"${FETCH[@]}" "$BASE/scripts/wazuh-poller/poller.py" > "$TMP_DIR/poller.py"
+"${FETCH[@]}" "$BASE/deploy/systemd/sentinelx-wazuh-poller.service" > "$TMP_DIR/sentinelx-wazuh-poller.service"
 python3 -m py_compile "$TMP_DIR/poller.py"
 usermod -a -G wazuh sentinelx-poller
 install -o root -g sentinelx-poller -m 0750 "$TMP_DIR/poller.py" "$APP_DIR/poller.py"
