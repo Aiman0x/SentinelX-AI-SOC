@@ -186,7 +186,7 @@ function hostAdapter(id:"wazuh"|"sysmon"|"windows_security"|"suricata"|"zeek"|"c
         }
         try {
           const h=JSON.parse(raw); const age=Date.now()-Date.parse(h.checkedAt||"");
-          const result={ok:h.ok===true&&age>=0&&age<600000,message:age>=600000?"Wazuh poller heartbeat is stale.":h.message||"Wazuh poller is reporting healthy.",checkedAt:now(),details:{collectorStatus:h.status,observedAt:h.checkedAt,metrics:h.metrics||{}}};
+          const metrics=h.metrics||{}; const summary="Wazuh poller healthy — "+Number(metrics.agentCount||0)+" agents, "+Number(metrics.alertsMatched||0)+" alerts matched in the last poll."; const result={ok:h.ok===true&&age>=0&&age<600000,message:age>=600000?"Wazuh poller heartbeat is stale.":h.ok===true?summary:h.message||"Wazuh poller reported a problem.",checkedAt:now(),details:{collectorStatus:h.status,observedAt:h.checkedAt,metrics}};
           await health(context,id,result); return result;
         } catch {
           const invalid={ok:false,message:"Wazuh poller health report is invalid.",checkedAt:now()};
