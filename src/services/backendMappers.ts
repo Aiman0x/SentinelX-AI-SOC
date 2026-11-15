@@ -33,7 +33,7 @@ const cells = (row: Row) => ({ ...obj(row), ...obj(row.cells) });
 
 export function mapFinding(row: Row): Alert {
   const c = cells(row);
-  const ids = arr(c.evidence_event_ids);
+  const ids = arr(c.event_ids ?? c.evidence_event_ids);
   const sourceIps = arr(c.source_ips);
   const findingId = str(c.finding_id, str(row.id, 'finding-unknown'));
   const statusText = str(c.status, str(c.detection_status, 'open')).toLowerCase();
@@ -49,7 +49,7 @@ export function mapFinding(row: Row): Alert {
     sourceIp: sourceIps.join(', ') || str(c.source_ip, '—'), timestamp: date(c.detected_at ?? c.last_received_at ?? c.last_seen ?? c.updated_at ?? c.first_seen),
     status,
     summary: str(c.rationale, str(c.description, 'Detection candidate requires analyst review.')),
-    rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), confidence: Number(c.confidence ?? 0) },
+    rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), evidence_count: Number(c.evidence_count ?? 0), linked_event_ids: ids, confidence: Number(c.confidence ?? 0) },
     evidence: ids, relatedAlertIds: [], mitre: mitreItems.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object').map(x => ({ id: str(x.id), name: str(x.name, 'MITRE technique'), tactic: str(x.tactic, 'Unknown') })).filter(x => !!x.id),
     nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
     caseId: str(c.case_id) || undefined,
