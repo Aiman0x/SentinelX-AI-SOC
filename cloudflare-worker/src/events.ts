@@ -131,8 +131,8 @@ export async function handleEventRoute(req:Request,env:EventEnv,path:string):Pro
   const ageFilter=status==="active"?"julianday(received_at)>=julianday('now','-24 hours')":
    status==="archived"?"julianday(received_at)<julianday('now','-24 hours') AND julianday(received_at)>=julianday('now','-30 days')":
    "julianday(received_at)>=julianday('now','-30 days')";
-  const rows=await env.DB.prepare("SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND ("+ageFilter+") AND (?='' OR lower(source)=?) ORDER BY received_at DESC LIMIT ?")
-   .bind(actor.organization_id,source,source,limit).all<Record<string,unknown>>();
+  const rows=await env.DB.prepare("SELECT event_id,source,event_type,severity,observed_at,received_at,host,source_ip,destination_ip,username,message,normalized_json FROM security_events WHERE org_id=? AND ("+ageFilter+") AND (?='all' OR (?='windows' AND lower(source) IN ('windows_security','sysmon')) OR lower(source)=?) ORDER BY received_at DESC LIMIT ?")
+   .bind(actor.organization_id,source,source,source,limit).all<Record<string,unknown>>();
   return json({data:rows.results.map(r=>{let normalized:unknown={};try{normalized=JSON.parse(String(r.normalized_json));}catch{}return {...r,normalized};}),retention:{view:status,activeHours:24,totalDays:30,source:source||"all"}});
  }
  return null;
