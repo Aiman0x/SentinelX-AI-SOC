@@ -363,9 +363,11 @@ export default {
         const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey(actor.organization_id, "wazuh") + ":health");
         if (!rawHealth) return reply({ ok: false, unavailable: true, message: "No Wazuh poller heartbeat received yet. Enroll your Linux Wazuh VM and start the poller." }, 200, cors);
         try {
-          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; message?: string; metrics?: Record<string, unknown>; checks?: unknown[]; version?: string };
+          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; sensorId?: string; message?: string; metrics?: Record<string, unknown>; checks?: unknown[]; version?: string };
           const age = health.checkedAt ? Date.now() - Date.parse(health.checkedAt) : Number.POSITIVE_INFINITY;
           if (!Number.isFinite(age) || age < 0 || age > 10 * 60_000) return reply({ ok: false, unavailable: true, message: "Wazuh poller heartbeat is stale. Check the Linux service and timer.", checkedAt: health.checkedAt || null, metrics: health.metrics || {} }, 200, cors);
+          const enrolled = health.sensorId ? await env.DB.prepare("SELECT id FROM host_collectors WHERE id=? AND org_id=? AND platform='linux' AND revoked_at IS NULL AND is_paused=0").bind(health.sensorId, actor.organization_id).first<{ id: string }>() : null;
+          if (!enrolled) return reply({ ok: false, unavailable: true, message: "No active Linux Wazuh collector is enrolled. Enroll the VM again from Host collectors." }, 200, cors);
           return reply({ ok: health.status === "healthy" && health.ok === true, message: health.message || "Wazuh poller health report.", checkedAt: health.checkedAt, version: health.version || null, checks: health.checks || [], metrics: health.metrics || {} }, 200, cors);
         } catch {
           return reply({ ok: false, unavailable: true, message: "Stored Wazuh poller health report is invalid." }, 200, cors);
