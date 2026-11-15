@@ -1,8 +1,8 @@
 import { BellRing, FolderKanban, Monitor, Plug } from 'lucide-react';
 import { useAlerts } from '../hooks/useAlerts';
-import { useCases } from '../hooks/useCases';
 import { useLocalStore } from '../hooks/useLocalStore';
 import { assetsStore, loadAssets } from '../services/miscService';
+import { loadOpenCaseCount } from '../services/casesService';
 import { getIntegrations, loadIntegrations } from '../services/integrationsService';
 import { useData } from '../hooks/useData';
 import { isDemoMode, isBackendConfigured } from '../services/apiClient';
@@ -15,14 +15,14 @@ import { PageHeader } from '../components/layout/PageHeader';
 
 export default function Overview() {
   const { alerts } = useAlerts();
-  const cases = useCases();
+  const { data: openCaseCount } = useData(loadOpenCaseCount);
   const localAssets = useLocalStore(assetsStore);
   const { data: backendAssets } = useData(loadAssets);
   const assets = isBackendConfigured ? backendAssets ?? [] : localAssets;
   const { data: integrationData } = useData(loadIntegrations);
   const integrations = integrationData ?? getIntegrations();
 
-  const openCases = cases.filter((c) => c.status !== 'closed' && c.status !== 'resolved').length;
+  const openCases = openCaseCount ?? 0;
   const critical = alerts.filter((a) => a.severity === 'critical' && a.status !== 'resolved' && a.status !== 'false_positive').length;
   const verified = assets.filter((a) => a.monitoring === 'verified').length;
   const connected = integrations.filter((i) => i.state === 'connected').length;
@@ -32,7 +32,7 @@ export default function Overview() {
       <PageHeader title="Security Operations Overview" subtitle="Monitor, investigate, and respond to security events." />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Open Cases" value={openCases} caption="Not resolved or closed" icon={FolderKanban} accent="gold" spark={isDemoMode ? [2, 3, 3, 4, 3, 5, openCases] : undefined} isDemo={isDemoMode} />
+        <StatCard label="Open Cases" value={openCases} caption="Unique unresolved investigations" icon={FolderKanban} accent="gold" spark={isDemoMode ? [2, 3, 3, 4, 3, 5, openCases] : undefined} isDemo={isDemoMode} />
         <StatCard label="Critical Alerts" value={critical} caption="Active, unresolved" icon={BellRing} accent="red" spark={isDemoMode ? [0, 1, 0, 2, 1, 3, critical] : undefined} isDemo={isDemoMode} />
         <StatCard label="Registered Assets" value={assets.length} caption={`${verified} with verified telemetry`} icon={Monitor} accent="neutral" spark={isDemoMode ? [9, 10, 10, 11, 11, 12, assets.length] : undefined} isDemo={isDemoMode} />
         <StatCard label="Connected Integrations" value={connected} caption={`of ${integrations.length} planned · ${integrations.filter((i) => i.verified).length} verified`} icon={Plug} accent="neutral" isDemo={isDemoMode} />

@@ -1,4 +1,5 @@
-import type { TrendRange, TrendPoint } from '../data/demoTrends';
+export type TrendRange = '24h' | '7d' | '30d';
+export interface TrendPoint { label: string; critical: number; high: number; medium: number; low: number; }
 import type { Asset } from '../types/asset';
 import type { Severity } from '../types/alert';
 import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord, Playbook } from '../types/extra';

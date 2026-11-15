@@ -4,11 +4,11 @@ import type { Integration } from '../types/integration';
  * Integration catalog. Every tool starts unconfigured; connected state requires a real backend health check.
  * Secret fields (secret: true) are never persisted in the browser.
  */
-export const demoIntegrations: Integration[] = [
+export const integrationCatalog: Integration[] = [
   {
     id: 'activepieces', name: 'ActivePieces', category: 'Orchestration',
     purpose: 'Workflow orchestration: ingestion, validation, case creation and response playbooks. Gateway connectivity is managed server-side.',
-    state: 'demo', configured: false, verified: false,
+    state: 'not_configured', configured: false, verified: false,
     fields: [],
   },
   {
@@ -26,13 +26,13 @@ export const demoIntegrations: Integration[] = [
   {
     id: 'windows_security', name: 'Windows Security Logs', category: 'Endpoint',
     purpose: 'Authentication, process creation, account changes and Windows audit events from your enrolled PC.',
-    state: 'demo', configured: false, verified: false,
+    state: 'not_configured', configured: false, verified: false,
     fields: [],
   },
   {
     id: 'sysmon', name: 'Windows Sysmon', category: 'Endpoint',
     purpose: 'Detailed Windows process, network and registry telemetry.',
-    state: 'demo', configured: false, verified: false,
+    state: 'not_configured', configured: false, verified: false,
     fields: [
       { key: 'eventChannel', label: 'Sysmon event channel', placeholder: 'Microsoft-Windows-Sysmon/Operational' },
       { key: 'configVersion', label: 'Sysmon config version', placeholder: 'e.g. v14.16 + modular rules' },

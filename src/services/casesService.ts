@@ -51,6 +51,13 @@ function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
   };
 }
 
+/** Count unique unresolved real cases and detection incidents for the Overview card. */
+export async function loadOpenCaseCount(): Promise<number> {
+  const cases = await loadCases();
+  const unresolved = cases.filter((item) => item.status !== 'resolved' && item.status !== 'closed');
+  return new Set(unresolved.map((item) => item.id)).size;
+}
+
 export async function loadCases(): Promise<SecurityCase[]> {
   if (isBackendConfigured) {
     const [incidentPayload, legacyPayload] = await Promise.all([
