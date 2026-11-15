@@ -70,7 +70,7 @@ sudo bash /tmp/sentinelx-wazuh-install.sh`, [platform, apiUrl, token, windowsScr
       {token && <div className="mt-3 rounded border border-sx-gold/40 bg-sx-gold/5 p-3">
         <p className="text-xs font-semibold text-sx-gold">One-time setup</p>
         {platform === 'linux'
-          ? <><p className="mt-1 text-[10px] leading-5 text-sx-mute">On your Wazuh Linux VM, run this command. The installer will securely prompt for the one-time collector token and your read-only Wazuh API/Indexer credentials. Those credentials stay on the VM; they are never entered into the SentinelX website.</p></>
+          ? <><p className="mt-1 text-[10px] leading-5 text-sx-mute">On your Wazuh Linux VM, run this command. When prompted, paste the one-time token below, then enter your read-only Wazuh API/Indexer credentials locally. Credentials stay on the VM; they are never entered into the SentinelX website.</p><div className="mt-2 flex flex-wrap items-center gap-2"><code className="min-w-0 flex-1 break-all rounded bg-sx-bg p-2 text-[10px]">{token}</code><button className="btn" onClick={()=>void navigator.clipboard.writeText(token)}>Copy token</button></div></>
           : <p className="mt-1 text-[10px] text-sx-mute">Open PowerShell as Administrator on that Windows PC. This command contains its private collector token; do not share it.</p>}
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-sx-bg p-2 text-[10px]">{installCommand}</pre>
         <button className="btn mt-2" onClick={()=>void navigator.clipboard.writeText(installCommand)}>Copy setup command</button>
