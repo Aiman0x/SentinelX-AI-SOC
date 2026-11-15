@@ -130,7 +130,7 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
     const payload = await response.json() as any;
     let text: string | undefined;
     if (config.provider === "anthropic") {
-      text = payload.content?.filter((x: any) => x.type === "text" && typeof x.text === "string").map((x: any) => x.text).join("\\n");
+      text = payload.content?.filter((x: any) => x.type === "text" && typeof x.text === "string").map((x: any) => x.text).join("\n");
     } else if (config.provider === "gemini") {
       text = payload.candidates?.[0]?.content?.parts?.map((x: any) => typeof x.text === "string" ? x.text : "").join("");
     } else {
@@ -140,7 +140,7 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
       if (typeof content === "string") text = content;
       else if (Array.isArray(content)) {
         text = content.map((part: any) => typeof part === "string" ? part :
-          (part?.type === "text" || part?.type === "output_text") && typeof part.text === "string" ? part.text : "").join("\\n");
+          (part?.type === "text" || part?.type === "output_text") && typeof part.text === "string" ? part.text : "").join("\n");
       }
       if ((!text || !text.trim()) && typeof message?.refusal === "string") text = message.refusal;
       if ((!text || !text.trim()) && payload.error?.message) {
