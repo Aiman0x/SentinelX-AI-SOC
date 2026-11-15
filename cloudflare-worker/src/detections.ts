@@ -78,6 +78,21 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  if(/windows_service_installed|service_installed|4697/.test(text))out.push({key:"SX-WIN-002",title:"Windows Service Installed",description:"A new Windows service was installed. Verify the service name, binary path and installer context.",severity:"high",confidence:82,mitre:[{id:"T1543.003",name:"Windows Service"}]});
  if(/windows_user_created|user_created|4720/.test(text))out.push({key:"SX-WIN-003",title:"Windows User Account Created",description:"A new local or domain user account was created. Verify the initiating account and authorization.",severity:"medium",confidence:78,mitre:[{id:"T1136.001",name:"Create Account: Local Account"}]});
  if(/windows_group_member_added|group_member_added|4728|4732/.test(text))out.push({key:"SX-WIN-004",title:"Windows Security Group Membership Changed",description:"A user was added to a security-enabled group. Verify whether the membership change was approved.",severity:"medium",confidence:80,mitre:[{id:"T1098",name:"Account Manipulation"}]});
+ // Wazuh has already applied its own detection rules. Surface medium/high/critical
+ // findings as SentinelX incidents for analyst triage, without inventing a MITRE mapping.
+ const wazuhSeverity=String(e.severity||"").toLowerCase();
+ if(String(e.source||"").toLowerCase()==="wazuh"&&["medium","high","critical"].includes(wazuhSeverity)){
+  const normalizedSeverity=wazuhSeverity as Severity;
+  const confidence=wazuhSeverity==="critical"?92:wazuhSeverity==="high"?86:72;
+  out.push({
+   key:"SX-WAZUH-001",
+   title:"Wazuh Security Alert Requiring Analyst Review",
+   description:`Wazuh reported a ${wazuhSeverity} alert on ${e.host||"an unknown host"}: ${e.event_type||"security event"}. Review the original Wazuh rule, raw alert and surrounding telemetry before escalation.`,
+   severity:normalizedSeverity,
+   confidence,
+   mitre:[]
+  });
+ }
  void ev;return out;
 }
 async function addFinding(env:Env,e:EventRow,rule:{key:string;title:string;description:string;severity:Severity;confidence:number;mitre:Array<{id:string;name:string}>},sourceRuleType="builtin"){
