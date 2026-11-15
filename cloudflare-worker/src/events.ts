@@ -56,13 +56,26 @@ async function normalize(org:string,collectorId:string|null,source:string,value:
  const dedupKey=await hash(org+":"+source+":"+eventId);
  const host=e.host&&typeof e.host==="object"?(e.host as Record<string,unknown>).name:e.host??wazuhAgent.name??wazuhAgent.id;
  const eventType=str(e.eventType??e.event_type??e.type??rule.description??e.category??"security_event",120);
- const eventNumber=str((eventData as Record<string,unknown>)?.EventID??(eventData as Record<string,unknown>)?.event_id??e.eventCode??e.event_code,12);
+ const eventNumber=str(eventDetails.EventID??eventDetails.event_id??e.eventCode??e.event_code,12);
  const severityValue=e.severity??e.level??e.risk??(eventNumber==="1102"||eventNumber==="4697"?"high":eventNumber==="4625"?"medium":"info");
  const sev=severity(severityValue);
- const srcIp=str(e.sourceIp??e.srcIp??e.src_ip??e.source_ip??e.ipAddress??e.IpAddress??wazuhData.srcip??wazuhData.src_ip??wazuhData.source_ip,80)||null;
- const dstIp=str(e.destinationIp??e.dstIp??e.dest_ip??e.destination_ip??e.DestinationIp??wazuhData.dstip??wazuhData.dst_ip??wazuhData.destination_ip,80)||null;
- const username=str(e.username??e.TargetUserName??e.targetUserName??user??e.SubjectUserName??wazuhData.dstuser??wazuhData.srcuser??wazuhData.user,255)||null;
- const details=eventData&&typeof eventData==="object"?Object.entries(eventData as Record<string,unknown>).slice(0,24).map(([k,v])=>k+"="+str(v,180)).join(" "):"";
+ // Windows Security fields often arrive nested in EventData. For 4625, group
+ // by the attempted target account, not the subject/service account.
+ const targetUser=eventDetails.TargetUserName??eventDetails.targetUserName??e.TargetUserName??e.targetUserName;
+ const subjectUser=eventDetails.SubjectUserName??e.SubjectUserName;
+ const usernameValue=eventNumber==="4625" ? targetUser : targetUser??e.username??user??subjectUser??wazuhData.dstuser??wazuhData.srcuser??wazuhData.user;
+ const usernameText=str(usernameValue,255);
+ const username=usernameText&&usernameText!=="-"&&usernameText.toLowerCase()!=="n/a"?usernameText:null;
+ const sourceIpValue=e.sourceIp??e.srcIp??e.src_ip??e.source_ip??e.ipAddress??e.IpAddress??eventDetails.IpAddress??eventDetails.SourceAddress??wazuhData.srcip??wazuhData.src_ip??wazuhData.source_ip;
+ const sourceIpText=str(sourceIpValue,80);
+ const srcIp=sourceIpText&&sourceIpText!=="-"?sourceIpText:null;
+ const destinationIpValue=e.destinationIp??e.dstIp??e.dest_ip??e.destination_ip??e.DestinationIp??eventDetails.DestinationIp??wazuhData.dstip??wazuhData.dst_ip??wazuhData.destination_ip;
+ const destinationIpText=str(destinationIpValue,80);
+ const dstIp=destinationIpText&&destinationIpText!=="-"?destinationIpText:null;
+ const host=e.host&&typeof e.host==="object"?(e.host as Record<string,unknown>).name:e.host??wazuhAgent.name??wazuhAgent.id;
+ const eventId=str(e.eventId??outer.eventId??e.id??e._id,180)||await hash(source+":"+observedAt+":"+JSON.stringify(raw));
+ const dedupKey=await hash(org+":"+source+":"+eventId);
+ const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:srcIp,destinationIp:dstIp,username,message:str(e.message??e.description??e.summary??[eventType,Object.entries(eventDetails).slice(0,24).map(([k,v])=>k+"="+str(v,180)).join(" ")].filter(Boolean).join(" | "),4000),sourceIntegration:str(e.sourceIntegration??e.source_integration??source,160),dataOrigin:str(e.dataOrigin??e.data_origin??"UNVERIFIED",40),eventData:scrub(eventData)};
  const message=str(e.message??e.description??e.summary??[eventType,details].filter(Boolean).join(" | "),4000);
  const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:srcIp,destinationIp:dstIp,username,message,sourceIntegration:str(e.sourceIntegration??e.source_integration??source,160),dataOrigin:str(e.dataOrigin??e.data_origin??"UNVERIFIED",40),eventData:scrub(eventData)};
  return {organizationId:org,collectorId,eventId,dedupKey,source,eventType,severity:sev,observedAt,receivedAt:new Date().toISOString(),host:normalized.host as string|null,sourceIp:srcIp,destinationIp:dstIp,username,message,normalized,raw};
