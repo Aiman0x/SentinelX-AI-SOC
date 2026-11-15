@@ -23,7 +23,7 @@ export function CaseTable({ cases, selectedId, onSelect }: Props) {
             <tr key={c.id} tabIndex={0} onClick={() => onSelect(c.id)} onKeyDown={(e) => e.key === 'Enter' && onSelect(c.id)}
               className={`row-hover ${selectedId === c.id ? 'bg-sx-reddark/15' : ''}`} aria-selected={selectedId === c.id}>
               <td className="td mono text-sx-gold">{c.id}</td>
-              <td className="td">{c.detectionIncident ? <span className="rounded border border-sx-ok/40 bg-sx-ok/5 px-2 py-1 text-[10px] text-sx-ok">Live detection</span> : c.legacyRecord ? <span className="rounded border border-sx-warn/40 bg-sx-warn/5 px-2 py-1 text-[10px] text-sx-warn">Legacy record</span> : <span className="rounded border border-sx-line px-2 py-1 text-[10px] text-sx-mute">Case</span>}</td>
+              <td className="td">{c.detectionIncident ? <span className="rounded border border-sx-ok/40 bg-sx-ok/5 px-2 py-1 text-[10px] text-sx-ok">Live detection</span> : c.legacyRecord ? <span className="rounded border border-sx-warn/40 bg-sx-warn/5 px-2 py-1 text-[10px] text-sx-warn">Legacy / unverified</span> : <span className="rounded border border-sx-line px-2 py-1 text-[10px] text-sx-mute">Case</span>}</td>
               <td className="td max-w-[280px] font-medium"><div className="truncate">{c.title}</div></td>
               <td className="td"><SeverityBadge severity={c.severity} /></td>
               <td className="td"><StatusBadge value={c.status} /></td>
