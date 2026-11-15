@@ -34,4 +34,12 @@ export interface SecurityCase {
   recommended: string[];
   /** True when this record comes from the rule-based security_incidents engine. */
   detectionIncident?: boolean;
+  /** Provenance for imported/legacy records; these are not automatically live detections. */
+  sourceSchema?: string;
+  dataOrigin?: string;
+  sourceEventId?: string;
+  rawEvidence?: string;
+  legacyRecord?: boolean;
+  analysis?: Record<string, unknown>;
+  investigationPlan?: Record<string, unknown>;
 }
