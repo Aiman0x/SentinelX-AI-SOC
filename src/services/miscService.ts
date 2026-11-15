@@ -2,7 +2,7 @@ import { demoAssets } from '../data/demoAssets';
 import { demoAudit } from '../data/demoAudit';
 import { demoRules } from '../data/demoDetectionRules';
 import { demoPlaybooks } from '../data/demoPlaybooks';
-import { buildTrend, type TrendRange } from '../data/demoTrends';
+import type { TrendRange, TrendPoint } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
 import type { Severity } from '../types/alert';
 import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
@@ -72,7 +72,11 @@ export function addRule(r: Omit<DetectionRule, 'id' | 'status' | 'maturity' | 'l
   rulesStore.set([rule, ...rulesStore.getSnapshot()]); return rule;
 }
 export async function loadPlaybooks() { await delay(250); return demoPlaybooks; }
-export async function loadTrend(range: TrendRange) { await delay(200); return buildTrend(range); }
+export async function loadTrend(range: TrendRange): Promise<TrendPoint[]> {
+  if (!isBackendConfigured) return [];
+  const payload = await apiGet<{ data?: TrendPoint[] }>(`/api/events/summary?range=${range}`);
+  return Array.isArray(payload.data) ? payload.data : [];
+}
 export function resetAllDemoData() {
   ['alerts', 'cases', 'assets', 'rules', 'integrations'].forEach((k) => { try { window.localStorage.removeItem(`sentinelx.demo.${k}.v1`); } catch { /* ignore */ } });
   window.location.reload();
