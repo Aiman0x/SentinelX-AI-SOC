@@ -112,7 +112,7 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  // Wazuh has already applied its own detection rules. Surface medium/high/critical
  // findings as SentinelX incidents for analyst triage, without inventing a MITRE mapping.
  const wazuhSeverity=String(e.severity||"").toLowerCase();
- if(String(e.source||"").toLowerCase()==="wazuh"&&["medium","high","critical"].includes(wazuhSeverity)){
+ if(!benignServiceLogon&&!noisyInventoryEvent&&String(e.source||"").toLowerCase()==="wazuh"&&["medium","high","critical"].includes(wazuhSeverity)){
   const normalizedSeverity=wazuhSeverity as Severity;
   const confidence=wazuhSeverity==="critical"?92:wazuhSeverity==="high"?86:72;
   out.push({
