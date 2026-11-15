@@ -33,6 +33,13 @@ def build_ssl_context():
     return ssl.create_default_context(cafile=ca_file or None)
 
 
+def require_https(name, value):
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError(f"{name} must be a clean HTTPS base URL")
+    return value.rstrip("/")
+
+
 def request_json(url, *, method="GET", headers=None, body=None, context=None, timeout=20):
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
@@ -130,10 +137,10 @@ def normalize_alert(hit):
 
 
 def main():
-    gateway = required("SENTINELX_API_URL").rstrip("/")
+    gateway = require_https("SENTINELX_API_URL", required("SENTINELX_API_URL"))
     collector_token = required("SENTINELX_COLLECTOR_TOKEN")
-    manager_url = os.getenv("WAZUH_MANAGER_URL", "https://127.0.0.1:55000").rstrip("/")
-    indexer_url = os.getenv("WAZUH_INDEXER_URL", "https://127.0.0.1:9200").rstrip("/")
+    manager_url = require_https("WAZUH_MANAGER_URL", os.getenv("WAZUH_MANAGER_URL", "https://127.0.0.1:55000"))
+    indexer_url = require_https("WAZUH_INDEXER_URL", os.getenv("WAZUH_INDEXER_URL", "https://127.0.0.1:9200"))
     manager_user = required("WAZUH_API_USER")
     manager_password = required("WAZUH_API_PASSWORD")
     indexer_user = required("WAZUH_INDEXER_USER")
@@ -151,7 +158,7 @@ def main():
     query = {
         "size": batch_size,
         "track_total_hits": True,
-        "sort": [{"@timestamp": {"order": "asc"}}, {"_id": {"order": "asc"}}],
+        "sort": [{"@timestamp": {"order": "asc"}}],
         "query": {"range": {"@timestamp": {"gte": start.isoformat(), "lte": now.isoformat()}}},
     }
     result = request_json(
