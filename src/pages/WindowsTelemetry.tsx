@@ -16,7 +16,7 @@ export default function WindowsTelemetry() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'active' | 'archived'>('active');
-  const [source, setSource] = useState('all');
+  const [source, setSource] = useState('windows');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -44,8 +44,9 @@ export default function WindowsTelemetry() {
       <button className={`btn ${view === 'archived' ? 'btn-primary' : ''}`} onClick={() => setView('archived')}>Archive · 24h–30d</button>
       <label className="ml-auto flex items-center gap-2 text-xs text-sx-mute">Source
         <select className="input" value={source} onChange={e => setSource(e.target.value)}>
-          <option value="all">All sources</option>
-          {[...new Set(events.map(e => e.source).filter(Boolean))].sort().map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="windows">All Windows sources</option>
+          <option value="windows_security">Windows Security</option>
+          <option value="sysmon">Sysmon</option>
         </select>
       </label>
     </div>
