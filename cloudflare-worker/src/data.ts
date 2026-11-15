@@ -69,6 +69,7 @@ function casePayload(row: Record<string, unknown>) {
   const cells = {
     ...payload,
     "Case ID": row.case_id, case_id: row.case_id,
+    "Source Schema": row.source_schema, source_schema: row.source_schema,
     "Case Title": row.title ?? payload["Case Title"], "AI Analysis": row.overview ?? payload["AI Analysis"],
     "Source": row.source ?? payload["Source"], "Severity": row.severity ?? payload["Severity"], "Status": row.status ?? payload["Status"],
     "Created At": row.created_at, "Updated At": row.updated_at,
