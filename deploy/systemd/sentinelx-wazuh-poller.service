@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=oneshot
 User=sentinelx-poller
 Group=sentinelx-poller
+SupplementaryGroups=wazuh
 EnvironmentFile=/etc/sentinelx-wazuh-poller.env
 ExecStart=/usr/bin/python3 /opt/sentinelx-wazuh-poller/poller.py
 NoNewPrivileges=true
