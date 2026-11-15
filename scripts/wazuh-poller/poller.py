@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Read-only Wazuh Manager/Indexer poller for SentinelX. Python standard library only."""
+"""Read-only Wazuh Manager/Indexer poller plus incremental raw archive forwarder."""
 import base64
+import glob
 import json
 import os
 import ssl
@@ -9,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 
 def required(name):
@@ -50,7 +52,6 @@ def request_json(url, *, method="GET", headers=None, body=None, context=None, ti
                 raise RuntimeError(f"HTTP {response.status} from configured endpoint")
             return json.loads(payload.decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        # Do not print response bodies: they can contain sensitive server details.
         raise RuntimeError(f"HTTP {exc.code} from configured endpoint") from None
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Could not reach configured endpoint: {exc.reason}") from None
@@ -122,7 +123,7 @@ def normalize_alert(hit):
         "destinationIp": safe_data.get("dstip"),
         "username": safe_data.get("dstuser") or safe_data.get("srcuser") or safe_data.get("user"),
         "sourceIntegration": "wazuh",
-        "dataOrigin": "WAZUH_INDEXER",
+        "dataOrigin": "WAZUH_INDEXER_ALERT",
         "eventData": {
             "rule": rule,
             "agent": agent,
@@ -136,6 +137,146 @@ def normalize_alert(hit):
     }
 
 
+def normalize_archive_event(record):
+    """Keep raw Windows/Linux event context while making it safe for SentinelX ingestion."""
+    data = record.get("data") or {}
+    win = data.get("win") or {}
+    system = win.get("system") or {}
+    eventdata = win.get("eventdata") or {}
+    agent = record.get("agent") or {}
+    event_number = str(system.get("eventID") or system.get("eventId") or "unknown")
+    record_number = str(system.get("eventRecordID") or "")
+    timestamp = record.get("timestamp") or system.get("systemTime") or datetime.now(timezone.utc).isoformat()
+    agent_id = str(agent.get("id") or "manager")
+    stable_id = "wazuh-archive:" + agent_id + ":" + (record_number or str(record.get("id") or timestamp))
+    message = str(system.get("message") or record.get("full_log") or ("Wazuh raw event " + event_number))
+    host = str(system.get("computer") or agent.get("name") or agent_id)
+    event_data = {
+        "EventID": event_number,
+        "eventRecordID": record_number or None,
+        "channel": system.get("channel"),
+        "providerName": system.get("providerName"),
+        "severityValue": system.get("severityValue"),
+        "eventdata": eventdata,
+        "agent": agent,
+        "manager": record.get("manager"),
+        "decoder": record.get("decoder"),
+        "location": record.get("location"),
+        "fullLog": record.get("full_log"),
+    }
+    return {
+        "eventId": stable_id,
+        "timestamp": timestamp,
+        "eventType": "windows_event_" + event_number if event_number != "unknown" else "wazuh_raw_event",
+        "severity": "info",
+        "message": message[:4000],
+        "host": host,
+        "sourceIntegration": "wazuh_raw_archive",
+        "dataOrigin": "WAZUH_ARCHIVE",
+        "eventData": event_data,
+    }
+
+
+def archive_state_path():
+    return Path(os.getenv("WAZUH_ARCHIVE_STATE_FILE", "/var/lib/sentinelx-wazuh-poller/archive-offsets.json"))
+
+
+def archive_paths():
+    pattern = os.getenv("WAZUH_ARCHIVE_GLOB", "/var/ossec/logs/archives/*/*/ossec-archive-*.json")
+    return sorted(glob.glob(pattern), key=lambda name: (os.path.getmtime(name), name))
+
+
+def load_archive_state(path):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("files"), dict):
+            return value
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        raise RuntimeError("Wazuh archive offset state is unreadable; preserve the file and inspect it before resetting.")
+    return {"initialized": False, "files": {}}
+
+
+def save_archive_state(path, state):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(state, separators=(",", ":")), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
+def read_new_archive_events(max_events):
+    """Read only appended complete JSON lines; first run safely starts at current EOF."""
+    state_path = archive_state_path()
+    state = load_archive_state(state_path)
+    paths = archive_paths()
+    if not state.get("initialized"):
+        for name in paths:
+            stat = os.stat(name)
+            state["files"][name] = {"inode": stat.st_ino, "offset": stat.st_size}
+        state["initialized"] = True
+        save_archive_state(state_path, state)
+        return [], 0
+
+    events = []
+    offsets_changed = False
+    for name in paths:
+        if len(events) >= max_events:
+            break
+        try:
+            stat = os.stat(name)
+        except FileNotFoundError:
+            continue
+        previous = state["files"].get(name) or {}
+        offset = int(previous.get("offset", 0))
+        if previous.get("inode") != stat.st_ino or offset > stat.st_size:
+            offset = 0
+        try:
+            with open(name, "rb") as stream:
+                stream.seek(offset)
+                while len(events) < max_events:
+                    line = stream.readline()
+                    if not line:
+                        break
+                    if not line.endswith(b"\n"):
+                        stream.seek(-len(line), os.SEEK_CUR)
+                        break
+                    offset = stream.tell()
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if isinstance(record, dict):
+                        events.append(normalize_archive_event(record))
+                state["files"][name] = {"inode": stat.st_ino, "offset": offset}
+                offsets_changed = True
+        except OSError as exc:
+            raise RuntimeError("Cannot read Wazuh archive file; check sentinelx-poller group access.") from exc
+    return events, (max(0, len(events)))
+
+
+def send_event_batches(gateway, collector_token, integration_id, events, context):
+    accepted = 0
+    for offset in range(0, len(events), 25):
+        batch = events[offset:offset + 25]
+        response = request_json(
+            gateway + "/api/collector/events",
+            method="POST",
+            headers={
+                "Authorization": "Bearer " + collector_token,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            body={"integrationId": integration_id, "events": batch},
+            context=context,
+        )
+        accepted += int(response.get("accepted", 0))
+    return accepted
+
+
 def main():
     gateway = require_https("SENTINELX_API_URL", required("SENTINELX_API_URL"))
     collector_token = required("SENTINELX_COLLECTOR_TOKEN")
@@ -147,6 +288,7 @@ def main():
     indexer_password = required("WAZUH_INDEXER_PASSWORD")
     lookback = env_int("WAZUH_LOOKBACK_MINUTES", 5, 1, 60)
     batch_size = env_int("WAZUH_BATCH_SIZE", 200, 1, 500)
+    archive_max = env_int("WAZUH_ARCHIVE_MAX_EVENTS", 200, 1, 500)
     context = build_ssl_context()
 
     token = manager_token(manager_url, manager_user, manager_password, context)
@@ -174,23 +316,19 @@ def main():
     )
     hits_obj = (result.get("hits") or {}) if isinstance(result, dict) else {}
     hits = hits_obj.get("hits") or []
-    events = [normalize_alert(hit) for hit in hits if isinstance(hit, dict)]
+    alerts = [normalize_alert(hit) for hit in hits if isinstance(hit, dict)]
+    alerts_submitted = send_event_batches(gateway, collector_token, "wazuh", alerts, context)
 
-    accepted = 0
-    for offset in range(0, len(events), 50):
-        batch = events[offset:offset + 50]
-        response = request_json(
-            gateway + "/api/collector/events",
-            method="POST",
-            headers={
-                "Authorization": "Bearer " + collector_token,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            body={"integrationId": "wazuh", "events": batch},
-            context=context,
-        )
-        accepted += int(response.get("accepted", 0))
+    raw_events, raw_count = read_new_archive_events(archive_max)
+    raw_submitted = send_event_batches(gateway, collector_token, "wazuh", raw_events, context)
+    # Persist offsets only after all raw batches have been accepted. A failed request
+    # replays the same lines on the next run; stable event IDs make replay idempotent.
+    state_path = archive_state_path()
+    state = load_archive_state(state_path)
+    if not state.get("initialized"):
+        # read_new_archive_events() has already initialized the baseline.
+        state["initialized"] = True
+    save_archive_state(state_path, state)
 
     heartbeat = request_json(
         gateway + "/api/collector/heartbeat",
@@ -208,10 +346,11 @@ def main():
                 "checks": [
                     {"name": "manager_api", "status": "pass", "detail": "Authenticated; agent inventory available"},
                     {"name": "indexer_alert_search", "status": "pass", "detail": "Recent alert search completed"},
-                    {"name": "sentinelx_ingest", "status": "pass", "detail": "Alert batch forwarded to SentinelX"}
+                    {"name": "raw_archive_read", "status": "pass", "detail": str(raw_count) + " new raw events read"},
+                    {"name": "sentinelx_ingest", "status": "pass", "detail": "Alert and raw event batches forwarded"}
                 ],
-                "version": "wazuh-poller/1.0",
-                "metrics": {"agentCount": agent_count, "alertsMatched": len(hits), "alertsSubmitted": accepted}
+                "version": "wazuh-poller/1.1",
+                "metrics": {"agentCount": agent_count, "alertsMatched": len(hits), "alertsSubmitted": alerts_submitted, "rawEventsRead": raw_count, "rawEventsSubmitted": raw_submitted}
             }]
         },
         context=context,
@@ -224,7 +363,9 @@ def main():
         "status": "ok",
         "agentCount": agent_count,
         "alertsMatched": int(total or 0),
-        "alertsSubmitted": accepted,
+        "alertsSubmitted": alerts_submitted,
+        "rawEventsRead": raw_count,
+        "rawEventsSubmitted": raw_submitted,
         "heartbeat": heartbeat.get("accepted", []),
         "windowMinutes": lookback,
         "checkedAt": now.isoformat(),
