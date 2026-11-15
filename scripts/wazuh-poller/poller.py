@@ -49,7 +49,11 @@ def require_https(name, value):
 
 def request_json(url, *, method="GET", headers=None, body=None, context=None, timeout=20):
     data = None if body is None else json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    request_headers = dict(headers or {})
+    # Cloudflare blocks urllib default signatures on workers.dev hostnames.
+    # Identify this legitimate application client without impersonating a browser.
+    request_headers.setdefault("User-Agent", "SentinelX-Wazuh-Poller/1.0")
+    req = urllib.request.Request(url, data=data, headers=request_headers, method=method)
     try:
         with urllib.request.urlopen(req, context=context, timeout=timeout) as response:
             payload = response.read(8 * 1024 * 1024)
