@@ -48,6 +48,7 @@ function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
       'Validate the source records before considering any containment action.',
     ],
     detectionIncident: true,
+    sourceSchema: 'security_incidents', dataOrigin: 'REAL_TELEMETRY', legacyRecord: false,
   };
 }
 
