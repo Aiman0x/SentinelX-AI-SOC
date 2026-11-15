@@ -43,3 +43,4 @@ jobs:
           python3 -m py_compile scripts/wazuh-poller/poller.py
           python3 -m unittest discover -s scripts/wazuh-poller -p "test_*.py"
           bash -n scripts/wazuh-poller/install.sh
+          bash -n scripts/wazuh-poller/upgrade.sh
