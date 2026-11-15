@@ -5,8 +5,8 @@ type Platform = 'windows' | 'linux';
 type Collector = { id: string; name: string; platform: string; createdAt: string; lastSeenAt: string | null; status: 'online' | 'stale' | 'pending' | 'paused' };
 export function HostCollectors() {
   const [items, setItems] = useState<Collector[]>([]);
-  const [platform, setPlatform] = useState<Platform>('windows');
-  const [name, setName] = useState('My Windows PC');
+  const [platform, setPlatform] = useState<Platform>('linux');
+  const [name, setName] = useState('Wazuh Linux VM');
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionBusyId, setActionBusyId] = useState('');
