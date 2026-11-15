@@ -62,7 +62,8 @@ export function mapCase(row: Row): SecurityCase {
   const statusText = str(c.Status, str(c.status)).toLowerCase();
   const status: CaseStatus = statusText.includes('closed') ? 'closed' : statusText.includes('resolved') ? 'resolved' : statusText.includes('contain') ? 'contained' : statusText.includes('triag') || statusText.includes('investig') || statusText.includes('escalat') ? 'investigating' : 'open';
   const severityValue = severity(c.Severity ?? c.severity);
-  const raw = str(c['Raw Evidence'], str(c.raw_evidence));
+  const rawValue = c['Raw Evidence'] ?? c.raw_evidence ?? c.event_data;
+  const raw = typeof rawValue === 'string' ? rawValue : rawValue ? JSON.stringify(rawValue) : '';
   const parseObject = (value: unknown): Record<string, unknown> => {
     if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
     if (typeof value === 'string') { try { const parsed = JSON.parse(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; } }
@@ -70,23 +71,30 @@ export function mapCase(row: Row): SecurityCase {
   };
   const analysis = parseObject(c['AI Analysis'] ?? c.ai_analysis);
   const investigationPlan = parseObject(c['Investigation Plan'] ?? c.investigation_plan);
-  const analysisText = str(c['AI Analysis'], str(c['Final Report'], raw || 'No investigation summary recorded.'));
-  const verdict = str(analysis.verdict);
-  const confidence = Number(analysis.confidence);
-  const riskScore = Number(analysis.risk_score);
-  const overview = verdict
-    ? `${verdict} · Confidence ${Number.isFinite(confidence) ? confidence + '/100' : 'not recorded'} · Risk score ${Number.isFinite(riskScore) ? riskScore + '/100' : 'not recorded'}.`
-    : str(investigationPlan.understanding, analysisText);
   const sourceEventId = str(c['Source Event ID'], str(c.event_id));
   const sourceSchema = str(c['Source Schema'], str(c.source_schema, 'legacy_import'));
   const dataOrigin = str(c['Data Origin'], str(c.data_origin, 'UNKNOWN'));
+  const sourceVerification = str(c['Source Verification'], str(c.source_verification,
+    dataOrigin === 'REAL_UNVERIFIED' ? 'Source marked REAL_UNVERIFIED; authenticity has not been independently confirmed.' : 'Not recorded'));
+  const eventType = str(c.event_type, str(c['Source Type'], str(c['Source'], 'security_event')));
+  const host = str(c.host, str(c['Asset ID'], str(c['Source'])));
+  const eventTime = str(c['Event Time'], str(c.event_time, str(c.received_at, str(c['Created At']))));
+  const sourceIp = str(c.source_ip, 'not recorded');
+  const username = str(c.username, 'not recorded');
+  const verdict = str(analysis.verdict);
+  const confidence = Number(analysis.confidence);
+  const riskScore = Number(analysis.risk_score);
+  const rowOverview = str(c.overview);
+  const overview = verdict
+    ? `${verdict} · Confidence ${Number.isFinite(confidence) ? confidence + '/100' : 'not recorded'} · Risk score ${Number.isFinite(riskScore) ? riskScore + '/100' : 'not recorded'}.`
+    : str(investigationPlan.understanding, rowOverview || `Unverified ${eventType} record on ${host || 'unknown host'} at ${eventTime || 'unknown time'}. Source IP: ${sourceIp}. Account: ${username}. Data origin: ${dataOrigin}. No historical AI investigation report is attached.`);
   const timelineRaw = c['Evidence Timeline'] ?? c.evidence_timeline;
   let timelineItems: Record<string, unknown>[] = [];
   if (Array.isArray(timelineRaw)) timelineItems = timelineRaw.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x));
-  else if (typeof timelineRaw === 'string') { try { const parsed = JSON.parse(timelineRaw); if (Array.isArray(parsed)) timelineItems = parsed.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)); } catch { /* retain a single textual timeline entry below */ } }
+  else if (typeof timelineRaw === 'string') { try { const parsed = JSON.parse(timelineRaw); if (Array.isArray(parsed)) timelineItems = parsed.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)); } catch { /* use the event metadata fallback below */ } }
   const seenTimeline = new Set<string>();
   const timeline = timelineItems.map((item, index) => {
-    const time = str(item.time, str(c['Event Time'], str(c['Created At'])));
+    const time = str(item.time, eventTime);
     const title = str(item.event, 'Investigation evidence');
     const detail = str(item.source, 'source not recorded');
     const key = [time, title, detail].join('|');
@@ -94,18 +102,23 @@ export function mapCase(row: Row): SecurityCase {
     seenTimeline.add(key);
     return { id: id + '-timeline-' + index, time: date(time), title, detail, kind: 'evidence' as const };
   }).filter((item): item is NonNullable<typeof item> => item !== null);
-  if (!timeline.length && typeof timelineRaw === 'string' && timelineRaw && timelineItems.length === 0) {
-    timeline.push({ id: id + '-timeline', time: date(c['Event Time'] ?? c['Created At']), title: 'Investigation evidence', detail: timelineRaw.slice(0, 500), kind: 'evidence' });
+  if (!timeline.length && eventTime) {
+    timeline.push({
+      id: id + '-source-event', time: date(eventTime),
+      title: 'Original source event: ' + eventType,
+      detail: `Host: ${host || 'not recorded'} · Account: ${username} · Source IP: ${sourceIp} · Origin: ${dataOrigin}`,
+      kind: 'evidence'
+    });
   }
   const recommended = arr(analysis.actions ?? c['Recommended Actions'] ?? c.recommended_actions);
   const evidenceIds = [...new Set(arr(c.evidence_event_ids))];
   return {
-    id, title: str(c['Case Title'], str(c.case_title, 'Security investigation')), severity: severityValue, status,
-    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'], str(c['Source']))].filter(Boolean),
-    createdAt: date(c['Created At'] ?? c.created_at), updatedAt: date(c['Updated At'] ?? c.updated_at ?? c['Created At']),
-    overview, notes: [], evidence: evidenceIds, alertIds: sourceEventId ? [sourceEventId] : [],
+    id, title: str(c['Case Title'], str(c.case_title, eventType === 'security_event' ? 'Security investigation' : eventType)), severity: severityValue, status,
+    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'], str(c.host, str(c['Source'])))].filter(Boolean),
+    createdAt: date(c['Created At'] ?? c.created_at ?? c.event_time), updatedAt: date(c['Updated At'] ?? c.updated_at ?? c['Created At'] ?? c.event_time),
+    overview, notes: [], evidence: evidenceIds, alertIds: arr(c.alert_ids),
     timeline, recommended,
-    sourceSchema, dataOrigin, sourceEventId, rawEvidence: raw, legacyRecord: sourceSchema !== 'security_incidents',
+    sourceSchema, dataOrigin, sourceVerification, sourceEventId, rawEvidence: raw, legacyRecord: sourceSchema !== 'security_incidents',
     analysis: Object.keys(analysis).length ? analysis : undefined,
     investigationPlan: Object.keys(investigationPlan).length ? investigationPlan : undefined,
   };
