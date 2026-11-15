@@ -19,6 +19,7 @@ export default function Investigation() {
   const backendEvidence = useData(loadEvidence);
   const [params, setParams] = useSearchParams();
   const wanted = params.get('alert');
+  const wantedCase = params.get('case');
 
   const primary = useMemo(() => {
     if (alerts.length === 0) return undefined;
@@ -44,7 +45,8 @@ export default function Investigation() {
           <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">
             Correlation findings are candidates, not verified verdicts. The autonomous agent below can gather read-only evidence from tools connected to your account; always review its conclusions.
           </div>
-          <div className="mb-5"><AgentInvestigationPanel /></div>
+          {wantedCase && <div className="mb-4 rounded-lg border border-sx-gold/25 bg-sx-gold/5 p-3 text-xs text-sx-gold/90">Case-specific investigation target: <span className="mono">{wantedCase}</span>. The backend will load its original evidence and linked event records before the agent starts.</div>}
+          <div className="mb-5"><AgentInvestigationPanel caseId={wantedCase ?? undefined} /></div>
           <div className="mb-5"><AgentReportsPanel /></div>
           {backendInvestigations.loading ? <div className="panel"><LoadingState label="Loading backend investigations…" /></div> : backendInvestigations.error ? <div className="panel"><ErrorState message={backendInvestigations.error} onRetry={backendInvestigations.reload} /></div> : (backendInvestigations.data ?? []).length === 0 ? (
             <div className="panel"><EmptyState title="No backend investigations" description="The backend has not produced any correlation records yet." /></div>
