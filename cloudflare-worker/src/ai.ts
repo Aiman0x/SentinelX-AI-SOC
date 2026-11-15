@@ -197,7 +197,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
   if (!actor) return json({ error: "Authentication required" }, 401);
   if (path === "/api/ai/report" && actor.role === "viewer") return json({ error: "Viewer role is read-only" }, 403);
   const publicAIRead = path === "/api/ai/config" && request.method === "GET";
-  if (!publicAIRead && path !== "/api/ai/analyze" && path !== "/api/ai/agent" && path !== "/api/ai/report" && actor.role !== "owner" && actor.role !== "admin") return json({ error: "Admin permission required" }, 403);
+  if (!publicAIRead && path !== "/api/ai/analyze" && path !== "/api/ai/agent" && path !== "/api/ai/agent/runs" && path !== "/api/ai/report" && actor.role !== "owner" && actor.role !== "admin") return json({ error: "Admin permission required" }, 403);
   if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return json({ error: "Encrypted provider storage is not configured." }, 503);
   const key = storageKey(actor.organization_id);
   if (path === "/api/ai/config" && request.method === "GET") {
@@ -245,6 +245,17 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       const answer = result.answer;
       return json({ ok: true, message: "Provider authenticated and generated a response.", preview: answer.slice(0, 180), checkedAt: new Date().toISOString() });
     } catch (error) { return json({ ok: false, message: error instanceof Error ? error.message : "Provider test failed." }); }
+  }
+
+  if (path === "/api/ai/agent/runs" && request.method === "GET") {
+    const caseId = new URL(request.url).searchParams.get("caseId")?.trim().slice(0, 120) || "";
+    const rows = await env.DB.prepare("SELECT id,case_id,payload_json,created_at FROM soc_records WHERE org_id=? AND entity_type='agent_investigation' AND source_table='ai_agent_runs' AND (?='' OR case_id=?) ORDER BY created_at DESC LIMIT 50")
+      .bind(actor.organization_id, caseId, caseId).all<{id:string;case_id:string|null;payload_json:string;created_at:string}>();
+    const data = rows.results.map(row => {
+      try { return JSON.parse(row.payload_json); }
+      catch { return { runId: row.id, caseId: row.case_id, generatedAt: row.created_at, integrity: "payload_parse_failed" }; }
+    });
+    return json({ data, count: data.length });
   }
 
   if (path === "/api/ai/agent" && request.method === "POST") {
