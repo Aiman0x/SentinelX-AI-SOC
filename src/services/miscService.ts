@@ -1,7 +1,7 @@
 import type { TrendRange, TrendPoint } from '../data/demoTrends';
 import type { Asset } from '../types/asset';
 import type { Severity } from '../types/alert';
-import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord } from '../types/extra';
+import type { DetectionRule, AuditRecord, InvestigationRecord, EvidenceRecord, Playbook } from '../types/extra';
 import { apiGet, delay, isBackendConfigured } from './apiClient';
 import { rowsFrom, mapAsset, mapAudit, mapInvestigation, mapEvidence } from './backendMappers';
 import { createLocalStore } from './localStore';
@@ -67,7 +67,7 @@ export function addRule(r: Omit<DetectionRule, 'id' | 'status' | 'maturity' | 'l
   const rule: DetectionRule = { ...r, mitre: r.mitre ?? [], id: `SXR-${String(Math.max(0, ...nums) + 1).padStart(3, '0')}`, status: 'draft', maturity: 'unvalidated' };
   rulesStore.set([rule, ...rulesStore.getSnapshot()]); return rule;
 }
-export async function loadPlaybooks() { return []; }
+export async function loadPlaybooks(): Promise<Playbook[]> { return []; }
 export async function loadTrend(range: TrendRange): Promise<TrendPoint[]> {
   if (!isBackendConfigured) return [];
   const payload = await apiGet<{ data?: TrendPoint[] }>(`/api/events/summary?range=${range}`);
