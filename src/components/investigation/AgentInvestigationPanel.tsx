@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, isBackendConfigured } from "../../services/apiClient";
 
 type AgentResult = {
@@ -40,6 +40,7 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState<AgentResult | null>(null);
   const [history, setHistory] = useState<SavedAgentRun[]>([]);
+  const autoStartedCase = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isBackendConfigured) { setHistory([]); return; }
@@ -59,16 +60,26 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
     }
   }, [caseId]);
 
-  const run = async () => {
+  const run = useCallback(async () => {
     setBusy(true); setError(""); setResult(null);
+    const task = caseId
+      ? `Investigate case ${caseId} end-to-end. Start with the original linked source event IDs and exact affected host/account. Query the connected Wazuh raw archive and other relevant read-only telemetry for the source event and surrounding activity (authentication, logon type, source/destination IP, process creation, service installation/start, account and privilege changes). Correlate events by host, account and timestamp; identify process names and parent/child context when telemetry provides them. Verify whether the alert title and MITRE mapping are actually supported. Separate observed facts, benign explanations and attack hypotheses. State what evidence is missing, confidence with reasons, and prioritized defensive next steps. Do not execute response actions or claim data you did not retrieve.`
+      : prompt;
+    if (caseId) setPrompt(task);
     try {
-      const response = await apiPost<AgentResult>("/api/ai/agent", { prompt, caseId });
+      const response = await apiPost<AgentResult>("/api/ai/agent", { prompt: task, caseId });
       setResult(response);
       if (response.runId) setHistory(previous => [response as SavedAgentRun, ...previous.filter(item => item.runId !== response.runId)]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Agent investigation failed.");
     } finally { setBusy(false); }
-  };
+  }, [prompt, caseId]);
+
+  useEffect(() => {
+    if (!caseId || !isBackendConfigured || autoStartedCase.current === caseId) return;
+    autoStartedCase.current = caseId;
+    void run();
+  }, [caseId, run]);
 
   return <section className="panel space-y-3 p-4">
     <div>
@@ -86,7 +97,7 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
     </label>
     <div className="flex flex-wrap items-end gap-3">
       <button className="btn btn-primary btn-sm" onClick={run} disabled={!isBackendConfigured||busy||!prompt.trim()}>{busy ? "Investigating…" : "Run agent investigation"}</button>
-      <span className="text-[10px] text-sx-mute">Fixed agent · Fixed model · Read-only · 5 total connector attempts · 1 controlled retry</span>
+      <span className="text-[10px] text-sx-mute">Case-specific investigations auto-start · Fixed agent/model · Read-only · 5 connector attempts · 1 controlled retry</span>
     </div>
     {caseId && history.length > 0 && <div className="space-y-2 border-t border-sx-line pt-3">
       <h3 className="label">Saved investigation history ({history.length})</h3>
