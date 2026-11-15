@@ -184,7 +184,6 @@ export default function Integrations() {
           <div className="space-y-3">
             <p className="text-xs text-sx-mute">Enter the connection details for this tool. Credentials are handled by the SentinelX backend and are not shown again.</p>
             {editing.fields.map(f => <Field key={f.key} label={f.label} htmlFor={`f-${f.key}`}><FieldControl field={f} value={values[f.key] ?? ''} onChange={v => setValues(prev => ({ ...prev, [f.key]: v }))} disabled={!isBackendConfigured} />{f.required && <p className="mt-1 text-[10px] text-sx-mute">Required</p>}{f.help && <p className="mt-1 text-[10px] text-sx-mute">{f.help}</p>}</Field>)}
-            {editing.id === 'wazuh' && <p className="rounded-lg border border-sx-gold/20 bg-sx-gold/5 p-2 text-[10px] text-sx-mute">Keep the Wazuh API private. Use a trusted HTTPS tunnel or private bridge; never expose port 55000 publicly.</p>}
             <div className="flex justify-end gap-2"><button className="btn" onClick={() => setEditing(null)}>Cancel</button><button className="btn btn-primary" onClick={() => void save()} disabled={!isBackendConfigured}>Save setup</button></div>
           </div>
         )}
