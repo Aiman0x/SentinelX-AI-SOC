@@ -478,7 +478,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
         estimatedInputTokens += boundedFinal.estimatedTokens;
         inputTruncated = inputTruncated || boundedFinal.truncated;
         const final = await runFailover(config, boundedFinal.text, finalSystem, 1400);
-        selectedProvider = "OpenRouter"; selectedModel = OPENROUTER_MODEL; attemptedFallbacks += final.attempts.length;
+        selectedProvider = final.provider; selectedModel = final.model; attemptedFallbacks += final.attempts.length;
         conclusion = final.answer;
       }
       const evidenceAssessment = {
