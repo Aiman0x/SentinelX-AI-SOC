@@ -51,6 +51,18 @@ function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
   };
 }
 
+/** Count unique unresolved detection incidents in the active 24-hour window only.
+ * Legacy/manual case records are intentionally excluded from this dashboard metric. */
+export async function loadActiveOpenIncidentCount(): Promise<number> {
+  if (!isBackendConfigured) return 0;
+  const payload = await apiGet<unknown>('/api/incidents?status=active&limit=200');
+  const unresolved = rowsFrom(payload).filter((row) => {
+    const status = String(row.status ?? 'open').toLowerCase();
+    return !['resolved', 'closed', 'false_positive', 'false positive'].includes(status);
+  });
+  return new Set(unresolved.map((row) => String(row.id ?? '')).filter(Boolean)).size;
+}
+
 export async function loadCases(): Promise<SecurityCase[]> {
   if (isBackendConfigured) {
     const [incidentPayload, legacyPayload] = await Promise.all([
