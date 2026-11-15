@@ -135,10 +135,11 @@ export async function handleDetectionRoute(req:Request,env:Env,path:string):Prom
   const status=(params.get("status")||"active").toLowerCase();
   const source=safe(params.get("source")||"").toLowerCase();
   if(!["active","archived","all"].includes(status))return json({error:"status must be active, archived or all."},400);
-  const ageFilter=status==="active"?"julianday(si.last_seen)>=julianday('now','-24 hours')":
-   status==="archived"?"julianday(si.last_seen)<julianday('now','-24 hours') AND julianday(si.last_seen)>=julianday('now','-30 days')":
-   "julianday(si.last_seen)>=julianday('now','-30 days')";
-  const r=await env.DB.prepare("SELECT si.id,si.incident_key,si.title,si.description,si.severity,si.confidence,si.status,si.first_seen,si.last_seen,si.event_count,si.host,si.username,si.source_ip,si.mitre_json,si.evidence_count,si.created_at,si.updated_at,(SELECT group_concat(DISTINCT e.source) FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=si.org_id AND ie.incident_id=si.id) AS source_summary FROM security_incidents si WHERE si.org_id=? AND ("+ageFilter+") AND (?='' OR EXISTS (SELECT 1 FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=si.org_id AND ie.incident_id=si.id AND lower(e.source)=?)) ORDER BY si.last_seen DESC LIMIT ?")
+  const latestReceived="COALESCE((SELECT MAX(e.received_at) FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=si.org_id AND ie.incident_id=si.id),si.last_seen)";
+  const ageFilter=status==="active"?`julianday(${latestReceived})>=julianday('now','-24 hours')`:
+   status==="archived"?`julianday(${latestReceived})<julianday('now','-24 hours') AND julianday(${latestReceived})>=julianday('now','-30 days')`:
+   `julianday(${latestReceived})>=julianday('now','-30 days')`;
+  const r=await env.DB.prepare("SELECT si.id,si.incident_key,si.title,si.description,si.severity,si.confidence,si.status,si.first_seen,si.last_seen,si.event_count,si.host,si.username,si.source_ip,si.mitre_json,si.evidence_count,si.created_at,si.updated_at,${latestReceived} AS last_received_at,(SELECT group_concat(DISTINCT e.source) FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=si.org_id AND ie.incident_id=si.id) AS source_summary FROM security_incidents si WHERE si.org_id=? AND ("+ageFilter+") AND (?='' OR EXISTS (SELECT 1 FROM incident_events ie JOIN security_events e ON e.id=ie.event_row_id WHERE ie.org_id=si.org_id AND ie.incident_id=si.id AND lower(e.source)=?)) ORDER BY si.last_seen DESC LIMIT ?")
    .bind(org,source,source,limit).all();
   return json({data:r.results,retention:{view:status,activeHours:24,totalDays:30,source:source||"all"}});
  }
