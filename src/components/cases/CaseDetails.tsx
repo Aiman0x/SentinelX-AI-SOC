@@ -58,7 +58,7 @@ export function CaseDetails({ c, alerts, onClose, onUpdated, readOnly = false }:
   const linked = c.alertIds.map((id) => alerts.find((a) => a.id === id || a.eventId === id || a.evidence.includes(id))).filter(Boolean) as Alert[];
 
   const updateCase = async (patch: { status?: CaseStatus; assignee?: string }) => {
-    if (readOnly || c.detectionIncident) return;
+    if (saving || readOnly || c.detectionIncident) return;
     setSaving(true);
     try {
       if (isBackendConfigured) {
@@ -148,12 +148,12 @@ export function CaseDetails({ c, alerts, onClose, onUpdated, readOnly = false }:
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <span className="label">Case status</span>
-              <Select label="Case status" value={status} disabled={saving} onChange={(v) => void updateCase({ status: v as CaseStatus })}
+              <Select label="Case status" value={status} onChange={(v) => void updateCase({ status: v as CaseStatus })}
                 options={STATUSES.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))} />
             </div>
             <div>
               <span className="label">Analyst assignment</span>
-              <Select label="Assign analyst" value={assignee} disabled={saving} onChange={(v) => void updateCase({ assignee: v })}
+              <Select label="Assign analyst" value={assignee} onChange={(v) => void updateCase({ assignee: v })}
                 options={ANALYSTS.map((s) => ({ value: s, label: s }))} />
             </div>
           </div>
