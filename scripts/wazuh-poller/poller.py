@@ -151,19 +151,23 @@ def normalize_archive_event(record):
     stable_id = "wazuh-archive:" + agent_id + ":" + (record_number or str(record.get("id") or timestamp))
     message = str(system.get("message") or record.get("full_log") or ("Wazuh raw event " + event_number))
     host = str(system.get("computer") or agent.get("name") or agent_id)
-    event_data = {
+    event_data = dict(eventdata) if isinstance(eventdata, dict) else {}
+    event_data.update({
         "EventID": event_number,
         "eventRecordID": record_number or None,
         "channel": system.get("channel"),
         "providerName": system.get("providerName"),
         "severityValue": system.get("severityValue"),
+        "IpAddress": eventdata.get("ipAddress") or eventdata.get("IpAddress"),
+        "SourceAddress": eventdata.get("sourceAddress") or eventdata.get("SourceAddress"),
+        "DestinationIp": eventdata.get("destinationIp") or eventdata.get("DestinationIp"),
         "eventdata": eventdata,
         "agent": agent,
         "manager": record.get("manager"),
         "decoder": record.get("decoder"),
         "location": record.get("location"),
         "fullLog": record.get("full_log"),
-    }
+    })
     return {
         "eventId": stable_id,
         "timestamp": timestamp,
