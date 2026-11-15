@@ -20,7 +20,6 @@ export default function Investigation() {
   const [params, setParams] = useSearchParams();
   const wanted = params.get('alert');
   const wantedCase = params.get('case');
-  const investigationCaseId = wantedCase ?? primary?.caseId ?? primary?.id;
 
   const primary = useMemo(() => {
     if (alerts.length === 0) return undefined;
@@ -28,6 +27,7 @@ export default function Investigation() {
       ?? [...alerts].filter((a) => a.status !== 'resolved' && a.status !== 'false_positive').sort((a, b) => severityRank[b.severity] - severityRank[a.severity])[0]
       ?? alerts[0];
   }, [alerts, wanted]);
+  const investigationCaseId = wantedCase ?? primary?.caseId ?? primary?.id;
 
   return (
     <>
