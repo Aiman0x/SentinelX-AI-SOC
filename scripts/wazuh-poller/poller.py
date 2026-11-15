@@ -217,7 +217,7 @@ def read_new_archive_events(max_events):
             state["files"][name] = {"inode": stat.st_ino, "offset": stat.st_size}
         state["initialized"] = True
         save_archive_state(state_path, state)
-        return [], 0
+        return [], 0, state
 
     events = []
     offsets_changed = False
@@ -255,7 +255,7 @@ def read_new_archive_events(max_events):
                 offsets_changed = True
         except OSError as exc:
             raise RuntimeError("Cannot read Wazuh archive file; check sentinelx-poller group access.") from exc
-    return events, (max(0, len(events)))
+    return events, len(events), state
 
 
 def send_event_batches(gateway, collector_token, integration_id, events, context):
@@ -319,16 +319,11 @@ def main():
     alerts = [normalize_alert(hit) for hit in hits if isinstance(hit, dict)]
     alerts_submitted = send_event_batches(gateway, collector_token, "wazuh", alerts, context)
 
-    raw_events, raw_count = read_new_archive_events(archive_max)
+    raw_events, raw_count, archive_state = read_new_archive_events(archive_max)
     raw_submitted = send_event_batches(gateway, collector_token, "wazuh", raw_events, context)
     # Persist offsets only after all raw batches have been accepted. A failed request
     # replays the same lines on the next run; stable event IDs make replay idempotent.
-    state_path = archive_state_path()
-    state = load_archive_state(state_path)
-    if not state.get("initialized"):
-        # read_new_archive_events() has already initialized the baseline.
-        state["initialized"] = True
-    save_archive_state(state_path, state)
+    save_archive_state(archive_state_path(), archive_state)
 
     heartbeat = request_json(
         gateway + "/api/collector/heartbeat",
