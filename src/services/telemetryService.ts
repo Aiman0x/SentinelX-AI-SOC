@@ -34,9 +34,11 @@ type SecurityEventRow = {
 const text = (value: unknown, fallback = '—'): string =>
   value === undefined || value === null || value === '' ? fallback : String(value);
 
-export async function getWindowsTelemetry(): Promise<WindowsTelemetryEvent[]> {
+export async function getWindowsTelemetry(view: 'active' | 'archived' = 'active', source = 'all'): Promise<WindowsTelemetryEvent[]> {
   if (!isBackendConfigured) throw new Error('SentinelX backend is not configured.');
-  const payload = await apiGet<{ data?: SecurityEventRow[] }>('/api/events?limit=100');
+  const params = new URLSearchParams({ limit: '100', status: view });
+  if (source !== 'all') params.set('source', source);
+  const payload = await apiGet<{ data?: SecurityEventRow[] }>(`/api/events?${params.toString()}`);
   const rows = Array.isArray(payload?.data) ? payload.data : [];
   return rows.map((row, index) => {
     const normalized = row.normalized && typeof row.normalized === 'object' ? row.normalized : {};
