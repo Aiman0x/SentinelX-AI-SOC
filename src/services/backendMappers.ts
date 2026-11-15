@@ -15,7 +15,7 @@ const arr = (v: unknown): string[] => {
 };
 const severity = (v: unknown): Severity => {
   const s = str(v).toLowerCase();
-  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'low' || s === 'informational' ? 'low' : 'medium';
+  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'medium' ? 'medium' : s === 'low' || s === 'informational' ? 'low' : 'unclassified';
 };
 const date = (v: unknown): string => {
   const d = v ? new Date(String(v)) : new Date(0);
