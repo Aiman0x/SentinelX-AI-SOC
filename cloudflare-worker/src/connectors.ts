@@ -105,101 +105,7 @@ function validateIndicator(input: Record<string,unknown>) {
   } else throw new Error("Choose indicator type: ip, domain, url or hash.");
   return {type,value};
 }
-async function wazuhAuth(context: AdapterContext, values: Record<string,string>) {
-  if (!publicHttps(values.apiUrl || "")) throw new Error("Wazuh requires a public HTTPS hostname (for example, a Cloudflare Tunnel protected by Access). Private IPs and plain HTTP are blocked.");
-  if (!values.apiUser || !values.apiPassword) throw new Error("Wazuh API username and password are required.");
-  const base = new URL(values.apiUrl);
-  const root = base.origin + base.pathname.replace(/\/$/,"");
-  const basic = btoa(unescape(encodeURIComponent(values.apiUser+":"+values.apiPassword)));
-  const headers: Record<string,string> = {Authorization:"Basic "+basic,Accept:"application/json"};
-  if (values.accessClientId && values.accessClientSecret) {
-    headers["CF-Access-Client-Id"] = values.accessClientId;
-    headers["CF-Access-Client-Secret"] = values.accessClientSecret;
-  }
-  const auth = await fetchJson(root+"/security/user/authenticate",{method:"POST",headers});
-  if (!auth.response.ok) throw new Error(auth.response.status===401 ? "Wazuh rejected the API username/password." : "Wazuh authentication failed (HTTP "+auth.response.status+").");
-  const token = auth.data?.data?.token;
-  if (typeof token !== "string" || !token) throw new Error("Wazuh did not return an API token.");
-  return {root,headers:{Authorization:"Bearer "+token,Accept:"application/json",...(values.accessClientId&&values.accessClientSecret?{"CF-Access-Client-Id":values.accessClientId,"CF-Access-Client-Secret":values.accessClientSecret}:{})}};
-}
 const field = (key:string,label:string,placeholder:string,type:FieldSchema["type"]="text",required=false,help?:string):FieldSchema => ({key,label,placeholder,type,required,help});
-const wazuh: ToolAdapter = {
-  id:"wazuh",name:"Wazuh",category:"SIEM",description:"Connect Wazuh Manager and Indexer: agent inventory plus actual security alert search.",
-  schema:{version:"1.0",fields:[
-    field("apiUrl","Wazuh Manager API URL","https://wazuh.example.com:55000","url",true,"Expose only through trusted HTTPS Cloudflare Tunnel / Access or a private bridge. Never open port 55000 publicly."),
-    field("apiUser","Read-only Manager API username","sentinelx-readonly","text",true),
-    field("apiPassword","Manager API password","Enter your Wazuh API password","password",true),
-    field("indexerUrl","Wazuh Indexer HTTPS URL","https://wazuh-indexer.example.com:9200","url",true,"Required for querying real Wazuh alert documents. Keep the indexer private behind Cloudflare Access."),
-    field("indexerUser","Read-only Indexer username","sentinelx-indexer-readonly","text",true),
-    field("indexerPassword","Indexer password","Enter your Indexer password","password",true),
-    field("accessClientId","Cloudflare Access Client ID","Service token ID","password"),
-    field("accessClientSecret","Cloudflare Access Client Secret","Service token secret","password")
-  ],query:{supported:true,description:"List agents, inspect an agent, retrieve Manager info, or search recent Wazuh alerts.",fields:[
-    field("resource","Resource","agents, agent, manager or alerts","text",true),
-    field("agentId","Agent ID (for resource=agent)","001"),
-    field("limit","Alert result limit (1–100)","25")
-  ]}},
-  async connect(context,values) {
-    const allowed=["apiUrl","apiUser","apiPassword","indexerUrl","indexerUser","indexerPassword","accessClientId","accessClientSecret"];
-    for(const k of Object.keys(values)) if(!allowed.includes(k)) throw new Error("Unsupported Wazuh configuration field: "+k);
-    if(!publicHttps(values.apiUrl||"")) throw new Error("A public HTTPS Wazuh Manager API URL is required. Use Cloudflare Tunnel/Access or a private bridge.");
-    if(!values.apiUser||!values.apiPassword) throw new Error("Wazuh Manager API username and password are required.");
-    if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("A public HTTPS Wazuh Indexer URL and read-only username/password are required to query alerts.");
-    if(Boolean(values.accessClientId)!==Boolean(values.accessClientSecret)) throw new Error("Provide both Cloudflare Access service token fields, or leave both blank.");
-    const key=storageKey(context.actor,this.id),old=await context.env.INTEGRATION_CONFIGS.get(key);
-    const previous=old?await unseal(old,context.env.CONFIG_ENCRYPTION_KEY,key):{};
-    const merged={...previous,...values};
-    await context.env.INTEGRATION_CONFIGS.put(key,await seal(merged,context.env.CONFIG_ENCRYPTION_KEY,key));
-    return {saved:true,configuredKeys:Object.keys(merged)};
-  },
-  async disconnect(context) { await disconnectStored(context, this.id); },
-  async test(context) {
-    const at=now();
-    try {
-      const values=await saved(context,this.id);
-      const auth=await wazuhAuth(context,values);
-      const agents=await fetchJson(auth.root+"/agents?limit=1",{headers:auth.headers});
-      if(!agents.response.ok) throw new Error("Wazuh Manager authenticated, but agent inventory returned HTTP "+agents.response.status+".");
-      if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("Wazuh Manager works, but Indexer URL and read-only credentials are required to verify alert search.");
-      const indexer=new URL(values.indexerUrl);
-      const indexerHeaders:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
-      if(values.accessClientId&&values.accessClientSecret){indexerHeaders["CF-Access-Client-Id"]=values.accessClientId;indexerHeaders["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const alerts=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search?size=1",{method:"POST",headers:indexerHeaders,body:JSON.stringify({size:1,query:{match_all:{}},sort:[{"timestamp":{order:"desc"}}]})});
-      if(!alerts.response.ok) throw new Error("Wazuh Manager works, but Indexer alert search failed (HTTP "+alerts.response.status+").");
-      const result={ok:true,message:"Wazuh Manager API authenticated and Wazuh Indexer alert search succeeded.",checkedAt:at,details:{agentCount:agents.data?.data?.total_affected_items??null,alertIndexReachable:true}};
-      await health(context,this.id,result); return result;
-    } catch(e) {
-      const result={ok:false,message:e instanceof Error?e.message:"Wazuh connection failed.",checkedAt:at};
-      await health(context,this.id,result); return result;
-    }
-  },
-  async query(context,input) {
-    const values=await saved(context,this.id);
-    const auth=await wazuhAuth(context,values);
-    const resource=String(input.resource||"agents");
-    if(resource==="alerts") {
-      if(!publicHttps(values.indexerUrl||"")||!values.indexerUser||!values.indexerPassword) throw new Error("Wazuh Indexer read-only credentials are required.");
-      const indexer=new URL(values.indexerUrl);
-      const limit=Math.min(100,Math.max(1,Number(input.limit)||25));
-      const headers:Record<string,string>={Authorization:"Basic "+btoa(unescape(encodeURIComponent(values.indexerUser+":"+values.indexerPassword))),Accept:"application/json","Content-Type":"application/json"};
-      if(values.accessClientId&&values.accessClientSecret){headers["CF-Access-Client-Id"]=values.accessClientId;headers["CF-Access-Client-Secret"]=values.accessClientSecret;}
-      const result=await fetchJson(indexer.origin+(indexer.pathname.endsWith("/") ? indexer.pathname.slice(0,-1) : indexer.pathname)+"/wazuh-alerts-*/_search",{method:"POST",headers,body:JSON.stringify({size:limit,track_total_hits:false,sort:[{"timestamp":{order:"desc"}}],query:{match_all:{}}})});
-      if(!result.response.ok) throw new Error("Wazuh alert search failed (HTTP "+result.response.status+").");
-      return result.data;
-    }
-    let path="";
-    if(resource==="agents") path="/agents?limit=100&select=id,name,status,ip,version,node_name";
-    else if(resource==="agent") {
-      const id=String(input.agentId||"");
-      if(!/^[0-9]{3,8}$/.test(id)) throw new Error("Provide a valid Wazuh agent ID.");
-      path="/agents/"+id;
-    } else if(resource==="manager") path="/manager/info";
-    else throw new Error("Supported Wazuh query resources are agents, agent, manager and alerts.");
-    const result=await fetchJson(auth.root+path,{headers:auth.headers});
-    if(!result.response.ok) throw new Error("Wazuh query failed (HTTP "+result.response.status+").");
-    return result.data;
-  }
-};
 function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
   const meta = id==="virustotal" ? {name:"VirusTotal",description:"Look up IPs, domains, URLs and file hashes using your VirusTotal API key.",fields:[field("apiKey","VirusTotal API key","Paste your own API key","password",true)]}
     : id==="abuseipdb" ? {name:"AbuseIPDB",description:"Check IP reputation and abuse confidence using your AbuseIPDB API key.",fields:[field("apiKey","AbuseIPDB API key","Paste your own API key","password",true)]}
@@ -253,11 +159,11 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
     }
   };
 }
-function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
-  const labels:Record<string,string>={sysmon:"Microsoft-Windows-Sysmon/Operational",windows_security:"Windows Security Event Log",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
+function hostAdapter(id:"wazuh"|"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
+  const labels:Record<string,string>={wazuh:"Wazuh Manager + Indexer alert stream",sysmon:"Microsoft-Windows-Sysmon/Operational",windows_security:"Windows Security Event Log",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
-    id,name,category:id==="sysmon"||id==="windows_security"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
-    schema:{version:"1.0",fields:id==="windows_security"?[]:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped endpoint or sensor events.",fields:[field("limit","Maximum records (1–100)","25"),field("eventType","Filter by event type (optional)","windows_failed_login"),field("sinceMinutes","Look-back window in minutes","1440")]}},
+    id,name,category:id==="wazuh"?"SIEM":id==="sysmon"||id==="windows_security"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
+    schema:{version:"1.0",fields:id==="windows_security"||id==="wazuh"?[]:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped endpoint or sensor events.",fields:[field("limit","Maximum records (1–100)","25"),field("eventType","Filter by event type (optional)","windows_failed_login"),field("sinceMinutes","Look-back window in minutes","1440")]}},
     async connect(context,values) {
       if(Object.keys(values).some(k=>!["sensor","source"].includes(k))) throw new Error("Unsupported configuration field.");
       const key=storageKey(context.actor,id),old=await context.env.INTEGRATION_CONFIGS.get(key);
@@ -272,6 +178,21 @@ function hostAdapter(id:"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"
     },
     async disconnect(context) { await disconnectStored(context, id); },
     async test(context) {
+      if(id==="wazuh") {
+        const raw=await context.env.INTEGRATION_CONFIGS.get(context.actor.organization_id+":wazuh:health");
+        if(!raw) {
+          const missing={ok:false,message:"No Wazuh poller heartbeat received yet. Enroll the Linux Wazuh VM and start its poller.",checkedAt:now()};
+          await health(context,id,missing); return missing;
+        }
+        try {
+          const h=JSON.parse(raw); const age=Date.now()-Date.parse(h.checkedAt||"");
+          const result={ok:h.ok===true&&age>=0&&age<600000,message:age>=600000?"Wazuh poller heartbeat is stale.":h.message||"Wazuh poller is reporting healthy.",checkedAt:now(),details:{collectorStatus:h.status,observedAt:h.checkedAt,metrics:h.metrics||{}}};
+          await health(context,id,result); return result;
+        } catch {
+          const invalid={ok:false,message:"Wazuh poller health report is invalid.",checkedAt:now()};
+          await health(context,id,invalid); return invalid;
+        }
+      }
       if(id==="windows_security") {
         const latest=await context.env.DB.prepare("SELECT observed_at,event_type,host FROM security_events WHERE org_id=? AND source='windows_security' ORDER BY observed_at DESC LIMIT 1").bind(context.actor.organization_id).first<{observed_at:string;event_type:string;host:string|null}>();
         const age=latest?Date.now()-Date.parse(latest.observed_at):Number.POSITIVE_INFINITY;
@@ -359,7 +280,8 @@ const cloudflareResponse: ToolAdapter = {
 
 const adapters: ToolAdapter[] = [
   cloudflareResponse,
-  activepieces,wazuh,
+  activepieces,
+  hostAdapter("wazuh","Wazuh","Wazuh Manager and Indexer alerts streamed securely from your Linux Wazuh VM. No public Wazuh API or Indexer endpoint is required."),
   hostAdapter("windows_security","Windows Security Logs","Windows authentication, process creation, account, group and audit events delivered by the enrolled endpoint collector."),
   hostAdapter("sysmon","Windows Sysmon","Windows process, network, registry, DNS and image events delivered by the enrolled endpoint collector."),
   hostAdapter("suricata","Suricata","Network IDS/IPS alerts and protocol metadata from eve.json via a network sensor collector."),
@@ -376,8 +298,8 @@ export async function getAgentToolCatalog(request: Request, env: ConnectorEnv) {
   for (const adapter of adapters) {
     if (!adapter.schema.query.supported) continue;
     const key = storageKey(actor, adapter.id);
-    const collectorBacked = adapter.id === "windows_security" || adapter.id === "sysmon"
-      ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+    const collectorBacked = adapter.id === "windows_security" || adapter.id === "sysmon" || adapter.id === "wazuh"
+      ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 AND (?=0 OR platform='linux') LIMIT 1").bind(actor.organization_id,adapter.id==="wazuh"?1:0).first())
       : false;
     const configured = collectorBacked || Boolean(await env.INTEGRATION_CONFIGS.get(key));
     if (!configured) continue;
@@ -395,8 +317,8 @@ export async function runAgentTool(request: Request, env: ConnectorEnv, actor: A
   const adapter = adapters.find(x => x.id === connectorId && x.schema.query.supported);
   if (!adapter) throw new Error("Tool is not in the read-only allowlist.");
   const key = storageKey(actor, connectorId);
-  const collectorBacked = connectorId === "windows_security" || connectorId === "sysmon"
-    ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+  const collectorBacked = connectorId === "windows_security" || connectorId === "sysmon" || connectorId === "wazuh"
+    ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 AND (?=0 OR platform='linux') LIMIT 1").bind(actor.organization_id,connectorId==="wazuh"?1:0).first())
     : false;
   if (!collectorBacked && !(await env.INTEGRATION_CONFIGS.get(key))) throw new Error("This tool is not connected for your account or organization.");
   const auditId = crypto.randomUUID();
@@ -498,8 +420,8 @@ export async function handleConnectorRoute(request:Request,env:ConnectorEnv,path
     for(const adapter of adapters) {
       const key=storageKey(actor,adapter.id);
       const raw=await env.INTEGRATION_CONFIGS.get(key);
-      const collectorBacked=(adapter.id==="windows_security"||adapter.id==="sysmon")
-        ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 LIMIT 1").bind(actor.organization_id).first())
+      const collectorBacked=(adapter.id==="windows_security"||adapter.id==="sysmon"||adapter.id==="wazuh")
+        ? Boolean(await env.DB.prepare("SELECT id FROM host_collectors WHERE org_id=? AND revoked_at IS NULL AND is_paused=0 AND (?=0 OR platform='linux') LIMIT 1").bind(actor.organization_id,adapter.id==="wazuh"?1:0).first())
         : false;
       const healthRaw=await env.INTEGRATION_CONFIGS.get(key+":health");
       const health=healthRaw?JSON.parse(healthRaw):null;
