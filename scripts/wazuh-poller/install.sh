@@ -13,6 +13,10 @@ if ! command -v systemctl >/dev/null 2>&1; then
   echo "systemd is required for the automatic poller service." >&2
   exit 1
 fi
+if ! getent group wazuh >/dev/null 2>&1; then
+  echo "The Wazuh group was not found. Run this installer on the Wazuh Manager VM." >&2
+  exit 1
+fi
 if command -v curl >/dev/null 2>&1; then
   FETCH=(curl -fsSL)
 elif command -v wget >/dev/null 2>&1; then
@@ -61,6 +65,7 @@ install -d -o root -g root -m 0755 "$APP_DIR"
 "${FETCH[@]}" "$BASE/deploy/systemd/sentinelx-wazuh-poller.timer" > /etc/systemd/system/sentinelx-wazuh-poller.timer
 chmod 0755 "$APP_DIR/poller.py"
 useradd --system --no-create-home --shell /usr/sbin/nologin sentinelx-poller 2>/dev/null || true
+usermod -a -G wazuh sentinelx-poller
 chown root:sentinelx-poller "$APP_DIR" "$APP_DIR/poller.py"
 chmod 0750 "$APP_DIR"
 install -d -o sentinelx-poller -g sentinelx-poller -m 0750 /var/lib/sentinelx-wazuh-poller
