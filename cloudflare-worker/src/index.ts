@@ -369,6 +369,7 @@ export default {
           return reply({ ...health, ok: health.status === "healthy" && health.ok === true, message: health.message || "Latest host collector health report." }, 200, cors);
         } catch { return reply({ ok: false, unavailable: true, message: "Stored collector health report is invalid." }, 200, cors); }
       }
+    }
     if (request.method !== "GET") return reply({ error: "Method not allowed" }, 405, cors);
 
     if (url.pathname === "/api/integrations") {
