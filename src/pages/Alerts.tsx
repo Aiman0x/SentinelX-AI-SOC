@@ -13,7 +13,8 @@ import { severityRank } from '../utils/severity';
 const PAGE_SIZE = 8;
 
 export default function Alerts() {
-  const { alerts, loading, error, reload } = useAlerts();
+  const [view, setView] = useState<'active' | 'archived'>('active');
+  const { alerts, loading, error, reload } = useAlerts(view);
   const { openAlert, refresh, toast } = useApp();
   const [params, setParams] = useSearchParams();
   const [filters, setFilters] = useState<AlertFilterState>({ ...emptyAlertFilters, q: params.get('q') ?? '' });
@@ -68,10 +69,15 @@ export default function Alerts() {
         subtitle="Search, filter and triage detections."
         actions={<button className="btn" onClick={() => { refresh(); reload(); toast('Alerts reloaded.', 'info'); }}><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}
       />
+      <div className="my-3 flex flex-wrap items-center gap-2">
+        <button className={`btn ${view === 'active' ? 'btn-gold' : ''}`} onClick={() => { setView('active'); setPage(1); }}>Last 24 hours</button>
+        <button className={`btn ${view === 'archived' ? 'btn-gold' : ''}`} onClick={() => { setView('archived'); setPage(1); }}>Archive · 24h–30d</button>
+        <span className="ml-auto text-xs text-sx-mute">{view === 'active' ? 'Recent alerts' : 'Archived alerts · auto-delete after 30 days'}</span>
+      </div>
       <Panel>
         <AlertFilters value={filters} onChange={(f) => { setFilters(f); setPage(1); }} sources={sources} />
         {loading ? <LoadingState label="Loading alerts…" /> : error ? <ErrorState message={error} onRetry={reload} /> : filtered.length === 0 ? (
-          <EmptyState title="No alerts match your filters" description="Try clearing a filter or widening the date range." />
+          <EmptyState title="No alerts in this view match your filters" description="Try clearing a filter or widening the date range." />
         ) : (
           <>
             <AlertTable variant="full" alerts={rows} onOpen={openAlert} sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
