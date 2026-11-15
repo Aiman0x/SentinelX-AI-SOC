@@ -72,10 +72,7 @@ async function normalize(org:string,collectorId:string|null,source:string,value:
  const destinationIpValue=e.destinationIp??e.dstIp??e.dest_ip??e.destination_ip??e.DestinationIp??eventDetails.DestinationIp??wazuhData.dstip??wazuhData.dst_ip??wazuhData.destination_ip;
  const destinationIpText=str(destinationIpValue,80);
  const dstIp=destinationIpText&&destinationIpText!=="-"?destinationIpText:null;
- const host=e.host&&typeof e.host==="object"?(e.host as Record<string,unknown>).name:e.host??wazuhAgent.name??wazuhAgent.id;
- const eventId=str(e.eventId??outer.eventId??e.id??e._id,180)||await hash(source+":"+observedAt+":"+JSON.stringify(raw));
- const dedupKey=await hash(org+":"+source+":"+eventId);
- const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:srcIp,destinationIp:dstIp,username,message:str(e.message??e.description??e.summary??[eventType,Object.entries(eventDetails).slice(0,24).map(([k,v])=>k+"="+str(v,180)).join(" ")].filter(Boolean).join(" | "),4000),sourceIntegration:str(e.sourceIntegration??e.source_integration??source,160),dataOrigin:str(e.dataOrigin??e.data_origin??"UNVERIFIED",40),eventData:scrub(eventData)};
+ const details=eventData&&typeof eventData==="object"?Object.entries(eventData as Record<string,unknown>).slice(0,24).map(([k,v])=>k+"="+str(v,180)).join(" "):"";
  const message=str(e.message??e.description??e.summary??[eventType,details].filter(Boolean).join(" | "),4000);
  const normalized:Record<string,unknown>={schemaVersion:"1.0",source,eventId,eventType,severity:sev,observedAt,host:str(host,255)||null,sourceIp:srcIp,destinationIp:dstIp,username,message,sourceIntegration:str(e.sourceIntegration??e.source_integration??source,160),dataOrigin:str(e.dataOrigin??e.data_origin??"UNVERIFIED",40),eventData:scrub(eventData)};
  return {organizationId:org,collectorId,eventId,dedupKey,source,eventType,severity:sev,observedAt,receivedAt:new Date().toISOString(),host:normalized.host as string|null,sourceIp:srcIp,destinationIp:dstIp,username,message,normalized,raw};
