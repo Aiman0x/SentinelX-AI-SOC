@@ -61,9 +61,40 @@ function sigmaMitre(yaml:string):Array<{id:string;name:string}>{
  const names:Record<string,string>={T1110:"Brute Force",T1078:"Valid Accounts",T1059:"Command and Scripting Interpreter",T1053:"Scheduled Task/Job",T1021:"Remote Services",T1071:"Application Layer Protocol",T1547:"Boot or Logon Autostart Execution"};
  return ids.slice(0,20).map(id=>({id,name:names[id]||"MITRE ATT&CK technique"}));
 }
+function deepField(value:unknown,names:string[]):unknown{
+ const wanted=new Set(names.map(x=>x.toLowerCase().replace(/[^a-z0-9]/g,"")));
+ const visit=(node:unknown):unknown=>{
+  if(!node||typeof node!=="object")return undefined;
+  for(const [key,val] of Object.entries(node as Record<string,unknown>)){if(wanted.has(key.toLowerCase().replace(/[^a-z0-9]/g,""))&&val!==null&&val!==undefined&&String(val)!=="")return val;}
+  for(const val of Object.values(node as Record<string,unknown>)){const found=visit(val);if(found!==undefined)return found;}
+  return undefined;
+ }; return visit(value);
+}
+function windowsEventCode(e:EventRow,normalized:unknown,raw:unknown):string{
+ const explicit=deepField(normalized,["eventID","eventCode","winEventID"])??deepField(raw,["eventID","eventCode","winEventID"]);
+ if(explicit!==undefined&&/^\d{3,5}$/.test(String(explicit)))return String(explicit);
+ const match=(e.event_type+" "+e.message).match(/(?:windows[_ -]?)?(?:event[_ -]?)?(4624|5140|5145|5379|4798)\b/i);
+ return match?.[1]||"";
+}
+function isRemoteAddress(value:unknown):boolean{
+ const ip=String(value||"").trim().toLowerCase();
+ return Boolean(ip&&ip!=="-"&&ip!=="unknown"&&ip!=="127.0.0.1"&&ip!=="::1"&&ip!=="::ffff:127.0.0.1"&&ip!=="0.0.0.0");
+}
 function incidentFingerprint(org:string,rule:string,e:EventRow){return [org,rule,(e.host||"").toLowerCase(),(e.username||"").toLowerCase(),(e.source_ip||"").toLowerCase()].join("|");}
 async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:string;title:string;description:string;severity:Severity;confidence:number;mitre:Array<{id:string;name:string}>}>>{
- const ev=parse(e.normalized_json) as Record<string,unknown>;const text=(e.event_type+" "+e.message).toLowerCase();const out=[];
+ const ev=parse(e.normalized_json) as Record<string,unknown>;const raw=parse(e.raw_json);const text=(e.event_type+" "+e.message).toLowerCase();const out=[];
+ const eventCode=windowsEventCode(e,ev,raw);
+ const logonType=String(deepField(ev,["logonType","logon_type"])??deepField(raw,["logonType","logon_type"])??"");
+ const processName=String(deepField(ev,["processName","process_name","image","processPath"])??deepField(raw,["processName","process_name","image","processPath"])??"");
+ const remoteSourceIp=e.source_ip??deepField(ev,["ipAddress","sourceIp","srcIp"])??deepField(raw,["ipAddress","sourceIp","srcIp"]);
+ const shareName=String(deepField(ev,["shareName","share_name","relativeTargetName"])??deepField(raw,["shareName","share_name","relativeTargetName"])??"");
+ const systemAccount=/^(?:SYSTEM|NT AUTHORITY\\SYSTEM|(?:[^\\]+\\)?SYSTEM)$/i.test(String(e.username||"").trim());
+ const servicesProcess=/services\.exe$/i.test(processName.replace(/\//g,"\\"));
+ const benignServiceLogon=eventCode==="4624"&&logonType==="5"&&systemAccount&&servicesProcess;
+ const noisyInventoryEvent=eventCode==="5379"||eventCode==="4798";
+ const adminShare=/(?:ADMIN\$|[A-Z]\$|IPC\$)/i.test(shareName);
+ const remoteNetworkLogon=eventCode==="4624"&&(logonType==="3"||logonType==="10")&&isRemoteAddress(remoteSourceIp);
+ const remoteAdminShare=(eventCode==="5140"||eventCode==="5145")&&adminShare;
  const count=async(sql:string,...args:unknown[])=>{const r=await db.prepare(sql).bind(...args).first<{n:number}>();return Number(r?.n||0);};
  const sourceIp=String(e.source_ip||'').toLowerCase();const isLoopback=sourceIp==='127.0.0.1'||sourceIp==='::1'||sourceIp==='::ffff:127.0.0.1';const hasIdentity=Boolean(e.username||(e.source_ip&&!isLoopback));
  const failures=hasIdentity?await count("SELECT COUNT(*) n FROM security_events WHERE org_id=? AND host IS ? AND source_ip IS ? AND username IS ? AND observed_at>=datetime(?,'-10 minutes') AND observed_at<=? AND (lower(event_type) LIKE '%fail%' OR event_type='windows_failed_login')",e.org_id,e.host,e.source_ip,e.username,e.observed_at,e.observed_at):0;
@@ -72,7 +103,7 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  if(failures>=3&&success>0&&(/success|4624/.test(text)))out.push({key:"SX-AUTH-002",title:"Failed Logons Followed by Success",description:`${failures} failed logons followed by a successful logon for the same account/source within 10 minutes.`,severity:"critical",confidence:94,mitre:[{id:"T1110",name:"Brute Force"},{id:"T1078",name:"Valid Accounts"}]});
  if(/powershell|encodedcommand|wscript|cscript|mshta/.test(text))out.push({key:"SX-END-001",title:"Suspicious Script Interpreter Activity",description:"Script interpreter activity matched a high-risk execution pattern.",severity:"high",confidence:78,mitre:[{id:"T1059",name:"Command and Scripting Interpreter"}]});
  if(/runonce|currentversion\\run|scheduled.?task|service.?install/.test(text))out.push({key:"SX-END-002",title:"Persistence-Related Configuration Change",description:"Event indicates a persistence-related configuration change.",severity:"high",confidence:80,mitre:[{id:"T1053",name:"Scheduled Task/Job"}]});
- if(/remote.?service|psexec|admin\$|remote.?logon/.test(text))out.push({key:"SX-END-003",title:"Unexpected Remote Service Logon",description:"Event contains remote service or administrative-share activity.",severity:"high",confidence:75,mitre:[{id:"T1021",name:"Remote Services"}]});
+ if(!benignServiceLogon&&!noisyInventoryEvent&&(remoteNetworkLogon||remoteAdminShare))out.push({key:"SX-END-003",title:"Unexpected Remote Service Logon",description:remoteNetworkLogon?("Windows network logon (type "+logonType+") from remote source "+String(remoteSourceIp)+"."):("Remote access to administrative share "+shareName+" recorded by Windows event "+eventCode+"."),severity:"high",confidence:remoteAdminShare?82:76,mitre:[{id:"T1021",name:"Remote Services"}]});
  if(/periodic|beacon|repeated outbound|regular outbound/.test(text))out.push({key:"SX-NET-001",title:"Potential Periodic Outbound Communication",description:"Network event matched a beacon-like or repeated outbound communication pattern.",severity:"medium",confidence:65,mitre:[{id:"T1071",name:"Application Layer Protocol"}]});
  if(/windows_audit_log_cleared|security_log_cleared|event.?log.?cleared|1102/.test(text))out.push({key:"SX-WIN-001",title:"Windows Security Audit Log Cleared",description:"Windows reported that the Security audit log was cleared. Validate whether this was an authorized administrative action.",severity:"high",confidence:92,mitre:[{id:"T1070.001",name:"Clear Windows Event Logs"}]});
  if(/windows_service_installed|service_installed|4697/.test(text))out.push({key:"SX-WIN-002",title:"Windows Service Installed",description:"A new Windows service was installed. Verify the service name, binary path and installer context.",severity:"high",confidence:82,mitre:[{id:"T1543.003",name:"Windows Service"}]});
@@ -81,7 +112,7 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  // Wazuh has already applied its own detection rules. Surface medium/high/critical
  // findings as SentinelX incidents for analyst triage, without inventing a MITRE mapping.
  const wazuhSeverity=String(e.severity||"").toLowerCase();
- if(String(e.source||"").toLowerCase()==="wazuh"&&["medium","high","critical"].includes(wazuhSeverity)){
+ if(!benignServiceLogon&&!noisyInventoryEvent&&String(e.source||"").toLowerCase()==="wazuh"&&["medium","high","critical"].includes(wazuhSeverity)){
   const normalizedSeverity=wazuhSeverity as Severity;
   const confidence=wazuhSeverity==="critical"?92:wazuhSeverity==="high"?86:72;
   out.push({
@@ -93,7 +124,7 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
    mitre:[]
   });
  }
- void ev;return out;
+ return out;
 }
 async function addFinding(env:Env,e:EventRow,rule:{key:string;title:string;description:string;severity:Severity;confidence:number;mitre:Array<{id:string;name:string}>},sourceRuleType="builtin"){
  const key=incidentFingerprint(e.org_id,rule.key,e);const incidentId=uuid();const now=e.observed_at;
