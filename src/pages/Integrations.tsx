@@ -107,7 +107,7 @@ export default function Integrations() {
           {i.capabilities?.length ? <p className="mt-2 text-[10px] text-sx-mute">{i.capabilities.join(' · ')}</p> : null}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" />{i.configured ? 'Edit setup' : 'Connect'}</button> : <div className="flex flex-1 items-center justify-center rounded-lg border border-sx-line px-2 text-[10px] text-sx-mute">Managed by gateway</div>}
+          {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" />{i.configured ? 'Edit setup' : 'Connect'}</button> : <div className="flex flex-1 items-center justify-center rounded-lg border border-sx-line px-2 text-[10px] text-sx-mute">{i.id === 'wazuh' ? 'Connect below' : 'Managed by SentinelX'}</div>}
           <button className="btn btn-gold flex-1" onClick={() => void test(i)} disabled={!canTest || testing === i.id}><TestTube2 className="h-3.5 w-3.5" />{testing === i.id ? 'Testing…' : 'Test'}</button>
           {i.configured && <button className="btn" onClick={() => void disconnect(i)} disabled={disconnecting === i.id}>{disconnecting === i.id ? '…' : 'Disconnect'}</button>}
           {querySchema?.supported && <button className="btn w-full" onClick={() => { setExpandedQuery(expandedQuery === i.id ? null : i.id); setQueryValues(prev => ({ ...prev, [i.id]: prev[i.id] ?? initialQuery(querySchema.fields) })); }}><Search className="h-3.5 w-3.5" />Advanced query</button>}
