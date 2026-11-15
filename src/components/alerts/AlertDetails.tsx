@@ -39,7 +39,7 @@ export function AlertDetails({ alertId, onClose }: { alertId: string | null; onC
   const investigate = () => {
     if (isDemoMode && alert.status === 'open') updateAlert(alert.id, { status: 'investigating' });
     onClose();
-    navigate(`/investigation?alert=${alert.id}`);
+    navigate(`/investigation?alert=${alert.id}&case=${encodeURIComponent(alert.caseId ?? alert.id)}`);
   };
 
   return (
@@ -59,7 +59,7 @@ export function AlertDetails({ alertId, onClose }: { alertId: string | null; onC
         ) : (
           <>
             {alert.caseId && <button className="btn btn-gold" onClick={() => { onClose(); navigate(`/cases?case=${alert.caseId}`); }}>Open Case</button>}
-            <button className="btn btn-primary" onClick={investigate}><Microscope className="h-3.5 w-3.5" /> View Investigations</button>
+            <button className="btn btn-primary" onClick={investigate}><Microscope className="h-3.5 w-3.5" /> Investigate with AI</button>
           </>
         )
       }
