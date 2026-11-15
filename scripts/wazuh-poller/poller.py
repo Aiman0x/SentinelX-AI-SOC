@@ -31,8 +31,13 @@ def env_int(name, default, minimum, maximum):
 
 
 def build_ssl_context():
+    # Keep the operating system trust store for the public SentinelX HTTPS
+    # gateway, then add the private Wazuh CA for the local Manager/Indexer.
+    context = ssl.create_default_context()
     ca_file = os.getenv("WAZUH_CA_BUNDLE", "").strip()
-    return ssl.create_default_context(cafile=ca_file or None)
+    if ca_file:
+        context.load_verify_locations(cafile=ca_file)
+    return context
 
 
 def require_https(name, value):
