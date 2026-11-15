@@ -38,7 +38,7 @@ export function mapFinding(row: Row): Alert {
   const findingId = str(c.finding_id, str(row.id, 'finding-unknown'));
   return {
     id: findingId, eventId: ids[0] ?? findingId, ruleName: str(c.rule_name, 'Detection finding'),
-    severity: severity(c.severity), source: 'SentinelX Detection Engine', asset: str(c.host, 'Unknown asset'),
+    severity: severity(c.severity), source: str(c.source_summary, 'SentinelX Detection Engine'), asset: str(c.host, 'Unknown asset'),
     sourceIp: sourceIps.join(', ') || '—', timestamp: date(c.detected_at),
     status: str(c.detection_status).toLowerCase().includes('false') ? 'false_positive' : str(c.detection_status).toLowerCase().includes('confirmed') ? 'investigating' : 'open',
     summary: str(c.rationale, 'Detection candidate requires analyst review.'),
