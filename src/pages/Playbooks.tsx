@@ -31,9 +31,11 @@ export default function Playbooks() {
         <div><StatusBadge value="executed" label="Executed" /><p className="mt-1.5 text-sx-mute">A real run completed successfully. None in this prototype.</p></div>
       </div>
 
-      {loading ? <div className="panel"><LoadingState /></div> : error ? <div className="panel"><ErrorState message={error} onRetry={reload} /></div> : (
+      {loading ? <div className="panel"><LoadingState /></div> : error ? <div className="panel"><ErrorState message={error} onRetry={reload} /></div> : !data?.length ? (
+        <div className="panel"><div className="p-4"><p className="text-sm font-medium">No playbooks configured</p><p className="mt-1 text-xs text-sx-mute">Configured playbooks will appear here when connected to a live workflow.</p></div></div>
+      ) : (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          {(data ?? []).map((p) => (
+          {data.map((p) => (
             <Panel key={p.id} bodyClass="flex h-full flex-col p-4" className="flex flex-col">
               <div className="flex items-start justify-between gap-2">
                 <div><div className="mono text-[10px] text-sx-gold">{p.id}</div><h3 className="text-sm font-semibold">{p.name}</h3></div>
