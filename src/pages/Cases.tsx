@@ -67,7 +67,7 @@ export default function Cases() {
         {remoteCases.loading && isBackendConfigured ? <div className="p-4"><EmptyState title="Loading cases" description="Fetching backend case records…" /></div> : list.length === 0 ? <EmptyState title="No cases found" description={isBackendConfigured ? "No incidents have matched the active detection rules yet. Normal events can be stored without creating an incident." : "Change the filter or create a new demo case."} /> : <CaseTable cases={list} selectedId={selected} onSelect={setSelected} />}
       </Panel>
 
-      {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} readOnly={isBackendConfigured} /></div>}
+      {current && <div className="mt-4"><CaseDetails c={current} alerts={alerts} onClose={() => setSelected(null)} onUpdated={remoteCases.reload} readOnly={!!current.detectionIncident} /></div>}
 
       <Modal open={creating} onClose={() => setCreating(false)} title="New demo case">
         <div className="space-y-3">
