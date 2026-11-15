@@ -1,11 +1,11 @@
-import { demoIntegrations } from '../data/demoIntegrations';
+import { integrationCatalog } from '../data/integrationCatalog';
 import type { Integration, TestResult } from '../types/integration';
 import { apiDelete, apiGet, apiPost, delay, isBackendConfigured } from './apiClient';
 import { mapIntegrationRows } from './backendMappers';
 import { createLocalStore } from './localStore';
 
 interface SavedConfig { values: Record<string, string>; savedAt: string; lastTest?: TestResult; }
-export const integrationConfigStore = createLocalStore<Record<string, SavedConfig>>('sentinelx.demo.integrations.v1', () => ({}));
+export const integrationConfigStore = createLocalStore<Record<string, SavedConfig>>('sentinelx.live.integration-config.v1', () => ({}));
 export function getIntegrations(): Integration[] { return demoIntegrations; }
 export async function loadIntegrations(): Promise<Integration[]> {
   if (isBackendConfigured) return mapIntegrationRows(await apiGet<unknown>('/api/integrations'));
