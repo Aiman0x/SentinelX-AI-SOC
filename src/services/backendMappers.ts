@@ -15,7 +15,7 @@ const arr = (v: unknown): string[] => {
 };
 const severity = (v: unknown): Severity => {
   const s = str(v).toLowerCase();
-  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'low' || s === 'informational' ? 'low' : 'medium';
+  return s === 'critical' ? 'critical' : s === 'high' ? 'high' : s === 'medium' ? 'medium' : s === 'low' || s === 'informational' ? 'low' : 'unclassified';
 };
 const date = (v: unknown): string => {
   const d = v ? new Date(String(v)) : new Date(0);
@@ -33,7 +33,7 @@ const cells = (row: Row) => ({ ...obj(row), ...obj(row.cells) });
 
 export function mapFinding(row: Row): Alert {
   const c = cells(row);
-  const ids = arr(c.evidence_event_ids);
+  const ids = arr(c.event_ids ?? c.evidence_event_ids);
   const sourceIps = arr(c.source_ips);
   const findingId = str(c.finding_id, str(row.id, 'finding-unknown'));
   const statusText = str(c.status, str(c.detection_status, 'open')).toLowerCase();
@@ -49,7 +49,7 @@ export function mapFinding(row: Row): Alert {
     sourceIp: sourceIps.join(', ') || str(c.source_ip, '—'), timestamp: date(c.detected_at ?? c.last_received_at ?? c.last_seen ?? c.updated_at ?? c.first_seen),
     status,
     summary: str(c.rationale, str(c.description, 'Detection candidate requires analyst review.')),
-    rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), confidence: Number(c.confidence ?? 0) },
+    rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), evidence_count: Number(c.evidence_count ?? 0), linked_event_ids: ids.join(','), confidence: Number(c.confidence ?? 0) },
     evidence: ids, relatedAlertIds: [], mitre: mitreItems.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object').map(x => ({ id: str(x.id), name: str(x.name, 'MITRE technique'), tactic: str(x.tactic, 'Unknown') })).filter(x => !!x.id),
     nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
     caseId: str(c.case_id) || undefined,
@@ -62,17 +62,65 @@ export function mapCase(row: Row): SecurityCase {
   const statusText = str(c.Status, str(c.status)).toLowerCase();
   const status: CaseStatus = statusText.includes('closed') ? 'closed' : statusText.includes('resolved') ? 'resolved' : statusText.includes('contain') ? 'contained' : statusText.includes('triag') || statusText.includes('investig') || statusText.includes('escalat') ? 'investigating' : 'open';
   const severityValue = severity(c.Severity ?? c.severity);
-  const raw = str(c['Raw Evidence'], str(c.raw_evidence));
-  const timelineRaw = str(c['Evidence Timeline'], str(c.evidence_timeline));
-  const recommended = arr(c['Recommended Actions'] ?? c.recommended_actions);
+  const rawValue = c['Raw Evidence'] ?? c.raw_evidence ?? c.event_data;
+  const raw = typeof rawValue === 'string' ? rawValue : rawValue ? JSON.stringify(rawValue) : '';
+  const parseObject = (value: unknown): Record<string, unknown> => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+    if (typeof value === 'string') { try { const parsed = JSON.parse(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; } }
+    return {};
+  };
+  const analysis = parseObject(c['AI Analysis'] ?? c.ai_analysis);
+  const investigationPlan = parseObject(c['Investigation Plan'] ?? c.investigation_plan);
+  const sourceEventId = str(c['Source Event ID'], str(c.event_id));
+  const sourceSchema = str(c['Source Schema'], str(c.source_schema, 'legacy_import'));
+  const dataOrigin = str(c['Data Origin'], str(c.data_origin, 'UNKNOWN'));
+  const sourceVerification = str(c['Source Verification'], str(c.source_verification,
+    dataOrigin === 'REAL_UNVERIFIED' ? 'Source marked REAL_UNVERIFIED; authenticity has not been independently confirmed.' : 'Not recorded'));
+  const eventType = str(c.event_type, str(c['Source Type'], str(c['Source'], 'security_event')));
+  const host = str(c.host, str(c['Asset ID'], str(c['Source'])));
+  const eventTime = str(c['Event Time'], str(c.event_time, str(c.received_at, str(c['Created At']))));
+  const sourceIp = str(c.source_ip, 'not recorded');
+  const username = str(c.username, 'not recorded');
+  const verdict = str(analysis.verdict);
+  const confidence = Number(analysis.confidence);
+  const riskScore = Number(analysis.risk_score);
+  const rowOverview = str(c.overview);
+  const overview = verdict
+    ? `${verdict} · Confidence ${Number.isFinite(confidence) ? confidence + '/100' : 'not recorded'} · Risk score ${Number.isFinite(riskScore) ? riskScore + '/100' : 'not recorded'}.`
+    : str(investigationPlan.understanding, rowOverview || `Unverified ${eventType} record on ${host || 'unknown host'} at ${eventTime || 'unknown time'}. Source IP: ${sourceIp}. Account: ${username}. Data origin: ${dataOrigin}. No historical AI investigation report is attached.`);
+  const timelineRaw = c['Evidence Timeline'] ?? c.evidence_timeline;
+  let timelineItems: Record<string, unknown>[] = [];
+  if (Array.isArray(timelineRaw)) timelineItems = timelineRaw.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x));
+  else if (typeof timelineRaw === 'string') { try { const parsed = JSON.parse(timelineRaw); if (Array.isArray(parsed)) timelineItems = parsed.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)); } catch { /* use the event metadata fallback below */ } }
+  const seenTimeline = new Set<string>();
+  const timeline = timelineItems.map((item, index) => {
+    const time = str(item.time, eventTime);
+    const title = str(item.event, 'Investigation evidence');
+    const detail = str(item.source, 'source not recorded');
+    const key = [time, title, detail].join('|');
+    if (seenTimeline.has(key)) return null;
+    seenTimeline.add(key);
+    return { id: id + '-timeline-' + index, time: date(time), title, detail, kind: 'evidence' as const };
+  }).filter((item): item is NonNullable<typeof item> => item !== null);
+  if (!timeline.length && eventTime) {
+    timeline.push({
+      id: id + '-source-event', time: date(eventTime),
+      title: 'Original source event: ' + eventType,
+      detail: `Host: ${host || 'not recorded'} · Account: ${username} · Source IP: ${sourceIp} · Origin: ${dataOrigin}`,
+      kind: 'evidence'
+    });
+  }
+  const recommended = arr(analysis.actions ?? c['Recommended Actions'] ?? c.recommended_actions);
+  const evidenceIds = [...new Set(arr(c.evidence_event_ids))];
   return {
-    id, title: str(c['Case Title'], str(c.case_title, 'Security investigation')), severity: severityValue, status,
-    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'])].filter(Boolean),
-    createdAt: date(c['Created At'] ?? c.created_at), updatedAt: date(c['Updated At'] ?? c.updated_at ?? c['Created At']),
-    overview: str(c['AI Analysis'], str(c['Final Report'], raw || 'No investigation summary recorded.')),
-    notes: [], evidence: arr(c.evidence_event_ids), alertIds: [str(c['Source Event ID'], str(c.event_id))].filter(Boolean),
-    timeline: timelineRaw ? [{ id: id + '-timeline', time: date(c['Event Time'] ?? c['Created At']), title: 'Investigation evidence', detail: timelineRaw.slice(0, 500), kind: 'evidence' }] : [],
-    recommended: recommended.length ? recommended : arr(c['Recommended Actions']),
+    id, title: str(c['Case Title'], str(c.case_title, eventType === 'security_event' ? 'Security investigation' : eventType)), severity: severityValue, status,
+    assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'], str(c.host, str(c['Source'])))].filter(Boolean),
+    createdAt: date(c['Created At'] ?? c.created_at ?? c.event_time), updatedAt: date(c['Updated At'] ?? c.updated_at ?? c['Created At'] ?? c.event_time),
+    overview, notes: [], evidence: evidenceIds, alertIds: arr(c.alert_ids),
+    timeline, recommended,
+    sourceSchema, dataOrigin, sourceVerification, sourceEventId, rawEvidence: raw, legacyRecord: sourceSchema !== 'security_incidents',
+    analysis: Object.keys(analysis).length ? analysis : undefined,
+    investigationPlan: Object.keys(investigationPlan).length ? investigationPlan : undefined,
   };
 }
 
@@ -90,16 +138,33 @@ export function mapAsset(row: Row): Asset {
 
 export function mapRule(row: Row): DetectionRule {
   const c = cells(row);
-  const statusText = str(c.Status).toLowerCase();
-  const maturityText = str(c['Rule Maturity']).toLowerCase();
+  const ruleKey = str(c.ruleKey, str(c.rule_key, str(c['Rule ID'], str(row.id, 'rule-unknown'))));
+  const name = str(c.title, str(c['Rule Name'], 'Detection rule'));
+  const enabledValue = c.enabled;
+  const isBuiltin = Boolean(c.ruleKey) && enabledValue === undefined && c.rule_type === undefined && c.ruleType === undefined;
+  const enabled = enabledValue === true || enabledValue === 1 || enabledValue === '1' || isBuiltin;
+  const mitreValue = c.mitre ?? c.mitre_json ?? c['MITRE Technique'];
+  let mitre: string[] = [];
+  if (Array.isArray(mitreValue)) mitre = mitreValue.map(item => typeof item === 'string' ? item : item && typeof item === 'object' ? str((item as Record<string, unknown>).id) : '').filter(Boolean);
+  else if (typeof mitreValue === 'string') { try { const parsed = JSON.parse(mitreValue); if (Array.isArray(parsed)) mitre = parsed.map(item => typeof item === 'string' ? item : item && typeof item === 'object' ? str((item as Record<string, unknown>).id) : '').filter(Boolean); } catch { mitre = mitreValue.split(/[;,\s]+/).filter(Boolean); } }
+  const severityValue = c.severity ?? c.Severity;
+  const ruleType = str(c.ruleType, str(c.rule_type, isBuiltin ? 'builtin' : 'custom'));
+  const prefix = ruleKey.split('-')[1] || '';
+  const category = prefix === 'AUTH' ? 'Authentication' : prefix === 'END' ? 'Endpoint' : prefix === 'NET' ? 'Network' : prefix === 'WIN' ? 'Windows' : 'Custom';
+  const sigma = str(c.sigmaYaml, str(c.sigma_yaml));
+  const description = str(c.description, str(c.Description, 'Runtime detection rule.'));
+  const logic = sigma || str(c.definition_json, description);
+  const tested = c.lastTested ?? c.last_tested ?? c['Last Tested'];
+  const maturity: DetectionRule['maturity'] = tested ? 'in_testing' : 'unvalidated';
   return {
-    id: str(c['Rule ID'], str(row.id, 'rule-unknown')), name: str(c['Rule Name'], 'Detection rule'),
-    description: str(c.Description), category: str(c.Category, 'Other'), severity: severity(c.Severity),
-    source: str(c['Required Data Source'], 'Not specified'), mitre: arr(c['MITRE Technique']),
-    status: statusText.includes('enabled') ? 'enabled' : statusText.includes('disabled') ? 'disabled' : 'draft',
-    lastTested: c['Last Tested'] ? date(c['Last Tested']) : undefined,
-    maturity: maturityText.includes('operating on real') || maturityText.includes('validated') ? 'validated' : maturityText.includes('test') ? 'in_testing' : 'unvalidated',
-    requiredEvidence: arr(c['Required Evidence']), logic: str(c['Detection Logic']), response: [],
+    id: ruleKey, name, description, category, severity: severity(severityValue),
+    source: ruleType === 'sigma' ? 'Custom Sigma rule' : isBuiltin ? 'SentinelX Worker detection engine' : 'Custom detection rule',
+    mitre, status: enabled ? 'enabled' : 'disabled',
+    lastTested: tested ? date(tested) : undefined,
+    maturity,
+    requiredEvidence: arr(c.requiredEvidence ?? c.required_evidence ?? c['Required Evidence']),
+    logic,
+    response: arr(c.response ?? c['Response Recommendations']),
   };
 }
 
@@ -164,18 +229,25 @@ export function mapInvestigation(row: Row): InvestigationRecord {
 
 export function mapEvidence(row: Row): EvidenceRecord {
   const c = cells(row);
+  let payload: Record<string, unknown> = {};
+  const rawPayload = c.payload_json ?? c['Payload JSON'];
+  if (typeof rawPayload === 'string') { try { const parsed = JSON.parse(rawPayload); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as Record<string, unknown>; } catch { /* preserve metadata even if payload is malformed */ } }
+  const excerptValue = payload.message ?? payload.excerpt ?? payload.rawEvent ?? payload.normalized ?? payload.event ?? rawPayload;
+  const excerpt = typeof excerptValue === 'string' ? excerptValue : excerptValue ? JSON.stringify(excerptValue) : 'No evidence excerpt recorded.';
+  const captured = c.captured_at ?? c['Collected At'];
+  const evidenceType = str(c.evidence_type, str(c['Evidence Classification'], 'Detection evidence'));
   return {
-    id: str(c['Evidence ID'], str(row.id, 'evidence-unknown')),
-    caseId: str(c['Case ID'], '—'),
-    stepName: str(c['Step Name'], '—'),
-    sourceIntegration: str(c['Source Integration'], '—'),
-    toolName: str(c['Tool Name'], '—'),
-    excerpt: str(c['Evidence Excerpt'], 'No evidence excerpt recorded.'),
-    collectedAt: date(c['Collected At']),
-    dataOrigin: str(c['Data Origin'], 'UNKNOWN'),
-    executionStatus: str(c['Execution Status'], 'Unknown'),
-    evidenceHash: str(c['Evidence Hash'], '—'),
-    relevance: str(c.Relevance, 'Unrated'),
-    classification: str(c['Evidence Classification'], 'Unclassified'),
+    id: str(c.id, str(c['Evidence ID'], 'evidence-unknown')),
+    caseId: str(c.incident_id, str(c['Case ID'], str(c.incident_title, '—'))),
+    stepName: str(c.rule_key, str(c['Step Name'], 'Detection rule evidence')),
+    sourceIntegration: str(payload.source, str(c['Source Integration'], 'SentinelX event pipeline')),
+    toolName: str(c.evidence_type, str(c['Tool Name'], 'Security event evidence')),
+    excerpt: excerpt.slice(0, 12000),
+    collectedAt: date(captured),
+    dataOrigin: str(payload.dataOrigin, str(payload.data_origin, str(c['Data Origin'], 'REAL_TELEMETRY'))),
+    executionStatus: str(c['Execution Status'], 'Captured'),
+    evidenceHash: str(c.sha256, str(c['Evidence Hash'], '—')),
+    relevance: str(c.Relevance, 'Matched detection evidence'),
+    classification: evidenceType,
   };
 }

@@ -1,8 +1,8 @@
 import type { Severity } from '../types/alert';
 
-export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
+export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'unclassified'];
 
-export const severityRank: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+export const severityRank: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, unclassified: 0 };
 
 /** Hex colours used by charts. Matches the SentinelX palette (red / orange / gold / neutral). */
 export const severityHex: Record<Severity, string> = {
@@ -10,6 +10,7 @@ export const severityHex: Record<Severity, string> = {
   high: '#F0742C',
   medium: '#D4AF37',
   low: '#6E6E6E',
+  unclassified: '#8A8A8A',
 };
 
 export const severityClasses: Record<Severity, string> = {
@@ -17,6 +18,7 @@ export const severityClasses: Record<Severity, string> = {
   high: 'bg-[#F0742C]/15 text-[#FF9A5C] border-[#F0742C]/40',
   medium: 'bg-sx-gold/15 text-sx-gold border-sx-gold/40',
   low: 'bg-[#6E6E6E]/20 text-[#B5B5B5] border-[#6E6E6E]/40',
+  unclassified: 'bg-[#8A8A8A]/15 text-[#BEBEBE] border-[#8A8A8A]/35',
 };
 
 export const cap = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
