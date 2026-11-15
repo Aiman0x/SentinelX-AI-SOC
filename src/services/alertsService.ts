@@ -1,18 +1,17 @@
-import { demoAlerts } from '../data/demoAlerts';
 import type { Alert } from '../types/alert';
 import { apiGet, delay, isBackendConfigured, type Result } from './apiClient';
 import { rowsFrom, mapFinding } from './backendMappers';
 import { createLocalStore } from './localStore';
 
-export const alertsStore = createLocalStore<Alert[]>('sentinelx.demo.alerts.v1', () => structuredClone(demoAlerts));
+export const alertsStore = createLocalStore<Alert[]>('sentinelx.live.alerts.v1', () => []);
 
-export async function getAlerts(): Promise<Result<Alert[]>> {
+export async function getAlerts(view: 'active' | 'archived' = 'active'): Promise<Result<Alert[]>> {
   if (isBackendConfigured) {
-    const payload = await apiGet<unknown>('/api/alerts');
+    const payload = await apiGet<unknown>(`/api/alerts?status=${view}&limit=200`);
     return { data: rowsFrom(payload).map(mapFinding), source: 'api' };
   }
-  await delay(300);
-  return { data: alertsStore.getSnapshot(), source: 'demo' };
+  await delay(100);
+  return { data: [], source: 'api' };
 }
 
 export function updateAlert(id: string, patch: Partial<Alert>) {

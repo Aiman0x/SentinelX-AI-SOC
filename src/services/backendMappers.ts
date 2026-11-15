@@ -36,14 +36,22 @@ export function mapFinding(row: Row): Alert {
   const ids = arr(c.evidence_event_ids);
   const sourceIps = arr(c.source_ips);
   const findingId = str(c.finding_id, str(row.id, 'finding-unknown'));
+  const statusText = str(c.status, str(c.detection_status, 'open')).toLowerCase();
+  const status: Alert['status'] = statusText.includes('false') ? 'false_positive'
+    : statusText.includes('resolved') ? 'resolved'
+    : statusText.includes('investigat') || statusText.includes('confirm') ? 'investigating' : 'open';
+  let mitreItems: unknown[] = [];
+  if (Array.isArray(c.mitre_json)) mitreItems = c.mitre_json;
+  else if (typeof c.mitre_json === 'string') { try { const parsed = JSON.parse(c.mitre_json); if (Array.isArray(parsed)) mitreItems = parsed; } catch { /* no MITRE mapping */ } }
   return {
-    id: findingId, eventId: ids[0] ?? findingId, ruleName: str(c.rule_name, 'Detection finding'),
-    severity: severity(c.severity), source: 'SentinelX Detection Engine', asset: str(c.host, 'Unknown asset'),
-    sourceIp: sourceIps.join(', ') || '—', timestamp: date(c.detected_at),
-    status: str(c.detection_status).toLowerCase().includes('false') ? 'false_positive' : str(c.detection_status).toLowerCase().includes('confirmed') ? 'investigating' : 'open',
-    summary: str(c.rationale, 'Detection candidate requires analyst review.'),
-    rawEvent: { finding_id: findingId, rule_id: str(c.rule_id), event_count: Number(c.event_count ?? 0), threshold: Number(c.threshold ?? 0), window_minutes: Number(c.window_minutes ?? 0), data_origin: str(c.data_origin), test_status: str(c.test_status) },
-    evidence: ids, relatedAlertIds: [], mitre: [], nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
+    id: findingId, eventId: ids[0] ?? str(c.incident_key, findingId), ruleName: str(c.rule_name, str(c.title, 'Security detection incident')),
+    severity: severity(c.severity), source: str(c.source_summary, 'SentinelX Detection Engine'), asset: str(c.host, 'Unknown asset'),
+    sourceIp: sourceIps.join(', ') || str(c.source_ip, '—'), timestamp: date(c.detected_at ?? c.last_received_at ?? c.last_seen ?? c.updated_at ?? c.first_seen),
+    status,
+    summary: str(c.rationale, str(c.description, 'Detection candidate requires analyst review.')),
+    rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), confidence: Number(c.confidence ?? 0) },
+    evidence: ids, relatedAlertIds: [], mitre: mitreItems.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object').map(x => ({ id: str(x.id), name: str(x.name, 'MITRE technique'), tactic: str(x.tactic, 'Unknown') })).filter(x => !!x.id),
+    nextSteps: ['Verify the source telemetry and timestamps.', 'Review related authentication and endpoint events.', 'Confirm asset criticality before response.'],
     caseId: str(c.case_id) || undefined,
   };
 }

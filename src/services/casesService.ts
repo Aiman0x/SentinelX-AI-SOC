@@ -1,4 +1,3 @@
-import { demoCases } from '../data/demoCases';
 import type { Alert } from '../types/alert';
 import type { CaseNote, CaseStatus, SecurityCase } from '../types/case';
 import { apiGet, delay, isBackendConfigured } from './apiClient';
@@ -6,7 +5,7 @@ import { rowsFrom, mapCase } from './backendMappers';
 import { createLocalStore } from './localStore';
 import { updateAlert } from './alertsService';
 
-export const casesStore = createLocalStore<SecurityCase[]>('sentinelx.demo.cases.v1', () => structuredClone(demoCases));
+export const casesStore = createLocalStore<SecurityCase[]>('sentinelx.live.cases.v1', () => []);
 const nowIso = () => new Date().toISOString();
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
