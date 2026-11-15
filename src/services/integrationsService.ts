@@ -6,7 +6,7 @@ import { createLocalStore } from './localStore';
 
 interface SavedConfig { values: Record<string, string>; savedAt: string; lastTest?: TestResult; }
 export const integrationConfigStore = createLocalStore<Record<string, SavedConfig>>('sentinelx.live.integration-config.v1', () => ({}));
-export function getIntegrations(): Integration[] { return demoIntegrations; }
+export function getIntegrations(): Integration[] { return integrationCatalog; }
 export async function loadIntegrations(): Promise<Integration[]> {
   if (isBackendConfigured) return mapIntegrationRows(await apiGet<unknown>('/api/integrations'));
   await delay(250); return getIntegrations();
