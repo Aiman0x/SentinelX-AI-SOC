@@ -130,7 +130,7 @@ export function CaseDetails({ c, alerts, onClose, onUpdated, readOnly = false }:
       >
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <SeverityBadge severity={c.severity} /> <StatusBadge value={status} />
-          {c.legacyRecord && <span className="rounded border border-sx-warn/40 bg-sx-warn/5 px-2 py-1 text-[10px] text-sx-warn">Legacy record · not a live detection</span>}
+          {c.legacyRecord && <span className="rounded border border-sx-warn/40 bg-sx-warn/5 px-2 py-1 text-[10px] text-sx-warn">Legacy / unverified · not a live detection</span>}
           {c.detectionIncident && <span className="rounded border border-sx-ok/40 bg-sx-ok/5 px-2 py-1 text-[10px] text-sx-ok">Rule-based live detection</span>}
           <span className="text-[11px] text-sx-mute">Created {formatDateTime(c.createdAt)} · Updated {formatDateTime(c.updatedAt)}</span>
         </div>
