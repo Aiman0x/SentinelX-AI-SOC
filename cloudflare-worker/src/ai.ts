@@ -107,7 +107,7 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
     } else if (config.provider === "gemini") {
       response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": config.apiKey }, body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens } }), signal: controller.signal, redirect: "follow" });
     } else {
-      response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }] }), signal: controller.signal, redirect: "follow" });
+      response = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + config.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: config.model, max_tokens: maxOutputTokens, reasoning: { effort: "low", exclude: true }, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }] }), signal: controller.signal, redirect: "follow" });
     }
     if (!response.ok) {
       const status = response.status;
@@ -128,10 +128,36 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
       throw new Error("Provider request failed (HTTP " + status + ")" + detail);
     }
     const payload = await response.json() as any;
-    const text = config.provider === "anthropic" ? payload.content?.find((x: any) => x.type === "text")?.text :
-      config.provider === "gemini" ? payload.candidates?.[0]?.content?.parts?.map((x: any) => x.text || "").join("") :
-      payload.choices?.[0]?.message?.content;
-    if (typeof text !== "string" || !text.trim()) throw new Error("Provider returned no text response.");
+    let text: string | undefined;
+    if (config.provider === "anthropic") {
+      text = payload.content?.filter((x: any) => x.type === "text" && typeof x.text === "string").map((x: any) => x.text).join("\\n");
+    } else if (config.provider === "gemini") {
+      text = payload.candidates?.[0]?.content?.parts?.map((x: any) => typeof x.text === "string" ? x.text : "").join("");
+    } else {
+      const choice = payload.choices?.[0];
+      const message = choice?.message;
+      const content = message?.content ?? choice?.text ?? payload.output_text;
+      if (typeof content === "string") text = content;
+      else if (Array.isArray(content)) {
+        text = content.map((part: any) => typeof part === "string" ? part :
+          (part?.type === "text" || part?.type === "output_text") && typeof part.text === "string" ? part.text : "").join("\\n");
+      }
+      if ((!text || !text.trim()) && typeof message?.refusal === "string") text = message.refusal;
+      if ((!text || !text.trim()) && payload.error?.message) {
+        const reason = String(payload.error.message).replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "[REDACTED]").slice(0, 180);
+        throw new Error("OpenRouter returned an upstream generation error" + (payload.error.metadata?.error_type ? " (" + String(payload.error.metadata.error_type).slice(0, 80) + ")" : "") + ": " + reason);
+      }
+      if ((!text || !text.trim()) && choice?.error?.message) {
+        throw new Error("Model generation failed: " + String(choice.error.message).slice(0, 180));
+      }
+      if ((!text || !text.trim()) && message?.reasoning) {
+        throw new Error("Model returned reasoning but no final answer (finish_reason=" + String(choice?.finish_reason || "unknown") + ").");
+      }
+      if ((!text || !text.trim()) && choice?.finish_reason) {
+        throw new Error("Model returned no final text (finish_reason=" + String(choice.finish_reason) + ").");
+      }
+    }
+    if (typeof text !== "string" || !text.trim()) throw new Error("Provider returned no text response in its completion payload.");
     return text;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new Error("Provider request timed out after 12 seconds.");
