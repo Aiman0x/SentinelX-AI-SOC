@@ -1,8 +1,7 @@
 /**
  * API client layer.
  *
- * The prototype runs in DEMO MODE: no backend, no secrets, no live telemetry.
- * When VITE_API_BASE_URL is set, services call the backend instead of using demo data.
+ * Live-only API client. When VITE_API_BASE_URL is missing, data-backed views stay empty rather than showing synthetic events.
  * Authentication must be handled by the backend (e.g. HttpOnly session cookies).
  * NEVER put API keys, passwords or tokens in this frontend.
  */
