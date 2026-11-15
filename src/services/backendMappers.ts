@@ -40,7 +40,6 @@ export function mapFinding(row: Row): Alert {
   const status: Alert['status'] = statusText.includes('false') ? 'false_positive'
     : statusText.includes('resolved') ? 'resolved'
     : statusText.includes('investigat') || statusText.includes('confirm') ? 'investigating' : 'open';
-  const mitreRaw = arr(c.mitre_json);
   let mitreItems: unknown[] = [];
   if (Array.isArray(c.mitre_json)) mitreItems = c.mitre_json;
   else if (typeof c.mitre_json === 'string') { try { const parsed = JSON.parse(c.mitre_json); if (Array.isArray(parsed)) mitreItems = parsed; } catch { /* no MITRE mapping */ } }
