@@ -4,7 +4,7 @@ import type { Integration } from '../types/integration';
  * Integration catalog. Every tool starts unconfigured; connected state requires a real backend health check.
  * Secret fields (secret: true) are never persisted in the browser.
  */
-export const demoIntegrations: Integration[] = [
+export const integrationCatalog: Integration[] = [
   {
     id: 'activepieces', name: 'ActivePieces', category: 'Orchestration',
     purpose: 'Workflow orchestration: ingestion, validation, case creation and response playbooks. Gateway connectivity is managed server-side.',
