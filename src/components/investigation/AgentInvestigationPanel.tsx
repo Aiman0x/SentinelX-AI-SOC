@@ -18,6 +18,7 @@ type AgentResult = {
   evidenceAssessment?: { consistent: number; partial: number; unverified: number; method: string };
   runId?: string;
   caseId?: string | null;
+  generatedAt: string;
 };
 
 type SavedAgentRun = {
