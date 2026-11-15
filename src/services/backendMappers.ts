@@ -98,7 +98,7 @@ export function mapCase(row: Row): SecurityCase {
     timeline.push({ id: id + '-timeline', time: date(c['Event Time'] ?? c['Created At']), title: 'Investigation evidence', detail: timelineRaw.slice(0, 500), kind: 'evidence' });
   }
   const recommended = arr(analysis.actions ?? c['Recommended Actions'] ?? c.recommended_actions);
-  const evidenceIds = [...new Set([...arr(c.evidence_event_ids), sourceEventId].filter(Boolean))];
+  const evidenceIds = [...new Set(arr(c.evidence_event_ids))];
   return {
     id, title: str(c['Case Title'], str(c.case_title, 'Security investigation')), severity: severityValue, status,
     assignee: str(c.Assignee, 'Unassigned'), assets: [str(c['Asset ID'], str(c['Source']))].filter(Boolean),
