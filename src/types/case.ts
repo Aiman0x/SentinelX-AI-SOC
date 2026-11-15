@@ -37,6 +37,7 @@ export interface SecurityCase {
   /** Provenance for imported/legacy records; these are not automatically live detections. */
   sourceSchema?: string;
   dataOrigin?: string;
+  sourceVerification?: string;
   sourceEventId?: string;
   rawEvidence?: string;
   legacyRecord?: boolean;
