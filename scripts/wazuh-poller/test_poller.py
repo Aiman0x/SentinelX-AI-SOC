@@ -5,13 +5,25 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import poller
 
 
 class WazuhPollerTests(unittest.TestCase):
+
+    def test_request_json_uses_descriptive_user_agent(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.status = 200
+        response.read.return_value = b"{}"
+        with patch("poller.urllib.request.urlopen", return_value=response) as urlopen:
+            poller.request_json("https://example.com/api/test", headers={"Accept": "application/json"})
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "SentinelX-Wazuh-Poller/1.0")
+
     def test_normalizes_alert_and_preserves_stable_document_id(self):
         event = poller.normalize_alert({
             "_index": "wazuh-alerts-4.x-2026.11.15",
