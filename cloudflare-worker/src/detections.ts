@@ -86,14 +86,14 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  const eventCode=windowsEventCode(e,ev,raw);
  const logonType=String(deepField(ev,["logonType","logon_type"])??deepField(raw,["logonType","logon_type"])??"");
  const processName=String(deepField(ev,["processName","process_name","image","processPath"])??deepField(raw,["processName","process_name","image","processPath"])??"");
- const sourceIp=e.source_ip??deepField(ev,["ipAddress","sourceIp","srcIp"])??deepField(raw,["ipAddress","sourceIp","srcIp"]);
+ const remoteSourceIp=e.source_ip??deepField(ev,["ipAddress","sourceIp","srcIp"])??deepField(raw,["ipAddress","sourceIp","srcIp"]);
  const shareName=String(deepField(ev,["shareName","share_name","relativeTargetName"])??deepField(raw,["shareName","share_name","relativeTargetName"])??"");
  const systemAccount=/^(?:SYSTEM|NT AUTHORITY\\SYSTEM|(?:[^\\]+\\)?SYSTEM)$/i.test(String(e.username||"").trim());
  const servicesProcess=/services\.exe$/i.test(processName.replace(/\//g,"\\"));
  const benignServiceLogon=eventCode==="4624"&&logonType==="5"&&systemAccount&&servicesProcess;
  const noisyInventoryEvent=eventCode==="5379"||eventCode==="4798";
  const adminShare=/(?:ADMIN\$|[A-Z]\$|IPC\$)/i.test(shareName);
- const remoteNetworkLogon=eventCode==="4624"&&(logonType==="3"||logonType==="10")&&isRemoteAddress(sourceIp);
+ const remoteNetworkLogon=eventCode==="4624"&&(logonType==="3"||logonType==="10")&&isRemoteAddress(remoteSourceIp);
  const remoteAdminShare=(eventCode==="5140"||eventCode==="5145")&&adminShare;
  const count=async(sql:string,...args:unknown[])=>{const r=await db.prepare(sql).bind(...args).first<{n:number}>();return Number(r?.n||0);};
  const sourceIp=String(e.source_ip||'').toLowerCase();const isLoopback=sourceIp==='127.0.0.1'||sourceIp==='::1'||sourceIp==='::ffff:127.0.0.1';const hasIdentity=Boolean(e.username||(e.source_ip&&!isLoopback));
@@ -103,7 +103,7 @@ async function builtinMatches(db:D1Database,e:EventRow):Promise<Array<{key:strin
  if(failures>=3&&success>0&&(/success|4624/.test(text)))out.push({key:"SX-AUTH-002",title:"Failed Logons Followed by Success",description:`${failures} failed logons followed by a successful logon for the same account/source within 10 minutes.`,severity:"critical",confidence:94,mitre:[{id:"T1110",name:"Brute Force"},{id:"T1078",name:"Valid Accounts"}]});
  if(/powershell|encodedcommand|wscript|cscript|mshta/.test(text))out.push({key:"SX-END-001",title:"Suspicious Script Interpreter Activity",description:"Script interpreter activity matched a high-risk execution pattern.",severity:"high",confidence:78,mitre:[{id:"T1059",name:"Command and Scripting Interpreter"}]});
  if(/runonce|currentversion\\run|scheduled.?task|service.?install/.test(text))out.push({key:"SX-END-002",title:"Persistence-Related Configuration Change",description:"Event indicates a persistence-related configuration change.",severity:"high",confidence:80,mitre:[{id:"T1053",name:"Scheduled Task/Job"}]});
- if(!benignServiceLogon&&!noisyInventoryEvent&&(remoteNetworkLogon||remoteAdminShare))out.push({key:"SX-END-003",title:"Unexpected Remote Service Logon",description:remoteNetworkLogon?("Windows network logon (type "+logonType+") from remote source "+String(sourceIp)+"."):("Remote access to administrative share "+shareName+" recorded by Windows event "+eventCode+"."),severity:"high",confidence:remoteAdminShare?82:76,mitre:[{id:"T1021",name:"Remote Services"}]});
+ if(!benignServiceLogon&&!noisyInventoryEvent&&(remoteNetworkLogon||remoteAdminShare))out.push({key:"SX-END-003",title:"Unexpected Remote Service Logon",description:remoteNetworkLogon?("Windows network logon (type "+logonType+") from remote source "+String(remoteSourceIp)+"."):("Remote access to administrative share "+shareName+" recorded by Windows event "+eventCode+"."),severity:"high",confidence:remoteAdminShare?82:76,mitre:[{id:"T1021",name:"Remote Services"}]});
  if(/periodic|beacon|repeated outbound|regular outbound/.test(text))out.push({key:"SX-NET-001",title:"Potential Periodic Outbound Communication",description:"Network event matched a beacon-like or repeated outbound communication pattern.",severity:"medium",confidence:65,mitre:[{id:"T1071",name:"Application Layer Protocol"}]});
  if(/windows_audit_log_cleared|security_log_cleared|event.?log.?cleared|1102/.test(text))out.push({key:"SX-WIN-001",title:"Windows Security Audit Log Cleared",description:"Windows reported that the Security audit log was cleared. Validate whether this was an authorized administrative action.",severity:"high",confidence:92,mitre:[{id:"T1070.001",name:"Clear Windows Event Logs"}]});
  if(/windows_service_installed|service_installed|4697/.test(text))out.push({key:"SX-WIN-002",title:"Windows Service Installed",description:"A new Windows service was installed. Verify the service name, binary path and installer context.",severity:"high",confidence:82,mitre:[{id:"T1543.003",name:"Windows Service"}]});
