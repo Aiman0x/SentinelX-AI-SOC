@@ -45,7 +45,6 @@ const ROUTES: Record<string, keyof Env> = {
 
 
 const INTEGRATION_FIELDS: Record<string, string[]> = {
-  wazuh: ["apiUrl", "apiUser", "apiPassword", "accessClientId", "accessClientSecret"],
   sysmon: ["eventChannel", "configVersion"],
   clamav: ["binaryPath"],
   yara: ["rulesPath"],
@@ -105,14 +104,6 @@ function integrationConfigKey(organizationId: string, integrationId: string): st
   return `${organizationId}:${integrationId}`;
 }
 
-function isPublicHttpsTarget(url: URL): boolean {
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return false;
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return false;
-  if (/^(?:0|10|127|169\.254|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2}$/.test(host)) return false;
-  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return false;
-  return true;
-}
 async function handleIntegrationConfig(request: Request, env: Env, cors: HeadersInit, integrationId: string): Promise<Response> {
   if (!isAllowedOrigin(request.headers.get("Origin") ?? "", env)) return reply({ error: "Origin not allowed" }, 403, cors);
   const actor = await currentUser(request, env);
@@ -367,6 +358,21 @@ export default {
           return reply({ ok: false, message: error && error.name === "AbortError" ? "ActivePieces health check timed out after 10 seconds." : "Could not reach the ActivePieces webhook." }, 200, cors);
         }
       }
+      if (integrationId === "wazuh") {
+        if (!env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure integration health storage is unavailable." }, 200, cors);
+        const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey(actor.organization_id, "wazuh") + ":health");
+        if (!rawHealth) return reply({ ok: false, unavailable: true, message: "No Wazuh poller heartbeat received yet. Enroll your Linux Wazuh VM and start the poller." }, 200, cors);
+        try {
+          const health = JSON.parse(rawHealth) as { ok?: boolean; status?: string; checkedAt?: string; sensorId?: string; message?: string; metrics?: Record<string, unknown>; checks?: unknown[]; version?: string };
+          const age = health.checkedAt ? Date.now() - Date.parse(health.checkedAt) : Number.POSITIVE_INFINITY;
+          if (!Number.isFinite(age) || age < 0 || age > 10 * 60_000) return reply({ ok: false, unavailable: true, message: "Wazuh poller heartbeat is stale. Check the Linux service and timer.", checkedAt: health.checkedAt || null, metrics: health.metrics || {} }, 200, cors);
+          const enrolled = health.sensorId ? await env.DB.prepare("SELECT id FROM host_collectors WHERE id=? AND org_id=? AND platform='linux' AND revoked_at IS NULL AND is_paused=0").bind(health.sensorId, actor.organization_id).first<{ id: string }>() : null;
+          if (!enrolled) return reply({ ok: false, unavailable: true, message: "No active Linux Wazuh collector is enrolled. Enroll the VM again from Host collectors." }, 200, cors);
+          return reply({ ok: health.status === "healthy" && health.ok === true, message: health.message || "Wazuh poller health report.", checkedAt: health.checkedAt, version: health.version || null, checks: health.checks || [], metrics: health.metrics || {} }, 200, cors);
+        } catch {
+          return reply({ ok: false, unavailable: true, message: "Stored Wazuh poller health report is invalid." }, 200, cors);
+        }
+      }
       if (integrationId !== "wazuh") {
         if (!["sysmon", "clamav", "yara", "suricata", "zeek"].includes(integrationId) || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "This integration has no live adapter." }, 200, cors);
         const rawHealth = await env.INTEGRATION_CONFIGS.get(integrationConfigKey((await currentUser(request, env))!.organization_id, integrationId) + ":health");
@@ -378,37 +384,7 @@ export default {
           return reply({ ...health, ok: health.status === "healthy" && health.ok === true, message: health.message || "Latest host collector health report." }, 200, cors);
         } catch { return reply({ ok: false, unavailable: true, message: "Stored collector health report is invalid." }, 200, cors); }
       }
-      if (!env.CONFIG_ENCRYPTION_KEY || !env.INTEGRATION_CONFIGS) return reply({ ok: false, unavailable: true, message: "Secure storage is not configured." }, 503, cors);
-      const storageKey = integrationConfigKey(actor.organization_id, integrationId);
-      const encrypted = await env.INTEGRATION_CONFIGS.get(storageKey);
-      if (!encrypted) return reply({ ok: false, message: "Save Wazuh configuration before testing." }, 400, cors);
-      try {
-        const values = await decryptConfig(encrypted, env.CONFIG_ENCRYPTION_KEY, storageKey);
-        const base = new URL(values.apiUrl || "");
-        if (!isPublicHttpsTarget(base)) return reply({ ok: false, message: "Use a public HTTPS Wazuh API hostname; local/private addresses and embedded credentials are blocked." }, 400, cors);
-        if (!values.apiUser || !values.apiPassword) return reply({ ok: false, message: "Wazuh API username and password are required." }, 400, cors);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        try {
-          const basic = btoa(unescape(encodeURIComponent(values.apiUser + ":" + values.apiPassword)));
-          const auth = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/security/user/authenticate", { method: "POST", headers: { Authorization: "Basic " + basic, Accept: "application/json", ...(values.accessClientId && values.accessClientSecret ? { "CF-Access-Client-Id": values.accessClientId, "CF-Access-Client-Secret": values.accessClientSecret } : {}) }, signal: controller.signal, redirect: "manual" });
-          if (!auth.ok) return reply({ ok: false, message: auth.status === 401 ? "Wazuh API rejected the credentials." : "Wazuh API authentication failed (HTTP " + auth.status + ")." }, 200, cors);
-          const authJson = await auth.json();
-          const token = authJson && authJson.data && authJson.data.token;
-          if (typeof token !== "string" || !token) return reply({ ok: false, message: "Wazuh API did not return an authentication token." }, 200, cors);
-          const check = await fetch(base.origin + base.pathname.replace(/\/$/, "") + "/agents?limit=1", { headers: { Authorization: "Bearer " + token, Accept: "application/json", ...(values.accessClientId && values.accessClientSecret ? { "CF-Access-Client-Id": values.accessClientId, "CF-Access-Client-Secret": values.accessClientSecret } : {}) }, signal: controller.signal, redirect: "manual" });
-          if (!check.ok) return reply({ ok: false, message: "Wazuh authenticated, but its agents endpoint failed (HTTP " + check.status + ")." }, 200, cors);
-          const result = await check.json();
-          const checkedAt = new Date().toISOString();
-          const health = { ok: true, message: "Wazuh API authenticated and agent inventory is reachable.", checkedAt };
-          await env.INTEGRATION_CONFIGS.put(storageKey + ":health", JSON.stringify(health));
-          return reply({ ...health, details: { agentCount: result && result.data ? result.data.total_affected_items : null } }, 200, cors);
-        } finally { clearTimeout(timeout); }
-      } catch (error) {
-        return reply({ ok: false, message: error && error.name === "AbortError" ? "Wazuh API health check timed out after 10 seconds." : "Could not reach Wazuh API. Check HTTPS reachability and certificate trust." }, 200, cors);
-      }
     }
-
     if (request.method !== "GET") return reply({ error: "Method not allowed" }, 405, cors);
 
     if (url.pathname === "/api/integrations") {

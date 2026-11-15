@@ -90,7 +90,7 @@ export default function Integrations() {
   const toolCard = (i: Integration, compact = false) => {
     const Icon = icons[i.id] ?? Shield;
     const querySchema = i.schema?.query;
-    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['windows_security', 'sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
+    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['wazuh', 'windows_security', 'sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
     return (
       <Panel key={i.id} bodyClass={compact ? 'flex h-full flex-col p-3' : 'flex h-full flex-col p-4'} className="flex flex-col">
         <div className="flex items-start justify-between gap-3">
@@ -107,7 +107,7 @@ export default function Integrations() {
           {i.capabilities?.length ? <p className="mt-2 text-[10px] text-sx-mute">{i.capabilities.join(' · ')}</p> : null}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" />{i.configured ? 'Edit setup' : 'Connect'}</button> : <div className="flex flex-1 items-center justify-center rounded-lg border border-sx-line px-2 text-[10px] text-sx-mute">Managed by gateway</div>}
+          {i.fields.length > 0 ? <button className="btn flex-1" onClick={() => configure(i)} disabled={!isBackendConfigured}><Settings2 className="h-3.5 w-3.5" />{i.configured ? 'Edit setup' : 'Connect'}</button> : <div className="flex flex-1 items-center justify-center rounded-lg border border-sx-line px-2 text-[10px] text-sx-mute">{i.id === 'wazuh' ? 'Connect below' : 'Managed by SentinelX'}</div>}
           <button className="btn btn-gold flex-1" onClick={() => void test(i)} disabled={!canTest || testing === i.id}><TestTube2 className="h-3.5 w-3.5" />{testing === i.id ? 'Testing…' : 'Test'}</button>
           {i.configured && <button className="btn" onClick={() => void disconnect(i)} disabled={disconnecting === i.id}>{disconnecting === i.id ? '…' : 'Disconnect'}</button>}
           {querySchema?.supported && <button className="btn w-full" onClick={() => { setExpandedQuery(expandedQuery === i.id ? null : i.id); setQueryValues(prev => ({ ...prev, [i.id]: prev[i.id] ?? initialQuery(querySchema.fields) })); }}><Search className="h-3.5 w-3.5" />Advanced query</button>}
@@ -173,7 +173,7 @@ export default function Integrations() {
 
       <section className="mt-5">
         <button className="flex w-full items-center justify-between rounded-xl border border-sx-line bg-sx-panel px-4 py-3 text-left" onClick={() => setShowCollectors(v => !v)} aria-expanded={showCollectors}>
-          <span><span className="block text-sm font-semibold">Windows hosts</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll a Windows PC to stream Security and Sysmon events.</span></span>
+          <span><span className="block text-sm font-semibold">Host collectors</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll Windows endpoints or a Linux Wazuh server.</span></span>
           <ChevronDown className={`h-4 w-4 text-sx-mute transition-transform ${showCollectors ? 'rotate-180' : ''}`} />
         </button>
         {showCollectors && <div className="mt-3"><HostCollectors /></div>}
@@ -184,7 +184,6 @@ export default function Integrations() {
           <div className="space-y-3">
             <p className="text-xs text-sx-mute">Enter the connection details for this tool. Credentials are handled by the SentinelX backend and are not shown again.</p>
             {editing.fields.map(f => <Field key={f.key} label={f.label} htmlFor={`f-${f.key}`}><FieldControl field={f} value={values[f.key] ?? ''} onChange={v => setValues(prev => ({ ...prev, [f.key]: v }))} disabled={!isBackendConfigured} />{f.required && <p className="mt-1 text-[10px] text-sx-mute">Required</p>}{f.help && <p className="mt-1 text-[10px] text-sx-mute">{f.help}</p>}</Field>)}
-            {editing.id === 'wazuh' && <p className="rounded-lg border border-sx-gold/20 bg-sx-gold/5 p-2 text-[10px] text-sx-mute">Keep the Wazuh API private. Use a trusted HTTPS tunnel or private bridge; never expose port 55000 publicly.</p>}
             <div className="flex justify-end gap-2"><button className="btn" onClick={() => setEditing(null)}>Cancel</button><button className="btn btn-primary" onClick={() => void save()} disabled={!isBackendConfigured}>Save setup</button></div>
           </div>
         )}

@@ -7,7 +7,7 @@ interface CollectorEnv {
   CONFIG_ENCRYPTION_KEY: string;
 }
 type CollectorActor = { id: string; role: string; organization_id: string };
-const supported = new Set(["sysmon", "clamav", "yara", "suricata", "zeek"]);
+const supported = new Set(["sysmon", "clamav", "yara", "suricata", "zeek", "wazuh"]);
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
 });

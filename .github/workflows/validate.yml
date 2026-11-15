@@ -5,7 +5,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [feat/cloudflare-api-gateway]
+    branches: [feat/cloudflare-api-gateway, feat/wazuh-agent-alert-retrieval, feat/wazuh-linux-poller, feat/wazuh-single-gateway]
 
 permissions:
   contents: read
@@ -38,3 +38,8 @@ jobs:
         run: npm run build
       - name: Validate Worker bundle without deploying
         run: npx --yes wrangler@4 deploy --dry-run --config cloudflare-worker/wrangler.toml
+      - name: Validate Wazuh poller Python and installer
+        run: |
+          python3 -m py_compile scripts/wazuh-poller/poller.py
+          python3 -m unittest discover -s scripts/wazuh-poller -p "test_*.py"
+          bash -n scripts/wazuh-poller/install.sh
