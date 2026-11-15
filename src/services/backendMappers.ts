@@ -47,7 +47,7 @@ export function mapFinding(row: Row): Alert {
   return {
     id: findingId, eventId: ids[0] ?? str(c.incident_key, findingId), ruleName: str(c.rule_name, str(c.title, 'Security detection incident')),
     severity: severity(c.severity), source: str(c.source_summary, 'SentinelX Detection Engine'), asset: str(c.host, 'Unknown asset'),
-    sourceIp: sourceIps.join(', ') || str(c.source_ip, '—'), timestamp: date(c.detected_at ?? c.last_seen ?? c.updated_at ?? c.first_seen),
+    sourceIp: sourceIps.join(', ') || str(c.source_ip, '—'), timestamp: date(c.detected_at ?? c.last_received_at ?? c.last_seen ?? c.updated_at ?? c.first_seen),
     status,
     summary: str(c.rationale, str(c.description, 'Detection candidate requires analyst review.')),
     rawEvent: { incident_key: str(c.incident_key), event_count: Number(c.event_count ?? 0), confidence: Number(c.confidence ?? 0) },
