@@ -21,6 +21,7 @@ function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
   const eventCount = Number(row.event_count ?? 0);
   const host = typeof row.host === 'string' ? row.host : '';
   const sourceIp = typeof row.source_ip === 'string' ? row.source_ip : '';
+  const eventIds = typeof row.event_ids === 'string' ? row.event_ids.split(',').map(value => value.trim()).filter(Boolean) : Array.isArray(row.event_ids) ? row.event_ids.map(String) : [];
   const ruleKey = typeof row.incident_key === 'string' ? row.incident_key.split('|')[1] || row.incident_key : 'detection';
   const firstSeen = String(row.first_seen ?? nowIso());
   const lastSeen = String(row.last_seen ?? firstSeen);
@@ -34,7 +35,7 @@ function mapSecurityIncident(row: Record<string, unknown>): SecurityCase {
       + ` Confidence: ${Number(row.confidence ?? 0)}%. Events: ${eventCount}. Source IP: ${sourceIp || 'not recorded'}.`,
     notes: [],
     evidence: evidenceCount ? [`${evidenceCount} evidence snapshot(s) stored with SHA-256 integrity hashes.`] : [],
-    alertIds: [],
+    alertIds: eventIds,
     timeline: [{
       id: String(row.id ?? 'incident') + '-detection',
       time: firstSeen,
