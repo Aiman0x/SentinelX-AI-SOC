@@ -125,16 +125,33 @@ export function mapAsset(row: Row): Asset {
 
 export function mapRule(row: Row): DetectionRule {
   const c = cells(row);
-  const statusText = str(c.Status).toLowerCase();
-  const maturityText = str(c['Rule Maturity']).toLowerCase();
+  const ruleKey = str(c.ruleKey, str(c.rule_key, str(c['Rule ID'], str(row.id, 'rule-unknown'))));
+  const name = str(c.title, str(c['Rule Name'], 'Detection rule'));
+  const enabledValue = c.enabled;
+  const isBuiltin = Boolean(c.ruleKey || c.rule_key) && c.ruleType !== 'sigma' && c.rule_type !== 'sigma';
+  const enabled = enabledValue === true || enabledValue === 1 || enabledValue === '1' || isBuiltin;
+  const mitreValue = c.mitre ?? c.mitre_json ?? c['MITRE Technique'];
+  let mitre: string[] = [];
+  if (Array.isArray(mitreValue)) mitre = mitreValue.map(item => typeof item === 'string' ? item : item && typeof item === 'object' ? str((item as Record<string, unknown>).id) : '').filter(Boolean);
+  else if (typeof mitreValue === 'string') { try { const parsed = JSON.parse(mitreValue); if (Array.isArray(parsed)) mitre = parsed.map(item => typeof item === 'string' ? item : item && typeof item === 'object' ? str((item as Record<string, unknown>).id) : '').filter(Boolean); } catch { mitre = mitreValue.split(/[;,\s]+/).filter(Boolean); } }
+  const severityValue = c.severity ?? c.Severity;
+  const ruleType = str(c.ruleType, str(c.rule_type, isBuiltin ? 'builtin' : 'custom'));
+  const prefix = ruleKey.split('-')[1] || '';
+  const category = prefix === 'AUTH' ? 'Authentication' : prefix === 'END' ? 'Endpoint' : prefix === 'NET' ? 'Network' : prefix === 'WIN' ? 'Windows' : 'Custom';
+  const sigma = str(c.sigmaYaml, str(c.sigma_yaml));
+  const description = str(c.description, str(c.Description, 'Runtime detection rule.'));
+  const logic = sigma || str(c.definition_json, description);
+  const tested = c.lastTested ?? c.last_tested ?? c['Last Tested'];
+  const maturity: DetectionRule['maturity'] = tested ? 'in_testing' : 'unvalidated';
   return {
-    id: str(c['Rule ID'], str(row.id, 'rule-unknown')), name: str(c['Rule Name'], 'Detection rule'),
-    description: str(c.Description), category: str(c.Category, 'Other'), severity: severity(c.Severity),
-    source: str(c['Required Data Source'], 'Not specified'), mitre: arr(c['MITRE Technique']),
-    status: statusText.includes('enabled') ? 'enabled' : statusText.includes('disabled') ? 'disabled' : 'draft',
-    lastTested: c['Last Tested'] ? date(c['Last Tested']) : undefined,
-    maturity: maturityText.includes('operating on real') || maturityText.includes('validated') ? 'validated' : maturityText.includes('test') ? 'in_testing' : 'unvalidated',
-    requiredEvidence: arr(c['Required Evidence']), logic: str(c['Detection Logic']), response: [],
+    id: ruleKey, name, description, category, severity: severity(severityValue),
+    source: ruleType === 'sigma' ? 'Custom Sigma rule' : isBuiltin ? 'SentinelX Worker detection engine' : 'Custom detection rule',
+    mitre, status: enabled ? 'enabled' : 'disabled',
+    lastTested: tested ? date(tested) : undefined,
+    maturity,
+    requiredEvidence: arr(c.requiredEvidence ?? c.required_evidence ?? c['Required Evidence']),
+    logic,
+    response: arr(c.response ?? c['Response Recommendations']),
   };
 }
 
