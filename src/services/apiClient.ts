@@ -8,8 +8,16 @@
  */
 export const API_BASE_URL: string = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '').replace(/\/$/, '');
 export const isBackendConfigured: boolean = API_BASE_URL.length > 0;
-export const isDemoMode: boolean = !isBackendConfigured;
-export const ENVIRONMENT_LABEL: string = (import.meta.env.VITE_ENVIRONMENT_LABEL as string | undefined) || 'DEMO ENVIRONMENT';
+export const isDemoMode: boolean = false;
+export const ENVIRONMENT_LABEL: string = (import.meta.env.VITE_ENVIRONMENT_LABEL as string | undefined) || (isBackendConfigured ? 'LIVE DATA' : 'BACKEND NOT CONFIGURED');
+
+// Purge browser-cached prototype records so old sample alerts/cases/assets cannot reappear.
+try {
+  for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith('sentinelx.demo.')) window.localStorage.removeItem(key);
+  }
+} catch { /* storage may be unavailable in restricted browser contexts */ }
 
 export class BackendNotConfiguredError extends Error {
   constructor(feature = 'This feature') {
