@@ -128,7 +128,7 @@ export function mapRule(row: Row): DetectionRule {
   const ruleKey = str(c.ruleKey, str(c.rule_key, str(c['Rule ID'], str(row.id, 'rule-unknown'))));
   const name = str(c.title, str(c['Rule Name'], 'Detection rule'));
   const enabledValue = c.enabled;
-  const isBuiltin = Boolean(c.ruleKey || c.rule_key) && c.ruleType !== 'sigma' && c.rule_type !== 'sigma';
+  const isBuiltin = Boolean(c.ruleKey) && enabledValue === undefined && c.rule_type === undefined && c.ruleType === undefined;
   const enabled = enabledValue === true || enabledValue === 1 || enabledValue === '1' || isBuiltin;
   const mitreValue = c.mitre ?? c.mitre_json ?? c['MITRE Technique'];
   let mitre: string[] = [];
