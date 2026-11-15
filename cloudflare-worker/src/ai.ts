@@ -453,7 +453,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
       const boundedPlanner = fitPrompt(plannerInput, config.maxInputTokens);
       estimatedInputTokens += boundedPlanner.estimatedTokens;
       inputTruncated = inputTruncated || boundedPlanner.truncated;
-      const planned = await runFailover(config, boundedPlanner.text, system, 1400);
+      const planned = await runFailover(config, boundedPlanner.text, system, 2800);
       selectedProvider = planned.provider; selectedModel = planned.model;
       attemptedFallbacks += planned.attempts.length;
       const decision = parseAgentJson(planned.answer);
@@ -535,7 +535,7 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
         const boundedFinal = fitPrompt(finalInput, config.maxInputTokens);
         estimatedInputTokens += boundedFinal.estimatedTokens;
         inputTruncated = inputTruncated || boundedFinal.truncated;
-        const final = await runFailover(config, boundedFinal.text, finalSystem, 1400);
+        const final = await runFailover(config, boundedFinal.text, finalSystem, 2800);
         selectedProvider = final.provider; selectedModel = final.model; attemptedFallbacks += final.attempts.length;
         conclusion = final.answer;
       }
