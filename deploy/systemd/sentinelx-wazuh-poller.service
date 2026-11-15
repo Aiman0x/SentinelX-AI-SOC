@@ -1,0 +1,17 @@
+[Unit]
+Description=SentinelX Wazuh read-only poller
+After=network-online.target wazuh-manager.service wazuh-indexer.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sentinelx-poller
+Group=sentinelx-poller
+EnvironmentFile=/etc/sentinelx-wazuh-poller.env
+ExecStart=/usr/bin/python3 /opt/sentinelx-wazuh-poller/poller.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sentinelx-wazuh-poller
+RestrictAddressFamilies=AF_INET AF_INET6
