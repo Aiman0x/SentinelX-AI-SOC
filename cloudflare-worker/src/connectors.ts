@@ -162,7 +162,7 @@ function threatAdapter(id:"virustotal"|"abuseipdb"|"urlscan"):ToolAdapter {
 function hostAdapter(id:"wazuh"|"sysmon"|"windows_security"|"suricata"|"zeek"|"clamav"|"yara",name:string,description:string):ToolAdapter {
   const labels:Record<string,string>={wazuh:"Wazuh Manager + Indexer alert stream",sysmon:"Microsoft-Windows-Sysmon/Operational",windows_security:"Windows Security Event Log",suricata:"/var/log/suricata/eve.json",zeek:"/opt/zeek/logs/current",clamav:"clamd / clamscan scan results",yara:"YARA rule scan results"};
   return {
-    id,name,category:id==="sysmon"||id==="windows_security"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
+    id,name,category:id==="wazuh"?"SIEM":id==="sysmon"||id==="windows_security"?"Endpoint":id==="clamav"||id==="yara"?"Malware":"Network",description,
     schema:{version:"1.0",fields:id==="windows_security"||id==="wazuh"?[]:[field("sensor","Sensor / host name","endpoint-01"),field("source","Telemetry source path or channel",labels[id])],query:{supported:true,description:"Retrieve recent tenant-scoped endpoint or sensor events.",fields:[field("limit","Maximum records (1–100)","25"),field("eventType","Filter by event type (optional)","windows_failed_login"),field("sinceMinutes","Look-back window in minutes","1440")]}},
     async connect(context,values) {
       if(Object.keys(values).some(k=>!["sensor","source"].includes(k))) throw new Error("Unsupported configuration field.");
