@@ -63,6 +63,7 @@ chmod 0755 "$APP_DIR/poller.py"
 useradd --system --no-create-home --shell /usr/sbin/nologin sentinelx-poller 2>/dev/null || true
 chown root:sentinelx-poller "$APP_DIR" "$APP_DIR/poller.py"
 chmod 0750 "$APP_DIR"
+install -d -o sentinelx-poller -g sentinelx-poller -m 0750 /var/lib/sentinelx-wazuh-poller
 
 export SX_URL SX_TOKEN MANAGER_URL MANAGER_USER MANAGER_PASS INDEXER_URL INDEXER_USER INDEXER_PASS CA_BUNDLE
 python3 - <<'PY'
