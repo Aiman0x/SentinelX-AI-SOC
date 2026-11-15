@@ -105,6 +105,7 @@ def normalize_alert(hit):
     rule = source.get("rule") or {}
     agent = source.get("agent") or {}
     data = source.get("data") or {}
+    safe_data = {key: data[key] for key in ("srcip", "dstip", "srcport", "dstport", "protocol", "srcuser", "dstuser", "user", "url", "domain", "hostname", "file", "md5", "sha1", "sha256") if key in data}
     event_id = str(hit.get("_index", "wazuh-alerts") + ":" + hit.get("_id", ""))
     description = str(rule.get("description") or "Wazuh alert")
     timestamp = source.get("@timestamp") or source.get("timestamp")
@@ -117,19 +118,18 @@ def normalize_alert(hit):
         "severity": severity_from_level(rule.get("level")),
         "message": description,
         "host": agent.get("name") or agent.get("id") or "Wazuh Manager",
-        "sourceIp": data.get("srcip") or data.get("src_ip") or data.get("source_ip"),
-        "destinationIp": data.get("dstip") or data.get("dst_ip") or data.get("destination_ip"),
-        "username": data.get("dstuser") or data.get("srcuser") or data.get("user"),
+        "sourceIp": safe_data.get("srcip"),
+        "destinationIp": safe_data.get("dstip"),
+        "username": safe_data.get("dstuser") or safe_data.get("srcuser") or safe_data.get("user"),
         "sourceIntegration": "wazuh",
         "dataOrigin": "WAZUH_INDEXER",
         "eventData": {
             "rule": rule,
             "agent": agent,
             "manager": source.get("manager"),
-            "data": data,
+            "data": safe_data,
             "location": source.get("location"),
             "decoder": source.get("decoder"),
-            "full_log": source.get("full_log"),
             "wazuh_index": hit.get("_index"),
             "wazuh_document_id": hit.get("_id"),
         },
