@@ -90,7 +90,7 @@ export default function Integrations() {
   const toolCard = (i: Integration, compact = false) => {
     const Icon = icons[i.id] ?? Shield;
     const querySchema = i.schema?.query;
-    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['windows_security', 'sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
+    const canTest = isBackendConfigured && (i.configured || i.id === 'activepieces' || ['wazuh', 'windows_security', 'sysmon', 'suricata', 'zeek', 'clamav', 'yara'].includes(i.id));
     return (
       <Panel key={i.id} bodyClass={compact ? 'flex h-full flex-col p-3' : 'flex h-full flex-col p-4'} className="flex flex-col">
         <div className="flex items-start justify-between gap-3">
@@ -173,7 +173,7 @@ export default function Integrations() {
 
       <section className="mt-5">
         <button className="flex w-full items-center justify-between rounded-xl border border-sx-line bg-sx-panel px-4 py-3 text-left" onClick={() => setShowCollectors(v => !v)} aria-expanded={showCollectors}>
-          <span><span className="block text-sm font-semibold">Windows hosts</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll a Windows PC to stream Security and Sysmon events.</span></span>
+          <span><span className="block text-sm font-semibold">Host collectors</span><span className="mt-0.5 block text-[11px] text-sx-mute">Enroll Windows endpoints or a Linux Wazuh server.</span></span>
           <ChevronDown className={`h-4 w-4 text-sx-mute transition-transform ${showCollectors ? 'rotate-180' : ''}`} />
         </button>
         {showCollectors && <div className="mt-3"><HostCollectors /></div>}
