@@ -98,7 +98,7 @@ function endpoint(config: ProviderConfig): string {
 }
 async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens = 1200, systemPrompt = "You are a helpful assistant.", controller = new AbortController()): Promise<string> {
   const url = endpoint(config);
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), 45000);
   try {
     let response: Response;
     if (config.provider === "anthropic") {
@@ -159,7 +159,7 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
     if (typeof text !== "string" || !text.trim()) throw new Error("Provider returned no text response in its completion payload.");
     return text;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw new Error("Provider request timed out after 12 seconds.");
+    if (error instanceof Error && error.name === "AbortError") throw new Error("Provider request timed out after 45 seconds.");
     throw error;
   } finally { clearTimeout(timeout); }
 }
@@ -199,7 +199,7 @@ async function runFailover(settings: AISettings, prompt: string, systemPrompt?: 
     return { answer: winner.answer, provider: winner.config.provider, model: winner.config.model, attempts: failures.filter(Boolean) };
   } catch {
     const details = failures.filter(Boolean);
-    throw new Error("All configured LLM providers failed. " + (details[details.length - 1] || "No provider returned a response."));
+    throw new Error("All configured LLM providers failed. " + (details.length ? details.join(" | ") : "No provider returned a response."));
   }
 }
 
