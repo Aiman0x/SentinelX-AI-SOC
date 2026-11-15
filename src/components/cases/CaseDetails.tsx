@@ -135,8 +135,9 @@ export function CaseDetails({ c, alerts, onClose, onUpdated, readOnly = false }:
           <span className="text-[11px] text-sx-mute">Created {formatDateTime(c.createdAt)} · Updated {formatDateTime(c.updatedAt)}</span>
         </div>
         {(c.dataOrigin || c.sourceSchema || c.sourceEventId) && (
-          <div className="mb-3 grid gap-2 rounded border border-sx-line bg-sx-elev/30 p-3 text-[11px] sm:grid-cols-3">
+          <div className="mb-3 grid gap-2 rounded border border-sx-line bg-sx-elev/30 p-3 text-[11px] sm:grid-cols-2 xl:grid-cols-4">
             <div><div className="label">Data origin</div><span className="mono">{c.dataOrigin || 'Not recorded'}</span></div>
+            <div><div className="label">Source verification</div><span>{c.sourceVerification || 'Not recorded'}</span></div>
             <div><div className="label">Source schema</div><span className="mono">{c.sourceSchema || 'Not recorded'}</span></div>
             <div><div className="label">Source event reference</div><span className="mono break-all">{c.sourceEventId || 'Not recorded'}</span></div>
           </div>
