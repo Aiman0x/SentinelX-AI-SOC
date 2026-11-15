@@ -1,50 +1,58 @@
-# SentinelX Wazuh Linux Poller
+# Connect Wazuh to SentinelX (Linux)
 
-A small, read-only Python 3 poller that runs beside Wazuh on the Linux VM. It queries the Wazuh Manager API for agent inventory count and the Wazuh Indexer for recent `wazuh-alerts-*` documents, then forwards normalized alerts to SentinelX through the existing tenant-scoped Linux host-collector endpoint.
+## Customer setup
 
-## Security model
+Wazuh uses the existing SentinelX Cloudflare Worker gateway. No separate Wazuh gateway, Cloudflare Tunnel, public Manager API port, or public Indexer port is required.
 
-- All Wazuh credentials stay in a root-owned environment file on the Wazuh VM.
-- The poller makes outbound HTTPS requests only; it does not expose Manager or Indexer ports.
-- The SentinelX collector token is stored locally and can be revoked from Host Collectors.
-- TLS certificate verification is enabled. Configure `WAZUH_CA_BUNDLE` for a private/self-signed Wazuh CA; do not set an insecure TLS mode.
-- The Wazuh account should be read-only and limited to agent read and alert-index read permissions.
-- Recent alerts are re-read with a configurable lookback window. SentinelX deduplicates using the stable Wazuh index/document identifier.
+1. In SentinelX, open **Tools → Host collectors**.
+2. Select **Linux · Wazuh server**, enter a friendly name, and choose **Enroll host**.
+3. Copy the one-time command.
+4. Open a terminal on the Linux VM that runs Wazuh and run the command with sudo.
+5. The installer prompts locally for the one-time collector token and the Wazuh Manager API / Indexer read-only credentials. Passwords are hidden while typing and saved only in a root-owned environment file on that VM.
+6. The installer performs a live connection/ingestion check. It enables the one-minute systemd timer only after that check succeeds.
+7. Return to **Tools** and press **Test** on Wazuh. The status becomes verified after the VM reports a fresh healthy heartbeat.
 
-## Install on the Wazuh Linux VM
+The default Manager and Indexer URLs are loopback (https://127.0.0.1:55000 and https://127.0.0.1:9200) because the poller runs beside Wazuh. If services use another private address or port, enter that internal HTTPS URL during installation.
 
-1. Create a Linux host collector in SentinelX **Host Collectors** and copy its token once. Do not paste the token into chat or commit it.
-2. Copy `scripts/wazuh-poller/poller.py` to `/opt/sentinelx-wazuh-poller/poller.py`.
-3. Create a restricted service account and install the service files:
+## Security
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin sentinelx-poller 2>/dev/null || true
-sudo install -d -o root -g sentinelx-poller -m 0750 /opt/sentinelx-wazuh-poller
-sudo install -o root -g sentinelx-poller -m 0750 scripts/wazuh-poller/poller.py /opt/sentinelx-wazuh-poller/poller.py
-sudo install -o root -g root -m 0644 deploy/systemd/sentinelx-wazuh-poller.service /etc/systemd/system/
-sudo install -o root -g root -m 0644 deploy/systemd/sentinelx-wazuh-poller.timer /etc/systemd/system/
-sudo install -o root -g root -m 0600 scripts/wazuh-poller/sentinelx-wazuh-poller.env.example /etc/sentinelx-wazuh-poller.env
-sudo chown root:sentinelx-poller /etc/sentinelx-wazuh-poller.env
-sudo chmod 0640 /etc/sentinelx-wazuh-poller.env
-sudoedit /etc/sentinelx-wazuh-poller.env
-```
+- Manager and Indexer credentials never enter the SentinelX browser or Cloudflare Worker.
+- The poller uses read-only Manager API and Indexer search operations.
+- TLS verification is enabled. If Wazuh uses a private CA, provide the CA certificate path during setup; never disable certificate verification.
+- The Linux collector token is stored in /etc/sentinelx-wazuh-poller.env, owned by root and readable only by the poller service group.
+- The VM initiates outbound HTTPS requests to SentinelX. No inbound firewall/NSG rules are required for Manager API or Indexer.
+- Alerts enter the existing tenant-scoped event queue and D1 security-event pipeline. Wazuh events are deduplicated by their stable Indexer document identity.
 
-Fill the environment file locally with the collector token and dedicated read-only Wazuh Manager/Indexer credentials. Keep the URLs loopback/internal when the poller runs on the same VM. If the Wazuh services use a private CA, set `WAZUH_CA_BUNDLE` to its certificate path.
+## Operations
 
-4. Test once, then enable the timer:
+~~~bash
+# Check timer
+sudo systemctl status sentinelx-wazuh-poller.timer
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl start sentinelx-wazuh-poller.service
+# Check last poll
 sudo journalctl -u sentinelx-wazuh-poller.service -n 30 --no-pager
-sudo systemctl enable --now sentinelx-wazuh-poller.timer
-systemctl list-timers sentinelx-wazuh-poller.timer
-```
 
-To stop polling: `sudo systemctl disable --now sentinelx-wazuh-poller.timer`. Revoke the Linux collector in SentinelX if the VM is decommissioned.
+# Run a one-off poll
+sudo systemctl start sentinelx-wazuh-poller.service
+
+# Pause automatic polling
+sudo systemctl disable --now sentinelx-wazuh-poller.timer
+
+# Resume automatic polling
+sudo systemctl enable --now sentinelx-wazuh-poller.timer
+~~~
+
+Use **Pause** in SentinelX to reject incoming telemetry without deleting enrollment. Use **Remove** to revoke the collector token; then stop the VM timer and remove the local service if decommissioning.
+
+## Implementation details
+
+- Poller: scripts/wazuh-poller/poller.py
+- Installer: scripts/wazuh-poller/install.sh
+- systemd unit/timer: deploy/systemd/
+- Worker ingestion: POST /api/collector/events
+- Health: POST /api/collector/heartbeat
+- Read-only investigation queries run against tenant-scoped normalized Wazuh events in SentinelX, not directly against a customer-exposed Indexer endpoint.
 
 ## Current limits
 
-- Each run reads at most `WAZUH_BATCH_SIZE` alerts (maximum 500) from the last `WAZUH_LOOKBACK_MINUTES` (maximum 60). Increase polling frequency or tune the window/batch size if alert volume exceeds this bound.
-- Agent inventory is checked for connectivity and reported in the service log; alert documents are ingested into the SentinelX event pipeline.
-- This integration is read-only: it does not acknowledge alerts, modify agents, or run response actions.
+The poller checks a rolling lookback window (default five minutes) and sends up to 500 alerts per run. Stable document IDs prevent duplicate rows when windows overlap. If sustained alert volume exceeds the configured batch size, tune the polling window/batch size and validate queue throughput before production use.
