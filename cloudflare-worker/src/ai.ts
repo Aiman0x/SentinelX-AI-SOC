@@ -31,6 +31,7 @@ async function keyFor(secret: string, usage: KeyUsage[]) {
 }
 const PLATFORM_AI_KEY = "platform:ai-provider:v2";
 const OPENROUTER_MODEL = "nvidia/nemotron-3.5-super-vl:free";
+const OPENROUTER_FALLBACK_MODELS = ["nvidia/nemotron-3.5-lightning:free", "cohere/north-mini-code:free"];
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 function storageKey(_org: string) { return PLATFORM_AI_KEY; }
 async function isPlatformAdmin(env: AIEnv, userId: string): Promise<boolean> {
@@ -49,9 +50,27 @@ async function unseal(raw: string, secret: string, _org: string): Promise<AISett
   const key = await keyFor(secret, ["decrypt"]);
   const data = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(envelope.iv), additionalData: enc.encode(PLATFORM_AI_KEY) }, key, fromB64(envelope.data));
   const decoded = JSON.parse(new TextDecoder().decode(data)) as AISettings | ProviderConfig;
-  // Backward-compatible migration from the original single-provider format.
-  if ("primary" in decoded) return { ...decoded, primary: { ...decoded.primary, provider: "openai-compatible", model: OPENROUTER_MODEL, apiKey: decoded.primary.apiKey, baseUrl: OPENROUTER_BASE_URL }, fallbacks: [] };
-  return { primary: decoded, fallbacks: [], maskSensitiveData: true, maxInputTokens: 6000 };
+  // The shared platform key is reused across a bounded OpenRouter failover chain.
+  // This avoids making customers configure or expose additional provider credentials.
+  const savedPrimary = "primary" in decoded ? decoded.primary : decoded;
+  if (!savedPrimary || typeof savedPrimary.apiKey !== "string" || !savedPrimary.apiKey) {
+    throw new Error("Platform AI provider key is missing.");
+  }
+  const makeOpenRouterConfig = (model: string): ProviderConfig => ({
+    provider: "openai-compatible",
+    model,
+    apiKey: savedPrimary.apiKey,
+    baseUrl: OPENROUTER_BASE_URL
+  });
+  const maxInputTokens = "primary" in decoded && Number.isFinite(decoded.maxInputTokens)
+    ? Math.max(1000, Math.min(12000, decoded.maxInputTokens))
+    : 6000;
+  return {
+    primary: makeOpenRouterConfig(OPENROUTER_MODEL),
+    fallbacks: OPENROUTER_FALLBACK_MODELS.map(makeOpenRouterConfig),
+    maskSensitiveData: true,
+    maxInputTokens
+  };
 }
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -80,7 +99,7 @@ function endpoint(config: ProviderConfig): string {
 async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens = 1200, systemPrompt = "You are a helpful assistant."): Promise<string> {
   const url = endpoint(config);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), 12000);
   try {
     let response: Response;
     if (config.provider === "anthropic") {
@@ -115,7 +134,7 @@ async function callModel(config: ProviderConfig, prompt: string, maxOutputTokens
     if (typeof text !== "string" || !text.trim()) throw new Error("Provider returned no text response.");
     return text;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw new Error("Provider request timed out after 20 seconds.");
+    if (error instanceof Error && error.name === "AbortError") throw new Error("Provider request timed out after 12 seconds.");
     throw error;
   } finally { clearTimeout(timeout); }
 }
