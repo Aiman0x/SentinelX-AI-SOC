@@ -42,9 +42,10 @@ export function AgentInvestigationPanel({ caseId }: { caseId?: string }) {
   const [history, setHistory] = useState<SavedAgentRun[]>([]);
 
   useEffect(() => {
-    if (!caseId || !isBackendConfigured) { setHistory([]); return; }
+    if (!isBackendConfigured) { setHistory([]); return; }
     let active = true;
-    apiGet<{ data?: SavedAgentRun[] }>(`/api/ai/agent/runs?caseId=${encodeURIComponent(caseId)}`)
+    const endpoint = caseId ? `/api/ai/agent/runs?caseId=${encodeURIComponent(caseId)}` : "/api/ai/agent/runs";
+    apiGet<{ data?: SavedAgentRun[] }>(endpoint)
       .then(response => { if (active) setHistory(response.data ?? []); })
       .catch(() => { if (active) setHistory([]); });
     return () => { active = false; };
