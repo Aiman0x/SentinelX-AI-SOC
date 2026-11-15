@@ -15,14 +15,14 @@ import { PageHeader } from '../components/layout/PageHeader';
 
 export default function Overview() {
   const { alerts } = useAlerts();
-  const { data: activeOpenCases } = useData(loadActiveOpenIncidentCount);
+  const { data: openCaseCount } = useData(loadOpenCaseCount);
   const localAssets = useLocalStore(assetsStore);
   const { data: backendAssets } = useData(loadAssets);
   const assets = isBackendConfigured ? backendAssets ?? [] : localAssets;
   const { data: integrationData } = useData(loadIntegrations);
   const integrations = integrationData ?? getIntegrations();
 
-  const openCases = activeOpenCases ?? 0;
+  const openCases = openCaseCount ?? 0;
   const critical = alerts.filter((a) => a.severity === 'critical' && a.status !== 'resolved' && a.status !== 'false_positive').length;
   const verified = assets.filter((a) => a.monitoring === 'verified').length;
   const connected = integrations.filter((i) => i.state === 'connected').length;
