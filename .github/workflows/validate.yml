@@ -5,7 +5,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [feat/cloudflare-api-gateway, feat/wazuh-agent-alert-retrieval, feat/wazuh-linux-poller]
+    branches: [feat/cloudflare-api-gateway, feat/wazuh-agent-alert-retrieval, feat/wazuh-linux-poller, feat/wazuh-single-gateway]
 
 permissions:
   contents: read
