@@ -107,6 +107,20 @@ async function webhookIngest(req:Request,env:EventEnv){
 export async function handleEventRoute(req:Request,env:EventEnv,path:string):Promise<Response|null>{
  if(path==="/api/collector/events"&&req.method==="POST")return collectorIngest(req,env);
  if(path==="/api/events/ingest"&&req.method==="POST")return webhookIngest(req,env);
+ if(path==="/api/events/summary"&&req.method==="GET"){
+  const actor=await currentUser(req,env as Parameters<typeof currentUser>[1]);if(!actor)return json({error:"Authentication required."},401);
+  const params=new URL(req.url).searchParams;
+  const range=(params.get("range")||"24h").toLowerCase();
+  const source=str(params.get("source"),64).toLowerCase();
+  const config=range==="24h"?{format:"%Y-%m-%d %H:00",modifier:"-24 hours"}:range==="7d"?{format:"%Y-%m-%d",modifier:"-7 days"}:range==="30d"?{format:"%Y-%m-%d",modifier:"-30 days"}:null;
+  if(!config)return json({error:"range must be 24h, 7d or 30d."},400);
+  const rows=await env.DB.prepare("SELECT strftime(?,received_at) AS bucket,severity,COUNT(*) AS total FROM security_events WHERE org_id=? AND julianday(received_at)>=julianday('now',?) AND (?='' OR lower(source)=?) GROUP BY bucket,severity ORDER BY bucket")
+   .bind(config.format,actor.organization_id,config.modifier,source,source).all<{bucket:string;severity:string;total:number}>();
+  const buckets=new Map<string,Record<string,number>>();
+  for(const row of rows.results){if(!row.bucket)continue;const item=buckets.get(row.bucket)||{critical:0,high:0,medium:0,low:0,info:0};const key=["critical","high","medium","low","info"].includes(row.severity)?row.severity:"info";item[key]+=Number(row.total||0);buckets.set(row.bucket,item);}
+  const data=[...buckets.entries()].map(([label,counts])=>({label,...counts}));
+  return json({data,range,source:source||"all"});
+ }
  if(path==="/api/events"&&req.method==="GET"){
   const actor=await currentUser(req,env as Parameters<typeof currentUser>[1]);if(!actor)return json({error:"Authentication required."},401);
   const params=new URL(req.url).searchParams;
