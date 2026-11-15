@@ -34,7 +34,7 @@ type SecurityEventRow = {
 const text = (value: unknown, fallback = '—'): string =>
   value === undefined || value === null || value === '' ? fallback : String(value);
 
-export async function getWindowsTelemetry(view: 'active' | 'archived' = 'active', source = 'all'): Promise<WindowsTelemetryEvent[]> {
+export async function getWindowsTelemetry(view: 'active' | 'archived' = 'active', source = 'windows'): Promise<WindowsTelemetryEvent[]> {
   if (!isBackendConfigured) throw new Error('SentinelX backend is not configured.');
   const params = new URLSearchParams({ limit: '100', status: view });
   if (source !== 'all') params.set('source', source);
