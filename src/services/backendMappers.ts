@@ -216,18 +216,25 @@ export function mapInvestigation(row: Row): InvestigationRecord {
 
 export function mapEvidence(row: Row): EvidenceRecord {
   const c = cells(row);
+  let payload: Record<string, unknown> = {};
+  const rawPayload = c.payload_json ?? c['Payload JSON'];
+  if (typeof rawPayload === 'string') { try { const parsed = JSON.parse(rawPayload); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as Record<string, unknown>; } catch { /* preserve metadata even if payload is malformed */ } }
+  const excerptValue = payload.message ?? payload.excerpt ?? payload.rawEvent ?? payload.normalized ?? payload.event ?? rawPayload;
+  const excerpt = typeof excerptValue === 'string' ? excerptValue : excerptValue ? JSON.stringify(excerptValue) : 'No evidence excerpt recorded.';
+  const captured = c.captured_at ?? c['Collected At'];
+  const evidenceType = str(c.evidence_type, str(c['Evidence Classification'], 'Detection evidence'));
   return {
-    id: str(c['Evidence ID'], str(row.id, 'evidence-unknown')),
-    caseId: str(c['Case ID'], '—'),
-    stepName: str(c['Step Name'], '—'),
-    sourceIntegration: str(c['Source Integration'], '—'),
-    toolName: str(c['Tool Name'], '—'),
-    excerpt: str(c['Evidence Excerpt'], 'No evidence excerpt recorded.'),
-    collectedAt: date(c['Collected At']),
-    dataOrigin: str(c['Data Origin'], 'UNKNOWN'),
-    executionStatus: str(c['Execution Status'], 'Unknown'),
-    evidenceHash: str(c['Evidence Hash'], '—'),
-    relevance: str(c.Relevance, 'Unrated'),
-    classification: str(c['Evidence Classification'], 'Unclassified'),
+    id: str(c.id, str(c['Evidence ID'], 'evidence-unknown')),
+    caseId: str(c.incident_id, str(c['Case ID'], str(c.incident_title, '—'))),
+    stepName: str(c.rule_key, str(c['Step Name'], 'Detection rule evidence')),
+    sourceIntegration: str(payload.source, str(c['Source Integration'], 'SentinelX event pipeline')),
+    toolName: str(c.evidence_type, str(c['Tool Name'], 'Security event evidence')),
+    excerpt: excerpt.slice(0, 12000),
+    collectedAt: date(captured),
+    dataOrigin: str(payload.dataOrigin, str(payload.data_origin, str(c['Data Origin'], 'REAL_TELEMETRY'))),
+    executionStatus: str(c['Execution Status'], 'Captured'),
+    evidenceHash: str(c.sha256, str(c['Evidence Hash'], '—')),
+    relevance: str(c.Relevance, 'Matched detection evidence'),
+    classification: evidenceType,
   };
 }
