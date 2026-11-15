@@ -279,11 +279,17 @@ export async function handleAIRoute(request: Request, env: AIEnv, path: string):
             recordType: "legacy_case_record",
             caseId: legacy.case_id, title: legacy.title, source: legacy.source, severity: legacy.severity,
             status: legacy.status, sourceSchema: legacy.source_schema, createdAt: legacy.created_at,
-            updatedAt: legacy.updated_at, sourceEventId: payload["Source Event ID"] ?? null,
-            eventTime: payload["Event Time"] ?? null, dataOrigin: payload["Data Origin"] ?? "UNKNOWN",
-            sourceVerification: payload["Source Verification"] ?? "not recorded",
-            rawEvidence: payload["Raw Evidence"] ?? null,
-            normalizedAlert: payload["Normalized Alert"] ?? null
+            updatedAt: legacy.updated_at,
+            eventType: payload["Source Type"] ?? payload.event_type ?? legacy.source ?? null,
+            sourceEventId: payload["Source Event ID"] ?? payload.event_id ?? null,
+            eventTime: payload["Event Time"] ?? payload.event_time ?? payload.received_at ?? null,
+            dataOrigin: payload["Data Origin"] ?? payload.data_origin ?? "UNKNOWN",
+            sourceVerification: payload["Source Verification"] ?? (payload.data_origin === "REAL_UNVERIFIED" ? "Source marked REAL_UNVERIFIED; authenticity not independently confirmed." : "not recorded"),
+            host: payload.host ?? payload["Asset ID"] ?? null,
+            username: payload.username ?? null,
+            sourceIp: payload.source_ip ?? null,
+            rawEvidence: payload["Raw Evidence"] ?? payload.event_data ?? null,
+            normalizedAlert: payload["Normalized Alert"] ?? payload.event_data ?? null
           }).slice(0, 12000);
         } else {
           const incident = await env.DB.prepare("SELECT id,title,description,severity,status,confidence,first_seen,last_seen,event_count,host,username,source_ip,incident_key FROM security_incidents WHERE org_id=? AND id=?")
