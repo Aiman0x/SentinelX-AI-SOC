@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { TrendRange } from '../../data/demoTrends';
+import type { TrendRange } from '../../services/miscService';
 import { useData } from '../../hooks/useData';
 import { loadTrend } from '../../services/miscService';
 import { SEVERITIES, cap, severityHex } from '../../utils/severity';
