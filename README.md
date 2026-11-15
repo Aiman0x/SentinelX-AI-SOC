@@ -102,7 +102,7 @@ For the existing Windows PowerShell collector, add the organization token to the
 The feature branch includes a dynamic Connect your tools page backed by the Worker connector registry. Each adapter exposes connect(), test(), query() and a versioned schema. The UI renders the registry schema dynamically.
 
 - Per-user credentials are encrypted at rest with AES-GCM and scoped to the signed-in user + organization + connector. Secrets are never returned to the browser.
-- Wazuh adapter connects both Manager API and Indexer: agent inventory, agent lookup, manager info and recent alert search. Use a private/trusted HTTPS route such as Cloudflare Tunnel + Access; never expose port 55000 publicly.
+- Wazuh is enrolled as a Linux host collector. A local read-only poller queries the Manager API and Indexer over loopback/private HTTPS and sends normalized alerts through the existing SentinelX Worker gateway. No Wazuh Tunnel or public API/Indexer ports are required.
 - Sysmon, Suricata and Zeek adapters use host-collector health, authenticated event ingestion at /api/collector/events, and tenant-scoped D1 telemetry queries.
 - VirusTotal, AbuseIPDB and URLScan use each user's own API key and read-only reputation/search lookups.
 - ActivePieces remains gateway-managed and appears in the same registry.
@@ -116,7 +116,7 @@ Provider live status requires the user to add their own credentials and pass the
 The production Worker exposes a versioned connector registry at `GET /api/integrations` and a capability catalog at `GET /api/integrations/capabilities`. Each adapter follows the same lifecycle: schema discovery, connect/update, live test, read-only query when supported, and disconnect. The UI reads the server registry and renders each adapter's fields and capabilities rather than storing provider credentials in browser storage.
 
 Initial connector coverage:
-- **Wazuh:** Manager API authentication, agent inventory and Indexer alert search. Use a trusted HTTPS route (for example Cloudflare Tunnel + Access); do not expose Manager/Indexer ports directly.
+- **Wazuh:** Enroll the Linux Wazuh VM once from Tools → Host collectors. A local read-only poller handles Manager API and Indexer queries and pushes alerts/health through the existing Worker gateway; no separate Wazuh gateway or public Wazuh ports are needed.
 - **VirusTotal / AbuseIPDB:** tenant-user-owned API keys and read-only indicator lookups. VirusTotal queries may contribute indicators to its shared dataset; avoid confidential or personal indicators.
 - **Sysmon / Suricata / Zeek:** collector-reported sensor health and tenant-scoped telemetry queries.
 - **ClamAV / YARA:** collector-reported scanner/rule-engine health and tenant-scoped scan-result queries. These require the relevant tool to be installed on a customer-owned host and an enrolled collector to report its health; SentinelX does not install or execute scanners remotely.
