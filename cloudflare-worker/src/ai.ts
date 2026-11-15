@@ -203,12 +203,70 @@ async function runFailover(settings: AISettings, prompt: string, systemPrompt?: 
   }
 }
 
+function normalizeAgentJson(value: string): string {
+  let output = "";
+  for (let i = 0; i < value.length;) {
+    const ch = value[i];
+    if (ch === '"') {
+      const start = i++;
+      while (i < value.length) {
+        if (value[i] === "\\") { i += 2; continue; }
+        if (value[i] === '"') { i++; break; }
+        i++;
+      }
+      output += value.slice(start, i);
+      continue;
+    }
+    if (ch === ",") {
+      let next = i + 1;
+      while (/\s/.test(value[next] || "")) next++;
+      if (value[next] === "}" || value[next] === "]") { i++; continue; }
+    }
+    if (ch === "{" || ch === ",") {
+      output += ch;
+      i++;
+      const whitespaceStart = i;
+      while (/\s/.test(value[i] || "")) i++;
+      const whitespace = value.slice(whitespaceStart, i);
+      if (/[A-Za-z_$]/.test(value[i] || "")) {
+        const keyStart = i++;
+        while (/[A-Za-z0-9_$-]/.test(value[i] || "")) i++;
+        const key = value.slice(keyStart, i);
+        let colon = i;
+        while (/\s/.test(value[colon] || "")) colon++;
+        if (value[colon] === ":") {
+          output += whitespace + JSON.stringify(key) + value.slice(i, colon) + ":";
+          i = colon + 1;
+          continue;
+        }
+        output += whitespace + key;
+        continue;
+      }
+      output += whitespace;
+      continue;
+    }
+    output += ch;
+    i++;
+  }
+  return output;
+}
+
 function parseAgentJson(value: string): any {
-  const cleaned = value.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const fence = String.fromCharCode(96).repeat(3);
+  const cleaned = value.trim().replace(new RegExp("^" + fence + "(?:json)?", "i"), "").replace(new RegExp(fence + "$"), "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("Agent returned no JSON object.");
-  return JSON.parse(cleaned.slice(start, end + 1));
+  const candidate = cleaned.slice(start, end + 1);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    try {
+      return JSON.parse(normalizeAgentJson(candidate));
+    } catch {
+      throw new Error("Agent returned malformed JSON; safe formatting recovery was unsuccessful.");
+    }
+  }
 }
 function isRetryableToolFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
