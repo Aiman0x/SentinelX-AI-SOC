@@ -424,6 +424,6 @@ export default {
     await consumeEventBatch(batch, env);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env), ...(controller.cron === "0 2 * * *" ? [runScheduledRetention(env)] : [])]).then(() => undefined));
+    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env), ...(controller.cron === "0 * * * *" ? [runScheduledRetention(env)] : [])]).then(() => undefined));
   },
 };
