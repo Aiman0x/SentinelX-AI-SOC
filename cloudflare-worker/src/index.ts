@@ -3,7 +3,7 @@ import { handleAIRoute, runScheduledAIReport, runScheduledMonitoring } from "./a
 import { handleCollectorRoute } from "./collectors";
 import { handleDataRoute } from "./data";
 import { handleConnectorRoute } from "./connectors";
-import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent } from "./events";
+import { consumeEventBatch, handleEventRoute, NormalizedSecurityEvent, runScheduledRetention } from "./events";
 import { handleDetectionRoute } from "./detections";
 import { handleIncidentReportRoute } from "./incidentReports";
 // Detection, correlation and evidence processing is part of the event-ingestion runtime.
@@ -424,6 +424,6 @@ export default {
     await consumeEventBatch(batch, env);
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env)]).then(() => undefined));
+    ctx.waitUntil(Promise.all([runScheduledAIReport(controller.cron, env), runScheduledMonitoring(env), ...(controller.cron === "0 2 * * *" ? [runScheduledRetention(env)] : [])]).then(() => undefined));
   },
 };
